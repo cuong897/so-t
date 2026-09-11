@@ -1,6 +1,5 @@
 node_modules/
-ml/data/raw/
-ml/data/*.jsonl
+ml/data/
 ml/out/*.pt
 ml/out/*.bin
 ml/out/*.onnx
