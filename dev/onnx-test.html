@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Soát — kiểm chứng đường ONNX</title>
+<style>
+  body { font: 400 15px/1.6 -apple-system, "Segoe UI", Roboto, sans-serif;
+         max-width: 820px; margin: 32px auto; padding: 0 20px; }
+  h1 { font-size: 19px; font-weight: 600; }
+  .muted { color: #666; font-size: 13px; }
+  pre { background: #f6f8fa; padding: 14px; border-radius: 8px; white-space: pre-wrap;
+        font: 12px/1.6 ui-monospace, Menlo, Consolas, monospace; }
+  .ok { color: #1a7f37; } .bad { color: #cf222e; font-weight: 600; }
+</style>
+</head>
+<body>
+  <h1>Kiểm chứng đường ONNX trong trình duyệt</h1>
+  <p class="muted">Chạy với <strong>model giả</strong> đúng shape. Bài này KHÔNG nói gì
+  về chất lượng model — nó kiểm tra phần ghép nối: nạp onnxruntime-web, mã hoá BPE,
+  suy luận, chặn theo tập ứng viên, và ánh xạ về offset ký tự.</p>
+  <pre id="log">đang chạy…</pre>
+
+<script type="module">
+// Cache-buster: trình duyệt cache module rất dai, sửa file xong tải lại vẫn
+// chạy bản cũ — mất thời gian đuổi theo một lỗi đã sửa rồi.
+const v = `?v=${Date.now()}`;
+const { OnnxEngine } = await import(`../extension/src/engine/onnxEngine.js${v}`);
+const { applicableTags, TAG_NAMES } = await import(`../extension/src/engine/vi.js${v}`);
+
+const lines = [];
+const say = (s, cls) => {
+  lines.push(cls ? `<span class="${cls}">${s}</span>` : s);
+  document.getElementById('log').innerHTML = lines.join('\n');
+};
+const check = (cond, msg) => say(`${cond ? '✓' : '✗'} ${msg}`, cond ? 'ok' : 'bad');
+
+const t0 = performance.now();
+const engine = new OnnxEngine({ threshold: 0.0, margin: 0.0 });  // hạ ngưỡng để thấy đầu ra
+const ok = await engine.load({
+  ort: '../extension/vendor/ort.wasm.bundle.min.mjs',
+  wasmDir: '../extension/vendor/',
+  model: '../extension/models/soat.int8.onnx',
+  tokenizer: '../extension/models/tokenizer.json',
+  lexicon: '../extension/models/lexicon.json',
+  meta: '../extension/models/soat.meta.json',
+});
+
+check(engine.ready, `nạp xong sau ${Math.round(performance.now() - t0)}ms`);
+if (!engine.ready) {
+  say('dừng — xem console để biết lỗi nạp', 'bad');
+} else {
+  check(engine.tagNames.length === TAG_NAMES.length,
+        `bộ nhãn khớp vi.js (${engine.tagNames.length} nhãn)`);
+  check(engine.lexicon.size > 5000, `từ điển ${engine.lexicon.size.toLocaleString()} âm tiết`);
+
+  const text = 'Cả nhóm đã nổ lực rất nhiều để chia sẽ những trãi nghiệm quý báu.';
+  const tA = performance.now();
+  const issues = await engine.check(text);
+  const infer = performance.now() - tA;
+
+  say(`\nsuy luận: ${Math.round(infer)}ms cho câu ${text.length} ký tự`);
+  check(Array.isArray(issues), `trả về mảng Issue (${issues.length} phần tử)`);
+
+  // Bất biến 1: mọi đề xuất phải nằm trong tập ứng viên hợp lệ
+  let outside = 0;
+  for (const it of issues) {
+    const allowed = applicableTags(it.original, engine.lexicon);
+    const reachable = allowed.some((t) => t !== 'KEEP' &&
+      engine.lexicon.has(it.suggestion.toLowerCase()));
+    if (!reachable) outside++;
+  }
+  check(outside === 0, `không đề xuất nào ra ngoài từ điển (${outside} vi phạm)`);
+
+  // Bất biến 2: offset phải trỏ đúng vào chuỗi gốc
+  const badOffset = issues.filter((i) => text.slice(i.start, i.end) !== i.original);
+  check(badOffset.length === 0, `offset trỏ đúng chuỗi gốc (${badOffset.length} sai)`);
+
+  // Bất biến 3: đề xuất phải khác bản gốc
+  const noop = issues.filter((i) => i.suggestion === i.original);
+  check(noop.length === 0, `không có đề xuất trùng bản gốc (${noop.length} vô nghĩa)`);
+
+  say('\nvài đề xuất (model GIẢ — nội dung vô nghĩa là bình thường):');
+  for (const i of issues.slice(0, 6)) {
+    say(`   ${i.original} → ${i.suggestion}   ${(i.confidence * 100).toFixed(0)}%  [${i.tag}]`);
+  }
+
+  // Đo độ trễ: p50/p95 trên câu dài trung bình, giống trong Web Worker
+  const times = [];
+  for (let k = 0; k < 30; k++) {
+    const s = performance.now();
+    await engine.check(text);
+    times.push(performance.now() - s);
+  }
+  times.sort((a, b) => a - b);
+  say(`\nđộ trễ (model giả, 1 luồng wasm): p50 ${times[15].toFixed(1)}ms  `
+    + `p95 ${times[28].toFixed(1)}ms`);
+  say('CHÚ Ý: model thật nặng hơn nhiều — con số này chỉ đo chi phí ghép nối.');
+}
+</script>
+</body>
+</html>

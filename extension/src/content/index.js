@@ -26,7 +26,10 @@
   // thất bại êm và check() trả mảng rỗng — tầng luật vẫn chạy bình thường.
   const model = new onnx.OnnxEngine();
   model.load({
-    ort: base + 'vendor/ort.webgpu.mjs',
+    // Bản wasm-only (73KB js + 14MB wasm). Bỏ qua bản WebGPU vì nó cần
+    // .jsep.wasm nặng 27MB — gấp đôi dung lượng để đổi lấy tốc độ mà phần
+    // lớn máy người dùng không tận dụng được.
+    ort: base + 'vendor/ort.wasm.bundle.min.mjs',
     wasmDir: base + 'vendor/',
     model: base + 'models/soat.int8.onnx',
     tokenizer: base + 'models/tokenizer.json',

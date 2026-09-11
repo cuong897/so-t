@@ -53,9 +53,19 @@ export class OnnxEngine {
   }
 
   async _load(urls) {
-    const ort = await import(urls.ort);
+    // import() động phân giải đường dẫn tương đối theo URL của CHÍNH MODULE
+    // NÀY, không theo trang đang mở. Trong extension thì chrome.runtime.getURL
+    // đã trả URL tuyệt đối nên không lộ, nhưng ở trang thử thì lệch thư mục.
+    // Quy về tuyệt đối để cả hai nơi hành xử giống nhau.
+    const ortUrl = new URL(urls.ort, self.location.href).href;
+    const ort = await import(ortUrl);
+
     // Đóng gói kèm extension — MV3 cấm nạp code từ xa.
-    ort.env.wasm.wasmPaths = urls.wasmDir;
+    // wasmPaths cũng phải tuyệt đối: onnxruntime nối chuỗi này với tên file
+    // rồi import, nên đường dẫn tương đối sẽ bị phân giải sai thư mục.
+    ort.env.wasm.wasmPaths = new URL(urls.wasmDir, self.location.href).href;
+    // Luồng wasm cần SharedArrayBuffer, mà SAB đòi header COOP/COEP của
+    // TRANG CHỦ — thứ một content script không kiểm soát được. Chạy một luồng.
     ort.env.wasm.numThreads = 1;
 
     const [session, tokenizer, lexicon, meta] = await Promise.all([

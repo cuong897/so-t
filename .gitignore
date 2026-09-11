@@ -13,3 +13,6 @@ extension/vendor/
 __pycache__/
 *.pyc
 .venv/
+
+# onnxruntime-web đóng gói kèm (14MB) — tải bằng ml/fetch_vendor.sh
+extension/vendor/
