@@ -242,8 +242,16 @@ export function setFinal(syllable, newFinal) {
 export const TAGS = {
   KEEP: { apply: (s) => s, label: 'giữ nguyên' },
 
-  HOI_NGA: { apply: (s) => setTone(s, TONE.NGA), label: 'hỏi → ngã', group: 'thanh' },
-  NGA_HOI: { apply: (s) => setTone(s, TONE.HOI), label: 'ngã → hỏi', group: 'thanh' },
+  // Sáu nhãn "đặt thanh thành X" thay cho cặp hỏi/ngã riêng lẻ.
+  // Đo trên VSEC: chỉ hỏi<->ngã phủ 7.6% số lỗi, sáu nhãn này phủ 49.7%,
+  // cộng phụ âm và âm cuối thành 54.5%. Bốn nhãn thêm vào, gấp bảy lần
+  // coverage — và hỏi/ngã vẫn nằm trọn bên trong.
+  TONE_NGANG: { apply: (s) => setTone(s, TONE.NGANG), label: 'bỏ dấu', group: 'thanh' },
+  TONE_HUYEN: { apply: (s) => setTone(s, TONE.HUYEN), label: 'thành dấu huyền', group: 'thanh' },
+  TONE_SAC: { apply: (s) => setTone(s, TONE.SAC), label: 'thành dấu sắc', group: 'thanh' },
+  TONE_HOI: { apply: (s) => setTone(s, TONE.HOI), label: 'thành dấu hỏi', group: 'thanh' },
+  TONE_NGA: { apply: (s) => setTone(s, TONE.NGA), label: 'thành dấu ngã', group: 'thanh' },
+  TONE_NANG: { apply: (s) => setTone(s, TONE.NANG), label: 'thành dấu nặng', group: 'thanh' },
 
   L_N: { apply: (s) => setInitial(s, 'n'), label: 'l → n', group: 'phụ âm đầu' },
   N_L: { apply: (s) => setInitial(s, 'l'), label: 'n → l', group: 'phụ âm đầu' },
@@ -270,6 +278,25 @@ export const TAGS = {
 export const TAG_NAMES = Object.keys(TAGS);
 export const TAG_INDEX = Object.fromEntries(TAG_NAMES.map((t, i) => [t, i]));
 
+/** Thứ tự PHẢI trùng với TONE.* để tra theo chỉ số thanh. */
+export const TONE_TAGS = [
+  'TONE_NGANG', 'TONE_HUYEN', 'TONE_SAC', 'TONE_HOI', 'TONE_NGA', 'TONE_NANG',
+];
+
+/**
+ * Nhãn nào biến src thành dst? null nếu bộ nhãn không biểu diễn được.
+ *
+ * Với nhãn đặt-thanh thì nghịch đảo không cố định — nó phụ thuộc thanh gốc —
+ * nên phải tra chứ không tra bảng được.
+ */
+export function tagBetween(src, dst, lexicon = null) {
+  if (src === dst) return 'KEEP';
+  for (const tag of applicableTags(src, lexicon)) {
+    if (tag !== 'KEEP' && TAGS[tag].apply(src) === dst) return tag;
+  }
+  return null;
+}
+
 /**
  * Nhãn nào ÁP DỤNG ĐƯỢC cho âm tiết này.
  *
@@ -291,8 +318,10 @@ export function applicableTags(syllable, lexicon = null) {
     out.push(name);
   };
 
-  if (tone && tone.tone === TONE.HOI) consider('HOI_NGA');
-  if (tone && tone.tone === TONE.NGA) consider('NGA_HOI');
+  // Mọi thanh khác thanh hiện tại đều là ứng viên. Từ điển lọc phần vô nghĩa.
+  if (tone !== null) {
+    TONE_TAGS.forEach((name, t) => { if (t !== tone.tone) consider(name); });
+  }
 
   if (init === 'l') consider('L_N');
   if (init === 'n') consider('N_L');

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   setTone, getTone, stripTone, toAscii, tonePosition,
   splitSyllable, setInitial, getFinal, setFinal,
-  applicableTags, tokenize, TONE,
+  applicableTags, tokenize, tagBetween, TAG_NAMES, TONE_TAGS, TONE,
 } from '../extension/src/engine/vi.js';
 
 test('đặt dấu thanh: có âm cuối thì dấu rơi vào nguyên âm cuối', () => {
@@ -79,12 +79,28 @@ test('bỏ dấu', () => {
 test('sinh nhãn áp dụng được, có lọc theo từ điển', () => {
   const tags = applicableTags('nổ');
   assert.ok(tags.includes('KEEP'));
-  assert.ok(tags.includes('HOI_NGA'));
+  assert.ok(tags.includes('TONE_NGA'));
+  // Không đề xuất chính thanh đang có.
+  assert.ok(!tags.includes('TONE_HOI'));
 
-  // Từ điển loại bỏ ứng viên không phải từ: 'lổ' không có trong từ điển.
+  // Từ điển là thứ thu hẹp không gian ứng viên: 7 -> 2.
   const lex = new Set(['nổ', 'nỗ']);
-  const filtered = applicableTags('nổ', lex);
-  assert.deepEqual(filtered, ['KEEP', 'HOI_NGA']);
+  assert.deepEqual(applicableTags('nổ', lex), ['KEEP', 'TONE_NGA']);
+});
+
+test('tagBetween tra được nhãn giữa hai chuỗi', () => {
+  assert.equal(tagBetween('nổ', 'nỗ'), 'TONE_NGA');
+  assert.equal(tagBetween('trãi', 'trải'), 'TONE_HOI');
+  assert.equal(tagBetween('giam', 'giảm'), 'TONE_HOI');   // thêm dấu vào từ không dấu
+  assert.equal(tagBetween('chân', 'trân'), 'CH_TR');
+  assert.equal(tagBetween('nổ', 'nổ'), 'KEEP');
+  // Ngoài tầm với: đổi phẩm chất nguyên âm, bộ nhãn không biểu diễn được.
+  assert.equal(tagBetween('bức', 'bước'), null);
+});
+
+test('bộ nhãn đúng 23 phần tử', () => {
+  assert.equal(TAG_NAMES.length, 23);
+  assert.equal(TONE_TAGS.length, 6);
 });
 
 test('mọi nhãn đều sinh ra chuỗi khác chuỗi gốc', () => {

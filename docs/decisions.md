@@ -146,3 +146,72 @@ là một bài toán kỹ thuật thật, và rất ít sinh viên từng phải
 đáng kể bề mặt rủi ro và dễ giải trình khi Chrome Web Store xét duyệt.
 
 **Bù lại:** danh sách loại trừ trong `targets.js` phải chặt và phải có test.
+
+---
+
+### 11. Sáu nhãn đặt-thanh thay cho cặp hỏi/ngã
+
+**Đo được rồi mới quyết.** Trên VSEC (10.845 cặp lỗi thật):
+
+| Bộ nhãn | Phủ được |
+|---|---|
+| hỏi↔ngã + phụ âm + âm cuối (bản đầu) | 7,6% |
+| chỉ 6 nhãn `TONE_*` (đặt thanh thành X) | 49,7% |
+| cả hai gộp lại | **54,5%** |
+| thêm kết hợp hai phép biến đổi | 54,6% |
+
+**Chọn:** thay `HOI_NGA`/`NGA_HOI` bằng 6 nhãn `TONE_*`. Bốn nhãn thêm vào đổi
+lấy gấp bảy lần coverage, mà hỏi/ngã vẫn nằm trọn bên trong. **Bỏ** phương án
+kết hợp hai phép — thêm 0,1% không đáng phần phức tạp.
+
+**Hệ quả phụ:** bảng `INVERSE_TAG` tĩnh phải bỏ. Nghịch đảo của một nhãn
+đặt-thanh phụ thuộc thanh gốc của từ đúng, nên phải tra bằng `tag_between()`.
+Đổi lại, chính hàm đó là thứ `evaluate.py` cần để biết một cặp (sai, đúng) có
+nằm trong tầm với hay không.
+
+**45,5% còn lại nằm ngoài tầm** và phải nói rõ chứ không giấu: một nửa là
+chèn/xoá ký tự (`tranhh`→`tranh`, `iên`→`nhiên`), còn lại là đổi phẩm chất
+nguyên âm (`bức`→`bước`). VSEC nặng về lỗi **gõ phím**; sản phẩm này nhắm lỗi
+**kiến thức** — người không biết hỏi hay ngã. Đó là hai bài toán khác nhau, nên
+`evaluate.py` in riêng khối "trong tầm" và khối "toàn bộ".
+
+---
+
+### 12. Bốc LỚP lỗi trước, rồi mới bốc token
+
+**Lỗi thứ ba đã mắc.** Sau khi sửa lỗi ở quyết định 5, phân bố vẫn sai: `missing`
+ra 50,7% dù cấu hình 22,2%, phụ âm ra 5,4% dù cấu hình 37%.
+
+**Nguyên nhân:** bốc token trước thì phân bố bị chi phối bởi **lớp nào tình cờ
+có sẵn ở token nào**. Âm tiết nào cũng có thể mất dấu, nhưng chỉ âm tiết bắt
+đầu bằng l/n/ch/tr/s/x/d/gi/r mới có lỗi phụ âm. Trọng số đặt bao nhiêu cũng vô
+nghĩa trước sự chênh lệch đó.
+
+**Sửa:** bốc lớp theo trọng số trước, rồi bốc token trong lớp ấy. `hoi_nga` từ
+18,4% về 34,5% (thiết kế 31,5%).
+
+**Bài học lặp lại lần thứ ba trong dự án này:** phân bố dữ liệu sinh ra là thứ
+phải **đo**, không phải thứ tự tin là đã cấu hình đúng.
+
+---
+
+### 13. Tự viết BPE cho trình duyệt — và bài kiểm tra đã cứu dự án
+
+**Chọn:** `bpe.js` ~100 dòng, đọc `tokenizer.json` do `export_tokenizer.py` sinh.
+
+**Bỏ:** transformers.js. MV3 cấm nạp code từ xa nên thư viện nào cũng phải đóng
+gói kèm; bản đầy đủ nặng vài trăm KB và kéo theo cả phần suy luận đã có
+onnxruntime-web lo.
+
+**Hai thứ chỉ lộ ra nhờ kiểm tra parity:**
+
+1. PhoBERT **không có** tokenizer bản fast. `use_fast=True` âm thầm trả về bản
+   Python, nên `word_ids()` không tồn tại. Phải tự tách theo từng từ — hoá ra
+   lại tốt hơn, vì đó đúng là cách `bpe.js` làm.
+
+2. PhoBERT theo quy ước subword-nmt: hậu tố `@@` đánh dấu subword **còn tiếp**,
+   subword cuối để trơn. Tôi đã giả định `</w>` cuối từ — **ngược hẳn**. Ship
+   như vậy thì mọi token thành UNK và model trả về rác, không một lỗi nào bật ra.
+
+`test/bpe.test.mjs` giờ đối chiếu `bpe.js` với tokenizer Python trên 5.609 token
+lấy từ corpus thật. Đây là loại lỗi không thể bắt bằng cách đọc code.

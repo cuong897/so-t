@@ -30,9 +30,8 @@ import vi
 # giọng Nam và phần lớn giọng Trung, nên đây là lớp lỗi áp đảo. Các con số này
 # PHẢI được thay bằng số đo thật từ mine_errors.py trước khi train bản chính.
 
-CLASS_WEIGHTS: dict[str, float] = {
-    "HOI_NGA": 0.30,
-    "NGA_HOI": 0.30,
+#: trọng số cho lỗi phụ âm đầu và âm cuối, khoá theo nhãn SỬA
+CONSONANT_WEIGHTS: dict[str, float] = {
     "CH_TR": 0.05, "TR_CH": 0.05,
     "S_X": 0.05, "X_S": 0.05,
     "D_GI": 0.03, "GI_D": 0.03,
@@ -41,6 +40,15 @@ CLASS_WEIGHTS: dict[str, float] = {
     "L_N": 0.03, "N_L": 0.03,
     "N_NG": 0.02, "NG_N": 0.01,
     "C_T": 0.005, "T_C": 0.005,
+}
+
+#: Lỗi thanh điệu không thể khoá theo nhãn sửa, vì TONE_NGA vừa có thể là
+#: "viết hỏi đáng lẽ ngã" (lỗi kiến thức) vừa là "quên bỏ dấu" (lỗi gõ phím).
+#: Hai loại đó tần suất khác hẳn nhau nên phải phân biệt theo CẶP thanh.
+TONE_PAIR_WEIGHTS = {
+    "hoi_nga": 0.34,    # hỏi <-> ngã: lỗi kiến thức, lớp lỗi áp đảo
+    "missing": 0.24,    # mất dấu hoàn toàn (-> ngang): lỗi gõ phím / IME hỏng
+    "other_tone": 0.10, # đổi sang thanh khác: hiếm hơn nhưng có thật
 }
 
 #: xác suất một token ĐỦ ĐIỀU KIỆN bị làm hỏng
@@ -69,6 +77,11 @@ class NoiseGenerator:
         self.propensity = propensity or {}
         self.error_rate = error_rate
         self.rng = random.Random(seed)
+        # _corruptions_for tất định theo token, mà vốn từ chỉ vài chục nghìn.
+        # Không cache thì mỗi token tốn ~8 lượt applicable_tags lồng nhau
+        # (một lượt ngoài, một lượt bên trong tag_between cho từng ứng viên),
+        # tức khoảng 80 phép biến đổi chuỗi — sinh 720k mẫu mất hàng chục phút.
+        self._cache: dict[str, list[tuple[str, str]]] = {}
 
     # --- chọn cách làm hỏng cho một token ---------------------------------
 
@@ -82,6 +95,10 @@ class NoiseGenerator:
         Cố tình KHÔNG lọc dạng hỏng theo từ điển: người ta thật sự gõ ra những
         chuỗi không phải từ như "trãi", "xãy", và model cần thấy chúng.
         """
+        hit = self._cache.get(token)
+        if hit is not None:
+            return hit
+
         out = []
         for break_tag in vi.applicable_tags(token, lexicon=None):
             if break_tag == "KEEP":
@@ -89,19 +106,34 @@ class NoiseGenerator:
             broken = vi.TAGS[break_tag](token)
             if broken == token:
                 continue
-            fix_tag = vi.INVERSE_TAG.get(break_tag)
-            if not fix_tag:
-                continue
-            # Bất biến phải giữ: lúc chạy thật, model chỉ được chọn trong
-            # applicable_tags(dạng_sai). Nhãn sửa bắt buộc nằm trong đó.
-            if fix_tag not in vi.applicable_tags(broken, self.lexicon):
+            # Nhãn sửa phải TRA chứ không tra bảng được: với nhãn đặt-thanh thì
+            # nghịch đảo phụ thuộc thanh gốc của chính từ đúng.
+            # Đồng thời đây cũng là chốt cho bất biến sống còn — lúc chạy thật
+            # model chỉ được chọn trong applicable_tags(dạng_sai, lexicon), nên
+            # nhãn vàng bắt buộc nằm trong đó, nếu không nó vĩnh viễn bất khả thi.
+            fix_tag = vi.tag_between(broken, token, self.lexicon)
+            if not fix_tag or fix_tag == "KEEP":
                 continue
             out.append((broken, fix_tag))
+        self._cache[token] = out
         return out
 
-    def _weight(self, token: str, fix_tag: str) -> float:
-        base = CLASS_WEIGHTS.get(fix_tag, 0.0)
-        return base * self.propensity.get(token.lower(), 1.0)
+    def _class_of(self, token: str, broken: str, fix_tag: str) -> str:
+        """Lớp lỗi của một cách làm hỏng — đơn vị để phân bổ trọng số."""
+        if not fix_tag.startswith("TONE_"):
+            return fix_tag
+        t_orig, t_bad = vi.get_tone(token), vi.get_tone(broken)
+        o = t_orig[0] if t_orig else None
+        b = t_bad[0] if t_bad else None
+        if o in (vi.HOI, vi.NGA) and b in (vi.HOI, vi.NGA):
+            return "hoi_nga"
+        if b == vi.NGANG and o != vi.NGANG:
+            return "missing"
+        return "other_tone"
+
+    def _class_weight(self, cls: str) -> float:
+        base = TONE_PAIR_WEIGHTS.get(cls)
+        return base if base is not None else CONSONANT_WEIGHTS.get(cls, 0.0)
 
     # --- API chính ---------------------------------------------------------
 
@@ -116,38 +148,54 @@ class NoiseGenerator:
         out_tokens = list(tokens)
         out_tags = ["KEEP"] * len(tokens)
 
-        candidates = []
+        # Gom ứng viên THEO LỚP, không theo token.
+        #
+        # Đây là điểm mấu chốt. Nếu bốc token trước rồi mới bốc lớp thì phân bố
+        # thu được bị chi phối bởi việc lớp nào TÌNH CỜ có sẵn ở token nào:
+        # hầu hết âm tiết đều có thể mất dấu, nhưng chỉ âm tiết bắt đầu bằng
+        # l/n/ch/tr/s/x/d/gi/r mới có lỗi phụ âm. Kết quả là "missing" chiếm
+        # 50% dù cấu hình 22%, còn phụ âm rơi xuống 5% dù cấu hình 37%.
+        #
+        # Bốc LỚP trước rồi mới bốc token trong lớp đó thì phân bố đúng bằng
+        # thứ đã cấu hình, chỉ phụ thuộc lớp nào có mặt trong câu.
+        by_class: dict[str, list[tuple[int, str, str]]] = {}
+        n_eligible = 0
         for i, tok in enumerate(tokens):
             options = self._corruptions_for(tok)
             if not options:
                 continue
-            weights = [self._weight(tok, tag) for _, tag in options]
-            total = sum(weights)
-            if total > 0:
-                candidates.append({"i": i, "options": options, "weights": weights, "total": total})
+            n_eligible += 1
+            for broken, fix_tag in options:
+                cls = self._class_of(tok, broken, fix_tag)
+                by_class.setdefault(cls, []).append((i, broken, fix_tag))
 
-        if not candidates:
+        if not by_class:
             return out_tokens, out_tags
 
-        # Số lỗi cần tiêm: kỳ vọng = error_rate × số token có thể hỏng.
-        n_target = sum(1 for _ in candidates if self.rng.random() < self.error_rate)
-        n_target = min(n_target, MAX_ERRORS_PER_SENTENCE, len(candidates))
+        n_target = sum(1 for _ in range(n_eligible) if self.rng.random() < self.error_rate)
+        n_target = min(n_target, MAX_ERRORS_PER_SENTENCE, n_eligible)
         if n_target == 0:
             return out_tokens, out_tags
 
-        # Chọn token theo trọng số, không lặp lại.
-        pool = list(candidates)
+        used: set[int] = set()
         for _ in range(n_target):
-            totals = [c["total"] for c in pool]
-            if sum(totals) <= 0:
+            avail = [c for c, opts in by_class.items()
+                     if any(i not in used for i, _, _ in opts)]
+            if not avail:
                 break
-            chosen = self.rng.choices(pool, weights=totals, k=1)[0]
-            pool.remove(chosen)
-            broken, fix_tag = self.rng.choices(
-                chosen["options"], weights=chosen["weights"], k=1,
-            )[0]
-            out_tokens[chosen["i"]] = broken
-            out_tags[chosen["i"]] = fix_tag
+            weights = [self._class_weight(c) for c in avail]
+            if sum(weights) <= 0:
+                break
+            cls = self.rng.choices(avail, weights=weights, k=1)[0]
+
+            pool = [o for o in by_class[cls] if o[0] not in used]
+            # Xu hướng lỗi của từng từ quyết định token nào trong lớp bị chọn.
+            prop = [self.propensity.get(tokens[i].lower(), 1.0) for i, _, _ in pool]
+            i, broken, fix_tag = self.rng.choices(pool, weights=prop, k=1)[0]
+
+            out_tokens[i] = broken
+            out_tags[i] = fix_tag
+            used.add(i)
 
         return out_tokens, out_tags
 
@@ -219,7 +267,9 @@ if __name__ == "__main__":
 
     print("=== kiểm tra phân bố ở tỷ lệ thật ===")
     gen = NoiseGenerator(seed=1)
-    tag_counts, n_tokens, n_errors, n_sent_with_error = Counter(), 0, 0, 0
+    samples_tokens = {s: [t for t, _, _ in vi.tokenize(vi.normalize(s))] for s in samples}
+    tag_counts, class_counts = Counter(), Counter()
+    n_tokens = n_errors = n_sent_with_error = 0
     for _ in range(2000):
         for s in samples:
             _, toks, tags = gen.corrupt_sentence(s)
@@ -228,9 +278,26 @@ if __name__ == "__main__":
             n_errors += len(errs)
             n_sent_with_error += 1 if errs else 0
             tag_counts.update(errs)
+            for tok, orig, tag in zip(toks, samples_tokens[s], tags):
+                if tag != "KEEP":
+                    class_counts[gen._class_of(orig, tok, tag)] += 1
 
     print(f"token: {n_tokens}  lỗi: {n_errors}  tỷ lệ token sai: {n_errors / n_tokens:.3%}")
     print(f"câu có ít nhất một lỗi: {n_sent_with_error / (2000 * len(samples)):.1%}")
-    print("phân bố lớp lỗi:")
-    for tag, c in tag_counts.most_common():
-        print(f"  {tag:<10} {c / n_errors:6.1%}")
+
+    # Đo theo LỚP, không theo nhãn: TONE_HOI có thể thuộc lớp hoi_nga hoặc
+    # other_tone tuỳ thanh gốc, nên bảng theo nhãn không kiểm chứng được cấu hình.
+    print("\nphân bố theo LỚP (so với thiết kế):")
+    target = dict(TONE_PAIR_WEIGHTS)
+    target["phụ âm + âm cuối"] = sum(CONSONANT_WEIGHTS.values())
+    tot_w = sum(target.values())
+    grouped = Counter()
+    for cls, c in class_counts.items():
+        grouped[cls if cls in TONE_PAIR_WEIGHTS else "phụ âm + âm cuối"] += c
+    for cls, w in sorted(target.items(), key=lambda kv: -kv[1]):
+        got = grouped[cls] / n_errors if n_errors else 0
+        print(f"  {cls:<18} thực tế {got:6.1%}   thiết kế {w / tot_w:6.1%}")
+
+    print("\nphân bố theo nhãn:")
+    for tag, c in tag_counts.most_common(8):
+        print(f"  {tag:<12} {c / n_errors:6.1%}")

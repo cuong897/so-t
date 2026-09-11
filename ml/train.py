@@ -40,6 +40,7 @@ from transformers import AutoConfig, AutoModelForTokenClassification, AutoTokeni
 
 import vi
 from noise import load_lexicon
+from encoding import encode_words, first_subword_index
 
 IGNORE = -100
 
@@ -52,8 +53,9 @@ class TagDataset(Dataset):
     Lúc suy luận cũng đọc logit ở đúng vị trí đó.
     """
 
-    def __init__(self, path: Path, tokenizer, max_len: int = 128):
-        self.rows = [json.loads(l) for l in path.open(encoding="utf-8")]
+    def __init__(self, path: Path, tokenizer, max_len: int = 128, limit: int = 0):
+        with path.open(encoding="utf-8") as f:
+            self.rows = [json.loads(l) for i, l in enumerate(f) if not limit or i < limit]
         self.tok = tokenizer
         self.max_len = max_len
 
@@ -62,13 +64,8 @@ class TagDataset(Dataset):
 
     def __getitem__(self, i: int) -> dict:
         row = self.rows[i]
-        enc = self.tok(
-            row["tokens"],
-            is_split_into_words=True,
-            truncation=True,
-            max_length=self.max_len,
-        )
-        word_ids = enc.word_ids()
+        ids, word_ids = encode_words(self.tok, row["tokens"], self.max_len)
+
         labels, prev = [], None
         for wid in word_ids:
             if wid is None or wid == prev:
@@ -76,9 +73,8 @@ class TagDataset(Dataset):
             else:
                 labels.append(vi.TAG_INDEX[row["tags"][wid]])
             prev = wid
-        enc = dict(enc)
-        enc["labels"] = labels
-        return enc
+
+        return {"input_ids": ids, "attention_mask": [1] * len(ids), "labels": labels}
 
 
 def collate(batch: list[dict], pad_id: int) -> dict:
@@ -122,8 +118,9 @@ def evaluate(model, loader, device, lexicon, id2tag) -> dict:
     tp = fp = fn = 0
     for batch in loader:
         batch = {k: v.to(device) for k, v in batch.items()}
-        logits = model(input_ids=batch["input_ids"],
-                       attention_mask=batch["attention_mask"]).logits
+        with torch.autocast("cuda", dtype=torch.bfloat16, enabled=(device == "cuda")):
+            logits = model(input_ids=batch["input_ids"],
+                           attention_mask=batch["attention_mask"]).logits
         pred = logits.argmax(-1)
         mask = batch["labels"] != IGNORE
         gold = batch["labels"][mask]
@@ -153,7 +150,10 @@ def main() -> None:
     ap.add_argument("--epochs", type=int, default=3)
     ap.add_argument("--batch", type=int, default=32)
     ap.add_argument("--lr", type=float, default=3e-5)
-    ap.add_argument("--max-len", type=int, default=128)
+    ap.add_argument("--max-len", type=int, default=96)
+    ap.add_argument("--limit", type=int, default=0, help="chỉ dùng N mẫu train đầu")
+    ap.add_argument("--amp", action="store_true", default=True,
+                    help="mixed precision — nhanh gần gấp đôi trên GPU RTX")
     ap.add_argument("--alpha", type=float, default=0.7,
                     help="tỷ trọng loss distil so với loss nhãn cứng")
     ap.add_argument("--temperature", type=float, default=2.0)
@@ -168,10 +168,11 @@ def main() -> None:
     lexicon = load_lexicon(args.data / "lexicon.tsv")
     id2tag = {i: t for t, i in vi.TAG_INDEX.items()}
 
-    train_ds = TagDataset(args.data / "train.jsonl", tok, args.max_len)
-    dev_ds = TagDataset(args.data / "dev.jsonl", tok, args.max_len)
+    train_ds = TagDataset(args.data / "train.jsonl", tok, args.max_len, args.limit)
+    dev_ds = TagDataset(args.data / "dev.jsonl", tok, args.max_len, 4000)
     fn = lambda b: collate(b, tok.pad_token_id)
-    train_dl = DataLoader(train_ds, batch_size=args.batch, shuffle=True, collate_fn=fn)
+    train_dl = DataLoader(train_ds, batch_size=args.batch, shuffle=True, collate_fn=fn,
+                          num_workers=0, pin_memory=(device == "cuda"))
     dev_dl = DataLoader(dev_ds, batch_size=args.batch * 2, collate_fn=fn)
     print(f"train {len(train_ds):,} mẫu | dev {len(dev_ds):,} mẫu | {len(vi.TAG_NAMES)} nhãn")
 
@@ -187,6 +188,10 @@ def main() -> None:
             p.requires_grad = False
         print(f"distil từ {args.teacher}")
 
+    # bfloat16 không cần GradScaler và ổn định hơn fp16 trên Ampere/Ada.
+    use_amp = args.amp and device == "cuda" and torch.cuda.is_bf16_supported()
+    print(f"mixed precision (bf16): {use_amp}")
+
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
     steps = len(train_dl) * args.epochs
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=args.lr, total_steps=steps)
@@ -195,19 +200,20 @@ def main() -> None:
         model.train()
         t0, running = time.time(), 0.0
         for step, batch in enumerate(train_dl):
-            batch = {k: v.to(device) for k, v in batch.items()}
-            out = model(**batch)
+            batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
+            with torch.autocast("cuda", dtype=torch.bfloat16, enabled=use_amp):
+                out = model(**batch)
             loss = out.loss
 
             if teacher is not None:
-                with torch.no_grad():
+                with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16, enabled=use_amp):
                     t_logits = teacher(input_ids=batch["input_ids"],
                                        attention_mask=batch["attention_mask"]).logits
                 mask = batch["labels"] != IGNORE
                 T = args.temperature
                 kd = F.kl_div(
-                    F.log_softmax(out.logits[mask] / T, dim=-1),
-                    F.softmax(t_logits[mask] / T, dim=-1),
+                    F.log_softmax(out.logits[mask].float() / T, dim=-1),
+                    F.softmax(t_logits[mask].float() / T, dim=-1),
                     reduction="batchmean",
                 ) * (T * T)
                 loss = args.alpha * kd + (1 - args.alpha) * out.loss
@@ -218,13 +224,16 @@ def main() -> None:
             sched.step()
             opt.zero_grad()
 
-            running += float(loss)
+            running += loss.detach().item()
             if step % 200 == 0 and step:
                 print(f"  epoch {epoch} step {step}/{len(train_dl)} "
                       f"loss {running / 200:.4f}")
                 running = 0.0
 
         m = evaluate(model, dev_dl, device, lexicon, id2tag)
+        args.out.mkdir(parents=True, exist_ok=True)
+        model.save_pretrained(args.out)
+        tok.save_pretrained(args.out)
         print(f"epoch {epoch} ({time.time() - t0:.0f}s)  "
               f"P {m['precision']:.4f}  R {m['recall']:.4f}  F1 {m['f1']:.4f}  "
               f"(tp {m['tp']} fp {m['fp']} fn {m['fn']})")

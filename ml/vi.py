@@ -206,8 +206,16 @@ def set_final(syllable: str, new_final: str) -> str:
 
 TAGS: dict[str, callable] = {
     "KEEP": lambda s: s,
-    "HOI_NGA": lambda s: set_tone(s, NGA),
-    "NGA_HOI": lambda s: set_tone(s, HOI),
+    # Sáu nhãn "đặt thanh thành X" thay cho cặp HOI_NGA/NGA_HOI.
+    # Đo trên VSEC: chỉ hỏi<->ngã phủ được 7.6% lỗi, sáu nhãn này phủ 49.7%,
+    # cộng phụ âm và âm cuối thành 54.5%. Bốn nhãn thêm vào, gấp bảy lần
+    # coverage — và hỏi/ngã vẫn nằm trọn trong đó.
+    "TONE_NGANG": lambda s: set_tone(s, NGANG),
+    "TONE_HUYEN": lambda s: set_tone(s, HUYEN),
+    "TONE_SAC": lambda s: set_tone(s, SAC),
+    "TONE_HOI": lambda s: set_tone(s, HOI),
+    "TONE_NGA": lambda s: set_tone(s, NGA),
+    "TONE_NANG": lambda s: set_tone(s, NANG),
     "L_N": lambda s: set_initial(s, "n"),
     "N_L": lambda s: set_initial(s, "l"),
     "CH_TR": lambda s: set_initial(s, "tr"),
@@ -229,18 +237,23 @@ TAGS: dict[str, callable] = {
 TAG_NAMES = list(TAGS.keys())
 TAG_INDEX = {t: i for i, t in enumerate(TAG_NAMES)}
 
-#: nhãn nghịch đảo — dùng khi tiêm nhiễu (đi từ câu đúng ra câu sai)
-INVERSE_TAG = {
-    "HOI_NGA": "NGA_HOI", "NGA_HOI": "HOI_NGA",
-    "L_N": "N_L", "N_L": "L_N",
-    "CH_TR": "TR_CH", "TR_CH": "CH_TR",
-    "S_X": "X_S", "X_S": "S_X",
-    "D_GI": "GI_D", "GI_D": "D_GI",
-    "D_R": "R_D", "R_D": "D_R",
-    "GI_R": "R_GI", "R_GI": "GI_R",
-    "N_NG": "NG_N", "NG_N": "N_NG",
-    "C_T": "T_C", "T_C": "C_T",
-}
+TONE_TAGS = ["TONE_NGANG", "TONE_HUYEN", "TONE_SAC", "TONE_HOI", "TONE_NGA", "TONE_NANG"]
+
+
+def tag_between(src: str, dst: str, lexicon: set[str] | None = None) -> str | None:
+    """Nhãn nào biến src thành dst? None nếu bộ nhãn không biểu diễn được.
+
+    Thay cho bảng INVERSE_TAG tĩnh trước đây. Với nhãn đặt-thanh thì nghịch
+    đảo không cố định — nó phụ thuộc thanh gốc của từ đúng — nên phải tra chứ
+    không tra bảng được. Hàm này cũng chính là thứ evaluate.py cần để biết một
+    cặp (sai, đúng) có nằm trong tầm với của model hay không.
+    """
+    if src == dst:
+        return "KEEP"
+    for tag in applicable_tags(src, lexicon):
+        if tag != "KEEP" and TAGS[tag](src) == dst:
+            return tag
+    return None
 
 
 def applicable_tags(syllable: str, lexicon: set[str] | None = None) -> list[str]:
@@ -259,10 +272,11 @@ def applicable_tags(syllable: str, lexicon: set[str] | None = None) -> list[str]
             return
         out.append(name)
 
-    if tone and tone[0] == HOI:
-        consider("HOI_NGA")
-    if tone and tone[0] == NGA:
-        consider("NGA_HOI")
+    # Mọi thanh khác thanh hiện tại đều là ứng viên. Từ điển lọc phần vô nghĩa.
+    if tone is not None:
+        for t, name in enumerate(TONE_TAGS):
+            if t != tone[0]:
+                consider(name)
 
     if init == "l": consider("L_N")
     if init == "n": consider("N_L")

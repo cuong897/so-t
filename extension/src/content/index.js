@@ -13,13 +13,26 @@
   window.__soatLoaded = true;
 
   const base = chrome.runtime.getURL('');
-  const [engine, targets, hl, replacer, tip] = await Promise.all([
+  const [engine, targets, hl, replacer, tip, onnx] = await Promise.all([
     import(base + 'src/engine/ruleEngine.js'),
     import(base + 'src/content/targets.js'),
     import(base + 'src/content/highlighter.js'),
     import(base + 'src/content/replace.js'),
     import(base + 'src/content/tooltip.js'),
+    import(base + 'src/engine/onnxEngine.js'),
   ]);
+
+  // Tầng 3. Nạp nền, không chặn gì cả: nếu chưa có file model thì load()
+  // thất bại êm và check() trả mảng rỗng — tầng luật vẫn chạy bình thường.
+  const model = new onnx.OnnxEngine();
+  model.load({
+    ort: base + 'vendor/ort.webgpu.mjs',
+    wasmDir: base + 'vendor/',
+    model: base + 'models/soat.int8.onnx',
+    tokenizer: base + 'models/tokenizer.json',
+    lexicon: base + 'models/lexicon.json',
+    meta: base + 'models/soat.meta.json',
+  });
 
   // -------------------------------------------------------------------------
   // Kiểu gạch chân. Phải nằm ở stylesheet của TRANG, không phải shadow DOM,
@@ -81,7 +94,7 @@
   function sessionFor(el) {
     let s = sessions.get(el);
     if (!s) {
-      s = { kind: targets.kindOf(el), issues: [], placed: [], map: null, timer: 0 };
+      s = { kind: targets.kindOf(el), issues: [], placed: [], map: null, timer: 0, seq: 0 };
       sessions.set(el, s);
     }
     return s;
@@ -106,12 +119,30 @@
       return;
     }
 
-    const issues = engine.checkText(text, { ignored });
-    s.issues = issues;
+    // Tầng luật chạy đồng bộ và vẽ ngay — người dùng thấy kết quả tức thì.
+    const ruleIssues = engine.checkText(text, { ignored });
+    s.issues = ruleIssues;
     s.map = map;
-    s.placed = hl.paint(el, s.kind, issues, map);
+    s.placed = hl.paint(el, s.kind, ruleIssues, map);
+    if (ruleIssues.length) bump('shown');
 
-    if (issues.length) bump('shown');
+    if (!model.ready) return;
+
+    // Tầng model chạy sau, gộp vào rồi vẽ lại. Luật thắng khi chồng lấn vì
+    // độ tin cậy cao hơn — dedupe() lo việc đó.
+    const token = ++s.seq;
+    model.check(text).then((modelIssues) => {
+      if (token !== s.seq || !el.isConnected) return;   // văn bản đã đổi
+      if (modelIssues.length === 0) return;
+
+      const merged = engine.dedupe([...ruleIssues, ...modelIssues])
+        .filter((i) => !ignored.has(i.original.toLowerCase()));
+      if (merged.length === ruleIssues.length) return;
+
+      s.issues = merged;
+      s.placed = hl.paint(el, s.kind, merged, map);
+      bump('shown');
+    }).catch(() => { /* model hỏng thì im lặng, tầng luật vẫn còn */ });
   }
 
   function schedule(el) {
