@@ -1,0 +1,40 @@
+{
+  "manifest_version": 3,
+  "name": "Soát — kiểm tra chính tả tiếng Việt",
+  "version": "0.1.0",
+  "description": "Bắt lỗi hỏi/ngã, ch-tr, s-x ngay trong ô nhập liệu. Chạy hoàn toàn trên máy bạn, không gửi dữ liệu đi đâu.",
+
+  "permissions": ["storage", "activeTab"],
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content/index.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+
+  "web_accessible_resources": [
+    {
+      "resources": ["src/engine/*.js", "src/content/*.js", "models/*"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_title": "Soát"
+  },
+
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+
+  "icons": {
+    "16": "icons/16.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "soat",
+  "version": "0.1.0",
+  "description": "Kiểm tra chính tả tiếng Việt chạy trên máy người dùng — tập trung vào lỗi hỏi/ngã",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\"",
+    "dev": "python -m http.server 8777"
+  }
+}

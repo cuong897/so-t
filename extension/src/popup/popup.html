@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    width: 300px; margin: 0; padding: 16px;
+    font: 400 13px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #fff; color: #1a1a1a;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: #202124; color: #e8eaed; }
+    .stat { background: #2d2e31; }
+    .muted { color: #9aa0a6; }
+    .row { border-color: #3c4043; }
+  }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .muted { color: #5f6368; font-size: 12px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 14px 0; }
+  .stat { background: #f1f3f4; border-radius: 8px; padding: 10px 12px; }
+  .stat .n { font-size: 20px; font-weight: 600; }
+  .stat .k { font-size: 11px; color: #5f6368; }
+  @media (prefers-color-scheme: dark) { .stat .k { color: #9aa0a6; } }
+  .row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 0; border-top: 1px solid #e8eaed;
+  }
+  .tags { margin: 8px 0 0; }
+  .tag { display: flex; justify-content: space-between; padding: 3px 0; font-size: 12px; }
+  .bar { height: 4px; background: #1a73e8; border-radius: 2px; margin-top: 2px; }
+  label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .privacy { font-size: 11px; color: #5f6368; margin-top: 12px; line-height: 1.45; }
+  .empty { color: #5f6368; font-size: 12px; padding: 18px 0; text-align: center; }
+</style>
+</head>
+<body>
+  <h1>Soát</h1>
+  <div class="muted">Tuần này</div>
+
+  <div class="grid">
+    <div class="stat"><div class="n" id="shown">0</div><div class="k">lỗi được chỉ ra</div></div>
+    <div class="stat"><div class="n" id="accepted">0</div><div class="k">bạn đã sửa</div></div>
+  </div>
+
+  <div id="tags" class="tags"></div>
+  <div id="empty" class="empty" hidden>Chưa có dữ liệu. Cứ gõ bình thường, Soát sẽ tự chạy.</div>
+
+  <div class="row">
+    <label><input type="checkbox" id="enabled" checked> Bật trên mọi trang</label>
+  </div>
+
+  <div class="privacy">
+    Mọi xử lý diễn ra trên máy bạn. Extension không gửi nội dung bạn gõ đi bất
+    cứ đâu — chỉ đếm số lỗi theo nhóm, lưu ngay trong trình duyệt.
+  </div>
+
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

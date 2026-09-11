@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Soát — sân thử</title>
+<style>
+  body {
+    font: 400 15px/1.6 -apple-system, "Segoe UI", Roboto, sans-serif;
+    max-width: 760px; margin: 32px auto; padding: 0 20px; color: #1a1a1a;
+  }
+  h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+  .muted { color: #666; font-size: 13px; }
+  section { margin: 28px 0; }
+  label { display: block; font-size: 13px; color: #444; margin-bottom: 6px; font-weight: 500; }
+  textarea, .editor {
+    width: 100%; box-sizing: border-box; font: inherit;
+    padding: 12px 14px; border: 1px solid #ccc; border-radius: 8px;
+    min-height: 96px; background: #fff;
+  }
+  .editor { white-space: pre-wrap; }
+  textarea:focus, .editor:focus { outline: 2px solid #1a73e8; outline-offset: -1px; }
+  /* Các ô bên dưới PHẢI bị bỏ qua hoàn toàn */
+  .danger { background: #fff6f6; }
+  pre#log {
+    background: #f6f8fa; padding: 12px; border-radius: 8px;
+    font: 12px/1.5 ui-monospace, Menlo, Consolas, monospace;
+    max-height: 220px; overflow: auto; white-space: pre-wrap;
+  }
+  ::highlight(soat-high) {
+    text-decoration: underline wavy #d93025;
+    text-decoration-skip-ink: none; text-underline-offset: 3px;
+  }
+  ::highlight(soat-low) {
+    text-decoration: underline wavy #e8a33d;
+    text-decoration-skip-ink: none; text-underline-offset: 3px;
+  }
+  [data-soat-overlay] .soat-u-high { border-bottom: 2px solid #d93025; }
+  [data-soat-overlay] .soat-u-low  { border-bottom: 2px solid #e8a33d; }
+</style>
+</head>
+<body>
+  <h1>Soát — sân thử</h1>
+  <p class="muted">Trang này nạp thẳng engine và tầng DOM, không cần cài extension.
+  Dùng để kiểm chứng phần gạch chân và phần thay chuỗi trong trình duyệt thật.</p>
+
+  <section>
+    <label for="ta">textarea — dùng lớp phủ mirror</label>
+    <textarea id="ta">Cả nhóm đã nổ lực rất nhiều, mình xin chia sẽ lại một vài trãi nghiệm để mọi người dành được kết quả tốt hơn. Đội tuyển đã dành chiến thắng.</textarea>
+  </section>
+
+  <section>
+    <label for="ce">contenteditable — dùng CSS Custom Highlight API</label>
+    <div id="ce" class="editor" contenteditable="true">Tôi thích đọc chuyện tranh và suy nghỉ về những câu truyện cũ. Xin chân trọng cảm ơn.</div>
+  </section>
+
+  <section>
+    <label>Các ô sau PHẢI bị bỏ qua</label>
+    <input class="danger" type="password" placeholder="mật khẩu" value="nổ lực chia sẽ trãi nghiệm">
+    <br><br>
+    <input class="danger" type="text" name="search" placeholder="tìm kiếm" value="nổ lực chia sẽ trãi nghiệm">
+    <br><br>
+    <div class="danger CodeMirror" contenteditable="true">const nổLực = "chia sẽ trãi nghiệm";</div>
+  </section>
+
+  <section>
+    <label>Kết quả kiểm chứng</label>
+    <pre id="log">đang chạy…</pre>
+  </section>
+
+<script type="module">
+import { checkText, RULE_STATS } from '../extension/src/engine/ruleEngine.js';
+import * as targets from '../extension/src/content/targets.js';
+import * as hl from '../extension/src/content/highlighter.js';
+import { applyFix } from '../extension/src/content/replace.js';
+
+const log = [];
+const say = (s) => { log.push(s); document.getElementById('log').textContent = log.join('\n'); };
+
+say(`bộ luật: ${RULE_STATS.phrases} cụm, ${RULE_STATS.contextPairs} cặp ngữ cảnh`);
+say(`Custom Highlight API: ${hl.supportsHighlightAPI ? 'có' : 'KHÔNG (sẽ không gạch chân được contenteditable)'}`);
+
+// --- kiểm tra tầng lọc ô nhạy cảm -----------------------------------------
+const shouldSkip = [...document.querySelectorAll('.danger')];
+const leaked = shouldSkip.filter((el) => targets.isEligible(el));
+say(`ô nhạy cảm bị lọt: ${leaked.length}  ${leaked.length ? '<-- LỖI' : '(đúng)'}`);
+
+const ta = document.getElementById('ta');
+const ce = document.getElementById('ce');
+say(`textarea hợp lệ: ${targets.isEligible(ta)} | contenteditable hợp lệ: ${targets.isEligible(ce)}`);
+
+// --- vẽ gạch chân ----------------------------------------------------------
+const sessions = new Map();
+
+function run(el) {
+  const kind = targets.kindOf(el);
+  let text, map = null;
+  if (kind === 'contenteditable') { map = hl.collectTextNodes(el); text = map.text; }
+  else text = el.value;
+
+  const issues = checkText(text);
+  const placed = hl.paint(el, kind, issues, map);
+  sessions.set(el, { kind, issues, placed, map });
+  return { issues, placed };
+}
+
+const r1 = run(ta);
+say(`textarea: tìm thấy ${r1.issues.length} lỗi, vẽ được ${r1.placed.length}`);
+say('  ' + r1.issues.map((i) => `${i.original}->${i.suggestion}`).join(', '));
+
+const r2 = run(ce);
+say(`contenteditable: tìm thấy ${r2.issues.length} lỗi, vẽ được ${r2.placed.length}`);
+say('  ' + r2.issues.map((i) => `${i.original}->${i.suggestion}`).join(', '));
+
+// --- kiểm tra toạ độ: mỗi issue phải có rect nhìn thấy được ---------------
+const noRect = [...r1.placed, ...r2.placed].filter((p) => {
+  const r = hl.rectOf(p);
+  return !r || (r.width === 0 && r.height === 0);
+});
+say(`issue không lấy được toạ độ: ${noRect.length}  ${noRect.length ? '<-- LỖI' : '(đúng)'}`);
+
+// --- kiểm tra thay chuỗi ---------------------------------------------------
+window.__testFix = () => {
+  const s = sessions.get(ta);
+  const before = ta.value;
+  applyFix(ta, 'input', s.placed[0].issue, null);
+  const after = ta.value;
+  say(`thay chuỗi textarea: ${before === after ? 'KHÔNG ĐỔI <-- LỖI' : 'ok'}`);
+  say(`  -> ${after.slice(0, 60)}...`);
+  run(ta);
+  return after;
+};
+
+document.getElementById('ta').addEventListener('input', () => run(ta));
+document.getElementById('ce').addEventListener('input', () => run(ce));
+
+say('sẵn sàng. gọi __testFix() để thử thay chuỗi.');
+</script>
+</body>
+</html>
