@@ -3,6 +3,8 @@
 torch>=2.4
 transformers>=4.44
 onnx>=1.16
+# torch 2.13 dùng exporter dynamo, bắt buộc phải có onnxscript
+onnxscript>=0.7
 onnxruntime>=1.19
 numpy>=1.26
 # PhoBERT dùng tokenizer BPE cần sentencepiece

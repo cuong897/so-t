@@ -32,6 +32,37 @@ import vi
 OPSET = 14
 
 
+def total_size_mb(onnx_path: Path) -> float:
+    """Kích thước THẬT, tính cả file trọng số ngoài.
+
+    torch.onnx.export bản mới tách tensor lớn ra `<tên>.onnx.data`, nên file
+    .onnx còn lại chỉ là phần vỏ vài trăm KB. Đo mỗi phần vỏ sẽ cho ra kết
+    luận ngược hẳn sự thật — bản đầu của script này báo "INT8 to hơn fp32".
+    """
+    size = onnx_path.stat().st_size
+    for sibling in onnx_path.parent.glob(onnx_path.name + ".data*"):
+        size += sibling.stat().st_size
+    return size / 1e6
+
+
+def assert_self_contained(onnx_path: Path) -> None:
+    """Model đem ship BẮT BUỘC phải tự chứa — không tham chiếu file ngoài.
+
+    Thiếu file .data thì onnxruntime báo lỗi lúc nạp, mà lỗi đó chỉ xuất hiện
+    trên máy người dùng chứ không xuất hiện lúc build.
+    """
+    import onnx
+
+    model = onnx.load(str(onnx_path), load_external_data=False)
+    external = [t.name for t in model.graph.initializer
+                if t.HasField("data_location")
+                and t.data_location == onnx.TensorProto.EXTERNAL]
+    if external:
+        raise SystemExit(
+            f"{onnx_path.name} còn tham chiếu {len(external)} tensor ngoài "
+            f"(vd {external[0]}) — không đem ship được.")
+
+
 def export(model_dir: Path, out_path: Path, max_len: int) -> None:
     model = AutoModelForTokenClassification.from_pretrained(model_dir)
     model.eval()
@@ -55,14 +86,16 @@ def export(model_dir: Path, out_path: Path, max_len: int) -> None:
         opset_version=OPSET,
         do_constant_folding=True,
     )
-    print(f"ONNX fp32 -> {out_path}  ({out_path.stat().st_size / 1e6:.1f} MB)")
+    print(f"ONNX fp32 -> {out_path}  ({total_size_mb(out_path):.1f} MB "
+          f"kể cả file trọng số ngoài)")
 
 
 def quantize(src: Path, dst: Path) -> None:
     from onnxruntime.quantization import QuantType, quantize_dynamic
 
     quantize_dynamic(str(src), str(dst), weight_type=QuantType.QInt8)
-    print(f"ONNX int8 -> {dst}  ({dst.stat().st_size / 1e6:.1f} MB)")
+    assert_self_contained(dst)
+    print(f"ONNX int8 -> {dst}  ({total_size_mb(dst):.1f} MB, tự chứa)")
 
 
 def bench(onnx_path: Path, tokenizer, n: int = 60, max_len: int = 64) -> dict:
@@ -120,8 +153,8 @@ def main() -> None:
 
     report = {
         "tags": vi.TAG_NAMES,
-        "size_fp32_mb": round(fp32.stat().st_size / 1e6, 1),
-        "size_int8_mb": round(int8.stat().st_size / 1e6, 1),
+        "size_fp32_mb": round(total_size_mb(fp32), 1),
+        "size_int8_mb": round(total_size_mb(int8), 1),
     }
     report["size_ratio"] = round(report["size_fp32_mb"] / report["size_int8_mb"], 1)
 
