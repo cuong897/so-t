@@ -316,7 +316,10 @@ export function applicableTags(syllable, lexicon = null) {
 // Tách token có giữ vị trí
 // ---------------------------------------------------------------------------
 
-const WORD_RE = /[\p{L}\p{M}\d_]+/gu;
+// Chỉ chữ cái và dấu phụ — cố tình không lấy chữ số và gạch dưới, để khớp
+// đúng với ml/vi.py (Python `re` không có \p{L}). Lệch tokenizer giữa lúc
+// train và lúc chạy là lỗi im lặng, rất khó truy.
+const WORD_RE = /[\p{L}\p{M}]+/gu;
 
 /**
  * Tách văn bản thành token kèm offset gốc.

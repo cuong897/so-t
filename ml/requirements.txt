@@ -1,0 +1,10 @@
+# Train + xuất ONNX. Cài torch theo CUDA của máy bạn:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu124
+torch>=2.4
+transformers>=4.44
+onnx>=1.16
+onnxruntime>=1.19
+numpy>=1.26
+# PhoBERT dùng tokenizer BPE cần sentencepiece
+sentencepiece>=0.2
+protobuf>=4.25
