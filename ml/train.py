@@ -149,7 +149,9 @@ def main() -> None:
     ap.add_argument("--hidden", type=int, default=None, help="hidden size của học trò")
     ap.add_argument("--epochs", type=int, default=3)
     ap.add_argument("--batch", type=int, default=32)
-    ap.add_argument("--lr", type=float, default=3e-5)
+    ap.add_argument("--lr", type=float, default=None,
+                    help="mặc định tự chọn: 3e-5 khi fine-tune model đã "
+                         "pretrain, 3e-4 khi học trò khởi tạo ngẫu nhiên")
     ap.add_argument("--max-len", type=int, default=96)
     ap.add_argument("--limit", type=int, default=0, help="chỉ dùng N mẫu train đầu")
     ap.add_argument("--amp", action="store_true", default=True,
@@ -178,7 +180,28 @@ def main() -> None:
 
     model = build_model(args, len(vi.TAG_NAMES)).to(device)
     n_params = sum(p.numel() for p in model.parameters())
-    print(f"tham số: {n_params / 1e6:.1f}M")
+    from_scratch = bool(args.layers or args.hidden)
+
+    # Bảng embedding chiếm phần lớn học trò và KHÔNG nhỏ đi theo số tầng —
+    # nó tỷ lệ với vocab (64k) nhân hidden. Cắt tầng gần như không giảm được
+    # kích thước file; muốn nhỏ thì phải giảm hidden.
+    emb = model.get_input_embeddings().weight.numel()
+    print(f"tham số: {n_params / 1e6:.1f}M  "
+          f"(embedding {emb / 1e6:.1f}M = {emb / n_params:.0%})")
+
+    # Học trò dựng bằng from_config nên khởi tạo NGẪU NHIÊN, tức là train từ
+    # đầu chứ không phải fine-tune. 3e-5 là mức cho fine-tune; để nguyên nó ở
+    # đây thì model gần như không học được gì mà vẫn ngốn đủ số giờ GPU, và
+    # loss vẫn giảm đủ đẹp để không ai nghi ngờ.
+    if args.lr is None:
+        args.lr = 3e-4 if from_scratch else 3e-5
+        print(f"learning rate: {args.lr:g} "
+              f"({'khởi tạo ngẫu nhiên' if from_scratch else 'fine-tune'}, tự chọn)")
+    else:
+        print(f"learning rate: {args.lr:g} (do người dùng đặt)")
+        if from_scratch and args.lr < 1e-4:
+            print("  CẢNH BÁO: học trò khởi tạo ngẫu nhiên mà lr < 1e-4 "
+                  "thì thường không hội tụ kịp.")
 
     teacher = None
     if args.teacher:
