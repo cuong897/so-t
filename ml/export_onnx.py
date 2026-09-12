@@ -29,7 +29,10 @@ from transformers import AutoModelForTokenClassification, AutoTokenizer
 
 import vi
 
-OPSET = 14
+#: RoBERTa/PhoBERT dùng LayerNormalization, toán tử chỉ có từ opset 17.
+#: Đặt thấp hơn thì torch.onnx nuốt lỗi hạ phiên bản và vẫn xuất ở opset 18 —
+#: tức hằng số này sẽ nói dối. Đặt đúng 18 và kiểm tra lại sau khi xuất.
+OPSET = 18
 
 
 def total_size_mb(onnx_path: Path) -> float:
@@ -63,6 +66,14 @@ def assert_self_contained(onnx_path: Path) -> None:
             f"(vd {external[0]}) — không đem ship được.")
 
 
+def actual_opset(onnx_path: Path) -> int:
+    """Opset THẬT của file, không phải opset đã yêu cầu."""
+    import onnx
+
+    m = onnx.load(str(onnx_path), load_external_data=False)
+    return max((o.version for o in m.opset_import if not o.domain), default=-1)
+
+
 def export(model_dir: Path, out_path: Path, max_len: int) -> None:
     model = AutoModelForTokenClassification.from_pretrained(model_dir)
     model.eval()
@@ -86,8 +97,11 @@ def export(model_dir: Path, out_path: Path, max_len: int) -> None:
         opset_version=OPSET,
         do_constant_folding=True,
     )
+    actual = actual_opset(out_path)
+    if actual != OPSET:
+        print(f"  CHÚ Ý: yêu cầu opset {OPSET} nhưng xuất ra opset {actual}")
     print(f"ONNX fp32 -> {out_path}  ({total_size_mb(out_path):.1f} MB "
-          f"kể cả file trọng số ngoài)")
+          f"kể cả file trọng số ngoài, opset {actual})")
 
 
 def quantize(src: Path, dst: Path) -> None:
@@ -170,6 +184,7 @@ def main() -> None:
         "size_int8_mb": round(total_size_mb(int8), 1),
     }
     report["size_ratio"] = round(report["size_fp32_mb"] / report["size_int8_mb"], 1)
+    report["opset"] = actual_opset(int8)
 
     if not args.skip_bench:
         report["bench_fp32"] = bench(fp32, tokenizer)
