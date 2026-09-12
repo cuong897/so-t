@@ -264,3 +264,59 @@ cùng cách chia.
 
 **Vì sao đáng làm dù không ai kiểm tra:** đây chính là chỗ nhiều đồ án sinh viên
 gian lận một cách vô thức, và là chỗ người phỏng vấn giỏi sẽ hỏi đúng vào.
+
+---
+
+### 16. Ablation: đo phân bố đáng +9,2 điểm F1
+
+Cùng checkpoint epoch 0, cùng lệnh, cùng 1.500 câu VSEC giữ kín. Khác đúng một
+thứ: trọng số lớp lỗi là **đoán** hay **đo**.
+
+| Trong tầm | Đoán | Đo | Chênh |
+|---|---|---|---|
+| Precision | 0,8652 | 0,8953 | +3,0 |
+| Recall | 0,6830 | 0,8191 | **+13,6** |
+| F1 | 0,7634 | 0,8556 | **+9,2** |
+
+Precision **cũng** tăng. Nếu chỉ recall tăng còn precision giảm thì đó chỉ là
+model trở nên mạnh dạn hơn; cả hai cùng tăng nghĩa là nó học được thứ đúng hơn.
+
+**Phát hiện quan trọng hơn cả con số:**
+
+| Đo trên | Đoán | Đo | |
+|---|---|---|---|
+| Dev tự sinh | 0,9288 | 0,9065 | −2,2 |
+| VSEC thật, giữ kín | 0,7634 | 0,8556 | +9,2 |
+
+Trên dev tự sinh, model mới **tệ hơn**. Trên lỗi người thật, **tốt hơn rõ rệt**.
+
+Benchmark tự sinh không chỉ nói dối — nó nói dối **nhiều hơn cho model tệ hơn**,
+vì dev tự sinh luôn khớp với chính phân bố đã dùng để train nó. Chỉ nhìn con số
+đó thì sẽ kết luận ngược hoàn toàn và vứt bỏ đúng thay đổi cần giữ.
+
+---
+
+### 17. Learning rate phải theo kiểu khởi tạo, không để một mặc định
+
+**Lỗi bắt được bằng rà tĩnh, trước khi chạy.** `--lr` mặc định 3e-5 là mức
+fine-tune, nhưng học trò dựng bằng `from_config` nên khởi tạo **ngẫu nhiên** —
+tức train từ đầu, cần 3e-4.
+
+**Vì sao đáng sợ:** ở 3e-5 model gần như không học được gì, nhưng loss vẫn giảm
+đủ đẹp để không ai nghi ngờ. Hai tiếng GPU đổ đi mà không có một dấu hiệu nào.
+
+**Sửa:** lr tự chọn theo kiểu khởi tạo, và cảnh báo nếu người dùng tự đặt lr
+thấp cho học trò.
+
+**Đo thêm được một điều đáng lưu ý:** bảng embedding chiếm 63–84% học trò ở mọi
+cấu hình và **không nhỏ đi theo số tầng** — nó tỷ lệ với vocab 64k nhân hidden.
+
+| Cấu hình | Tổng | Embedding |
+|---|---|---|
+| 4 tầng/768 | 77,7M | 63% |
+| 4 tầng/384 | 31,8M | 77% |
+| 4 tầng/256 | 19,6M | 84% |
+
+Cắt tầng gần như không giảm kích thước file. Muốn nhỏ thì phải giảm `hidden` —
+và cái giá là không copy được trọng số teacher (lệch shape), học trò phải học
+từ đầu.

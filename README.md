@@ -148,9 +148,37 @@ Cần điền sau khi train. Ba nhóm, và nhóm thứ ba mới là nhóm khó b
 
 | Nhóm | Chỉ số | Trạng thái |
 |---|---|---|
-| Chất lượng | P / R / F1 trên tập test, **đối chiếu VSEC** (86.8% phát hiện / 81.5% sửa) | chờ train xong |
-| Hiệu năng | kích thước model, p50/p95 **đo trên máy yếu, 1 luồng** | `export_onnx.py` in sẵn |
+| Chất lượng | P / R / F1 trên VSEC giữ kín | **F1 0,856** (teacher, epoch 0/2) |
+| Hiệu năng | kích thước model, p50/p95 **đo trên máy yếu, 1 luồng** | chờ distil |
 | Sản phẩm | **tỷ lệ chấp nhận gợi ý**, retention D1/D7/D30, tỷ lệ gỡ cài | extension đã đếm |
+
+### Đo phân bố lỗi thật đáng +9,2 điểm F1
+
+Ablation sạch: cùng checkpoint epoch 0, cùng lệnh, cùng 1.500 câu VSEC giữ kín.
+Khác đúng một thứ — trọng số lớp lỗi là **đoán** hay **đo**.
+
+| Trong tầm | Đoán | Đo | Chênh |
+|---|---|---|---|
+| Precision | 0,8652 | **0,8953** | +3,0 |
+| Recall | 0,6830 | **0,8191** | **+13,6** |
+| F1 | 0,7634 | **0,8556** | **+9,2** |
+
+Precision **cũng** tăng chứ không phải đánh đổi lấy recall — tức model học được
+thứ đúng hơn, không phải chỉ trở nên mạnh dạn hơn.
+
+### Benchmark tự sinh nói dối nhiều hơn cho model tệ hơn
+
+| Đo trên | Đoán | Đo | |
+|---|---|---|---|
+| Dev tự sinh | 0,9288 | 0,9065 | **−2,2** |
+| VSEC thật, giữ kín | 0,7634 | 0,8556 | **+9,2** |
+
+Trên dev tự sinh, model mới **tệ hơn**. Trên lỗi người thật, nó **tốt hơn rõ
+rệt**. Chỉ nhìn dev tự sinh thì sẽ kết luận ngược hoàn toàn và vứt đúng thay đổi
+cần giữ.
+
+Đây là lý do bắt buộc phải có một tập gán nhãn tay, tách riêng, **không bao giờ
+đụng tới khi tinh chỉnh** — và là lý do `mine_errors.py` chia đôi VSEC.
 
 **So với VSEC phải nói rõ phạm vi, không được lặng lẽ chọn con số đẹp.** Bộ nhãn
 chỉ biểu diễn được 54,5% số lỗi trong VSEC; 45,5% còn lại là chèn/xoá ký tự
