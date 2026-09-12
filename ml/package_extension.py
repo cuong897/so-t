@@ -51,14 +51,18 @@ def keep(p: Path) -> bool:
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser()
-    ap.add_argument("--src", type=Path, default=Path("../extension"))
+    # Neo theo vị trí CỦA FILE NÀY, không theo thư mục đang đứng. Mặc định
+    # "../extension" tính theo CWD thì chạy từ gốc repo sẽ đi tìm D:/extension
+    # và báo thiếu toàn bộ file — trông y như extension hỏng.
+    here = Path(__file__).resolve().parent
+    ap.add_argument("--src", type=Path, default=here.parent / "extension")
     ap.add_argument("--out", type=Path, default=None)
     args = ap.parse_args()
 
     src = args.src.resolve()
     manifest = json.loads((src / "manifest.json").read_text(encoding="utf-8"))
     version = manifest["version"]
-    out = args.out or Path(f"../dist/soat-{version}.zip")
+    out = args.out or here.parent / "dist" / f"soat-{version}.zip"
     out = out.resolve()
 
     missing = [r for r in REQUIRED if not (src / r).exists()]

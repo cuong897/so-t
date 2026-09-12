@@ -14,6 +14,10 @@ chạy thử là cách mất hai tuần chờ duyệt để rồi bị trả v�
 python ml/package_extension.py
 ```
 
+*(PowerShell 5.1 không hiểu `&&` — chạy từng lệnh một dòng, hoặc nối bằng `;`.
+Hai script `ml/*.py` neo đường dẫn theo vị trí file nên đứng ở đâu chạy cũng
+được.)*
+
 1. Mở Chrome → gõ `chrome://extensions` vào thanh địa chỉ
 2. Bật **Developer mode** (góc trên bên phải)
 3. Bấm **Load unpacked** → chọn thư mục `extension/`

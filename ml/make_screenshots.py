@@ -138,8 +138,10 @@ def capture(chrome: str, url: str, out: Path, profile: Path) -> None:
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser()
-    ap.add_argument("--root", type=Path, default=Path(".."))
-    ap.add_argument("--out", type=Path, default=Path("../dist/store"))
+    # Neo theo vị trí của file này, không theo thư mục đang đứng.
+    here = Path(__file__).resolve().parent
+    ap.add_argument("--root", type=Path, default=here.parent)
+    ap.add_argument("--out", type=Path, default=here.parent / "dist" / "store")
     ap.add_argument("--port", type=int, default=8799)
     args = ap.parse_args()
 
