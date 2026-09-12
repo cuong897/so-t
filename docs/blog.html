@@ -559,7 +559,7 @@ là recall đẹp ngay.</p>
 <div class="scroll">
 <table>
   <thead>
-    <tr><th>Nhóm</th><th class="num">Trước</th><th class="num">Sau</th></tr>
+    <tr><th>Nhóm</th><th class="num">Trước</th><th class="num">Lần thử đầu</th></tr>
   </thead>
   <tbody>
     <tr><td>d/gi/r</td><td class="num">6,2%</td><td class="num good">24,7%</td></tr>
@@ -572,11 +572,49 @@ là recall đẹp ngay.</p>
 
 <p>Và rồi thước đo cũ lên tiếng: trên VSEC, model mới <strong>tụt 7,2 điểm
 recall</strong>. Fine-tune trên 50% dữ liệu phụ âm đã làm loãng mất lớp thanh
-điệu — lớp chiếm 91% lỗi thật.</p>
+điệu — lớp chiếm 91% lỗi thật. Tôi vừa sửa xong một chỗ yếu bằng cách tạo ra
+một chỗ yếu khác, to hơn.</p>
 
-<p>Đó là chỗ tôi đang đứng lúc viết bài này: một bản train nhẹ tay hơn đang chạy,
-và tôi chưa biết nó có thắng sạch hay không. Nếu không, đây là một đánh đổi thật
-chứ không phải một chiến thắng, và nó phải được ghi lại đúng như vậy.</p>
+<p>Trước khi kết luận, tôi thử một giả thuyết: báo oan tăng là do model mới mạnh
+tay với phụ âm, nên đặt ngưỡng riêng cho từng lớp — thanh điệu lỏng, phụ âm chặt
+— sẽ cứu được. Đo ra 1,60%/1,75%, vẫn cao hơn bản cũ. Giả thuyết sai, <strong>và
+chính cái sai đó mới chỉ đúng chỗ</strong>: báo oan tăng không phải vì phụ âm, mà
+vì phải hạ ngưỡng thanh điệu để bù phần năng lực đã bị pha loãng.</p>
+
+<p>Train lại với 25% thay vì 50%:</p>
+
+<div class="scroll">
+<table>
+  <thead>
+    <tr><th></th><th class="num">Bản cũ</th><th class="num">50% phụ âm</th><th class="num">25% phụ âm</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Recall phụ âm</td><td class="num">25,7%</td><td class="num good">55,8%</td><td class="num good">41,4%</td></tr>
+    <tr><td>Precision VSEC</td><td class="num">0,9550</td><td class="num">0,9591</td><td class="num good">0,9600</td></tr>
+    <tr><td>Recall VSEC</td><td class="num">0,7670</td><td class="num">0,7734</td><td class="num bad">0,7404</td></tr>
+    <tr><td>Báo oan</td><td class="num">1,25%</td><td class="num bad">1,75%</td><td class="num">1,45%</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Đó là bản tôi chọn ship. Báo oan không đổi — 29 câu so với 25 trên 2.000,
+chênh bốn câu nằm gọn trong nhiễu. Recall phụ âm hơn 60% tương đối. Precision
+nhích lên.</p>
+
+<p><strong>Và nó vẫn là một đánh đổi, không phải một chiến thắng.</strong> Recall
+trên VSEC tụt 2,7 điểm: trên một corpus phân bố như đời thật, bản mới bắt được
+<em>ít</em> lỗi hơn bản cũ — 696 so với 721 trên 940.</p>
+
+<p>Tôi chọn nó vì VSEC thu lỗi từ người <em>gõ</em>, còn sản phẩm nhắm người
+<em>không biết viết thế nào</em>. Nếu người dùng thật mắc lỗi đồng âm nhiều hơn
+tỷ lệ VSEC gợi ý — và cả tiền đề sản phẩm đặt cược vào đúng điều đó — thì bản
+mới thắng cho họ. Nếu không thì bản cũ đúng hơn.</p>
+
+<p>Lần này tôi không có thước đo nào để tự phân xử. Đó là một kết luận khó chịu
+để viết ra, nhưng nó là kết luận đúng: <strong>câu hỏi này chỉ người dùng thật
+mới trả lời được.</strong> Extension đã đếm sẵn tỷ lệ chấp nhận gợi ý theo từng
+nhóm lỗi — và tỷ lệ chấp nhận, tình cờ, <em>chính là</em> precision ngoài đời
+thật. Một con số, hai mục đích.</p>
 
 <hr>
 
