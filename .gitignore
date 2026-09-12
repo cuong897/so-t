@@ -24,7 +24,7 @@ dist/
 # Sinh bởi make_screenshots.py từ popup.html thật
 dev/popup-demo.html
 
-# Dữ liệu sinh ra cho đợt cân lại lớp phụ âm — dựng lại bằng
-# ml/dataset.py --class-weights data/class_weights_consonant.json
-ml/data_cons/
-ml/data_ft*/
+# Mọi tập dữ liệu sinh ra — dựng lại bằng ml/dataset.py và ml/mix_datasets.py.
+# Mẫu bao trùm ml/data_* chứ không liệt kê từng thư mục: lần trước liệt kê tay
+# thì data_dgir/ lọt lưới, và một blob 311MB đã từng lọt lưới đúng theo cách đó.
+ml/data_*/
