@@ -18,7 +18,7 @@
 
   "web_accessible_resources": [
     {
-      "resources": ["src/engine/*.js", "src/content/*.js", "models/*"],
+      "resources": ["src/engine/*.js", "src/content/*.js", "models/*", "vendor/*"],
       "matches": ["<all_urls>"]
     }
   ],

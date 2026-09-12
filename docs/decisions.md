@@ -570,3 +570,54 @@ rút từ corpus chỉ chặn được ứng viên không tồn tại; nó khôn
 dạng đều là từ thật** — mà đó đúng là toàn bộ 31 ca oan. Hướng đáng thử tiếp
 là **tỷ lệ tần suất**: nếu dạng gốc phổ biến hơn hẳn dạng đề xuất thì đòi bằng
 chứng mạnh hơn. Chưa làm, và chưa đo.
+
+---
+
+### 24. Tầng model chết im lặng vì thiếu một dòng trong manifest
+
+Cài thật vào Chrome, gõ trên Facebook thật, bằng một câu **cố ý chọn để tầng
+luật không bắt được** (`Hơn một nửa dân số cứ trú...`). Không có gạch chân nào.
+
+Hai lỗi chồng lên nhau, cả hai đều không crash.
+
+**Lỗi 1 — thiếu `vendor/*` trong `web_accessible_resources`.** Khai báo có
+`src/engine/*.js`, `src/content/*.js`, `models/*` — quên `vendor/`. Content
+script gọi `import(base + 'vendor/ort.wasm.bundle.min.mjs')`, Chrome chặn vì
+tài nguyên không web-accessible, `load()` bắt lỗi rồi ghi một dòng `console.warn`,
+và extension chạy tiếp bằng tầng luật như không có chuyện gì.
+
+Hậu quả: extension **vẫn cài được, vẫn gạch chân được, vẫn trông như đang hoạt
+động** — chỉ là tầng model 78 MB không bao giờ sống. Người dùng không có cách
+nào biết.
+
+**Lỗi 2 — không soát lại khi model nạp xong.** `index.js` gọi `model.load()`
+rồi bỏ đó. Người dùng gõ xong trước khi model sẵn sàng thì lần soát cuối đã
+thoát sớm ở `if (!model.ready) return`, và không có gì chạy lại. Sửa bằng cách
+giữ promise rồi soát lại ô đang focus khi nó resolve.
+
+### Vì sao không phép đo nào trước đây thấy
+
+`dev/onnx-test.html` chạy qua `http://localhost`, không qua `chrome-extension://`
+nên **luật web-accessible không áp dụng**. `false_alarm.py` và `evaluate.py` nạp
+model thẳng từ đĩa bằng onnxruntime Python. Cả ba đều chủ động chạy **sau khi**
+model sẵn sàng.
+
+Nghĩa là F1 0,8710, precision 0,9556, báo động giả 0,70–0,85% — tất cả đều đúng,
+và tất cả đều đo một đường dẫn mà **sản phẩm thật không đi qua**. Không con số
+nào trong repo có thể phát hiện chuyện này.
+
+**Bài học, và nó khác với bài học về benchmark tự sinh:** quyết định 16 nói
+_đừng tin thước đo của mình_. Chỗ này nói thêm một tầng — thước đo đúng đến mấy
+cũng chỉ đo được thứ nó chạm tới, và môi trường thật có những ràng buộc không
+môi trường đo nào tái lập: luật web-accessible của Chrome, thứ tự nạp, tốc độ gõ
+của người thật. **Phải cài vào máy thật và dùng thử như người dùng.**
+
+### Bài test đáng giá
+
+`test/manifest.test.mjs` đối chiếu mọi `base + '...'` trong `index.js` với các
+pattern `web_accessible_resources`, cộng thêm danh sách file mà onnxruntime tự
+nối đường dẫn rồi tải lúc chạy — thứ không phép quét tĩnh nào thấy được.
+
+Đã kiểm chứng nó bắt được đúng lỗi này: bỏ `vendor/*` ra khỏi manifest thì 2/4
+test đỏ ngay, kèm tên file thiếu. Một bài test không chứng minh được là nó bắt
+được lỗi thật thì chưa phải bài test.
