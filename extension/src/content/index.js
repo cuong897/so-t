@@ -84,7 +84,22 @@
   let active = null;      // ô đang focus
   let hovered = null;     // { issue, range, node } đang chỉ tới
 
-  const settings = await chrome.storage.local.get(['enabled', 'ignored', 'disabledHosts']);
+  // Chrome VÔ HIỆU HOÁ context của content script cũ mỗi khi extension được cập
+  // nhật hoặc tải lại, nhưng tab đang mở vẫn giữ bản cũ đang chạy. Từ lúc đó
+  // MỌI lời gọi chrome.* trong tab ấy đều ném "Extension context invalidated".
+  //
+  // Đây không phải chuyện chỉ xảy ra lúc phát triển: người dùng thật gặp đúng
+  // tình huống này ở mỗi lần extension tự cập nhật.
+  let dead = false;
+
+  let settings = {};
+  try {
+    settings = await chrome.storage.local.get(['enabled', 'ignored', 'disabledHosts']);
+  } catch {
+    // Context chết trước cả khi khởi tạo xong. Dừng hẳn và im lặng — tab này
+    // giữ bản cũ, lần tải lại trang sẽ nhận bản mới.
+    return;
+  }
   enabled = settings.enabled !== false;
   ignored = new Set(settings.ignored || []);
   if ((settings.disabledHosts || []).includes(location.hostname)) enabled = false;
@@ -96,8 +111,21 @@
   // đời thật của bộ luật. Một con số, hai mục đích.
   // -------------------------------------------------------------------------
 
+  // sendMessage NÉM ĐỒNG BỘ khi context đã chết, nên `.catch()` không đỡ được —
+  // và bump() nằm giữa run(), ngay trước đoạn gọi tầng model. Một lần ném ở đây
+  // cắt đứt luôn phần model phía dưới: tầng luật vẫn vẽ (chạy trước), tầng model
+  // im lặng biến mất. Nhìn y hệt như model hỏng, mà thật ra là dòng đếm thống kê
+  // giết nó.
+  //
+  // Nguyên tắc: đếm thống kê KHÔNG BAO GIỜ được phép làm hỏng việc soát.
   function bump(field, tag) {
-    chrome.runtime.sendMessage({ type: 'stat', field, tag }).catch(() => {});
+    if (dead) return;
+    try {
+      const p = chrome.runtime.sendMessage({ type: 'stat', field, tag });
+      if (p && p.catch) p.catch(() => {});
+    } catch (err) {
+      dead = /context invalidated/i.test(err?.message || '');
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -204,7 +232,13 @@
   async function ignoreWord(el, placed) {
     const word = placed.issue.original.toLowerCase();
     ignored.add(word);
-    await chrome.storage.local.set({ ignored: [...ignored] });
+    try {
+      await chrome.storage.local.set({ ignored: [...ignored] });
+    } catch {
+      // Context chết: không lưu được thì thôi, nhưng vẫn phải bỏ qua từ này
+      // trong phiên hiện tại chứ không được ném ra giữa chừng.
+      dead = true;
+    }
     bump('ignored', placed.issue.tag);
     tip.hide();
     hovered = null;
