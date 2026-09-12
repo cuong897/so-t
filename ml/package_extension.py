@@ -23,7 +23,16 @@ from pathlib import Path
 
 # Thừa trong bản gửi người dùng — chỉ phục vụ test hoặc báo cáo lúc build.
 EXCLUDE_NAMES = {"_parity_cases.json", "soat.report.json", ".DS_Store", "Thumbs.db"}
-EXCLUDE_SUFFIX = {".map", ".pyc"}
+# .data là file trọng số ngoài của bản ONNX fp32 — 311 MB mà lúc chạy không ai
+# đụng tới, vì extension chỉ nạp bản int8. export_onnx.py để nó lại trong
+# extension/models/ sau mỗi lần xuất, nên không loại ở đây thì gói gửi người
+# dùng phồng gấp bốn lần vì một file chết.
+EXCLUDE_SUFFIX = {".map", ".pyc", ".data"}
+EXCLUDE_CONTAINS = (".fp32.",)
+
+# Gói hợp lệ nặng khoảng 95 MB thô. Vượt xa mức này nghĩa là có thứ không nên
+# có lọt vào — chặn ngay thay vì để phát hiện sau khi đã nộp store.
+MAX_RAW_MB = 130
 
 # Thiếu bất kỳ file nào ở đây là sản phẩm hỏng một cách IM LẶNG.
 REQUIRED = [
@@ -45,7 +54,9 @@ REQUIRED = [
 
 
 def keep(p: Path) -> bool:
-    return p.name not in EXCLUDE_NAMES and p.suffix not in EXCLUDE_SUFFIX
+    return (p.name not in EXCLUDE_NAMES
+            and p.suffix not in EXCLUDE_SUFFIX
+            and not any(x in p.name for x in EXCLUDE_CONTAINS))
 
 
 def main() -> None:
@@ -87,6 +98,14 @@ def main() -> None:
             z.write(f, f.relative_to(src).as_posix())
 
     raw = sum(f.stat().st_size for f in files)
+    if raw / 1e6 > MAX_RAW_MB:
+        out.unlink(missing_ok=True)
+        print(f"GÓI QUÁ NẶNG: {raw / 1e6:.1f} MB thô, trần {MAX_RAW_MB} MB.")
+        print("Có file không nên có lọt vào — nặng nhất:")
+        for f in sorted(files, key=lambda x: -x.stat().st_size)[:5]:
+            print(f"  {f.stat().st_size / 1e6:7.1f} MB  {f.relative_to(src).as_posix()}")
+        raise SystemExit(1)
+
     print(f"đã đóng gói -> {out}")
     print(f"  {len(files)} file, {raw / 1e6:.1f} MB thô -> {out.stat().st_size / 1e6:.1f} MB nén")
     if skipped:

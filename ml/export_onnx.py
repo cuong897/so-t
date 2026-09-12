@@ -105,9 +105,27 @@ def export(model_dir: Path, out_path: Path, max_len: int) -> None:
 
 
 def quantize(src: Path, dst: Path) -> None:
+    """per_channel=True: mỗi cột trọng số một hệ số tỷ lệ riêng, thay vì một
+    hệ số chung cho cả ma trận.
+
+    Đo được, không phải theo mặc định của thư viện. Trên 1.500 câu VSEC giữ kín,
+    ở ngưỡng sản phẩm, số lỗi bắt được:
+
+        fp32            755/940
+        INT8 per-tensor 710/940   <- mất 45 ca
+        INT8 per-channel 747/940  <- chỉ còn mất 8
+
+    Cứu 37 trong 45 ca, tốn thêm 0,1 MB.
+
+    Vì sao trước đây không thấy: `evaluate.py` chấm bằng argmax không ngưỡng,
+    và ở đó per-tensor chỉ kém 0,56 điểm F1 — nên quyết định 19 và 21 ghi là
+    lượng tử hoá "gần như miễn phí". Ngưỡng khuếch đại cái giá đó lên gần 9 lần,
+    vì lượng tử hoá làm xác suất tụt xuống dưới 0,9 chứ không làm đổi thứ hạng.
+    """
     from onnxruntime.quantization import QuantType, quantize_dynamic
 
-    quantize_dynamic(str(src), str(dst), weight_type=QuantType.QInt8)
+    quantize_dynamic(str(src), str(dst), weight_type=QuantType.QInt8,
+                     per_channel=True)
     assert_self_contained(dst)
     print(f"ONNX int8 -> {dst}  ({total_size_mb(dst):.1f} MB, tự chứa)")
 

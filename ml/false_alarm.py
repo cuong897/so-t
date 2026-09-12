@@ -42,7 +42,7 @@ from encoding import encode_words, first_subword_index
 from noise import load_lexicon
 
 # Phải khớp onnxEngine.js. Lệch là đo một sản phẩm khác với sản phẩm đang ship.
-PROD_THRESHOLD = 0.90
+PROD_THRESHOLD = 0.95
 PROD_MARGIN = 0.25
 
 

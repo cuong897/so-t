@@ -20,7 +20,15 @@
 import { applicableTags, getTone, TAGS, TAG_NAMES, TONE, tokenize, isWordLike } from './vi.js';
 import { loadTokenizer } from './bpe.js';
 
-const DEFAULT_THRESHOLD = 0.90;
+// 0.95 chứ không phải 0.90, và hai thay đổi này ĐI LIỀN NHAU: lượng tử hoá
+// per-channel trả lại phần xác suất mà per-tensor làm tụt, nên ngưỡng cũ 0.90
+// bỗng trở nên lỏng hơn ý định ban đầu. Nâng lên 0.95 giữ precision đúng mức
+// cũ (0.9550 so với 0.9556) mà vẫn thu thêm 1,2 điểm recall.
+//
+// Đổi một mình per-channel mà quên ngưỡng thì precision tụt xuống 0.9420 —
+// vẫn là đánh đổi hợp lý với nhiều người, nhưng KHÔNG phải đánh đổi mà sản
+// phẩm này chọn.
+const DEFAULT_THRESHOLD = 0.95;
 const DEFAULT_MARGIN = 0.25;   // phải hơn KEEP ít nhất chừng này
 const MAX_LEN = 128;
 

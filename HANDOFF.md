@@ -34,7 +34,7 @@ viên viết khoá luận.
 |---|---|---|---|---|---|
 | Teacher fp32 | 134,4M | 539,4 | 0,9169 | 0,8691 | **0,8924** |
 | 768 fp32 | 77,7M | 311,5 | 0,8966 | 0,8574 | 0,8766 |
-| **768 INT8 ← đang dùng** | 77,7M | **74,8** | **0,9126** | 0,8330 | **0,8710** |
+| **768 INT8 per-channel ← đang dùng** | 77,7M | **78,5** | **0,9126** | 0,8330 | **0,8710** |
 | 384 INT8 | 31,8M | 32,4 | 0,8378 | 0,7309 | 0,7807 |
 
 Trong trình duyệt (bản 768 INT8): nạp 325ms, p50 15,6ms, p95 18,7ms, bắt 4/6
@@ -42,10 +42,14 @@ câu mẫu, **0 báo động giả**.
 
 **Báo động giả trên văn bản viết đúng** (2.000 câu/nguồn, ngưỡng sản phẩm
 0,90/0,25): máy đếm 1,40% (Wikipedia) và 1,20% (VSEC) số câu bị gạch oan; đọc
-tay bỏ những ca model bắt đúng lỗi thật trong văn bản "sạch" thì còn **0,85% và
-0,70%** — khoảng một câu trong 120–140. Ở ngưỡng sản phẩm, P/R trên VSEC giữ
-kín là **0,9556 / 0,7553** (argmax là 0,9126 / 0,8330). Chi tiết: quyết định 23
-và `docs/false_alarm_review.md`.
+tay bỏ những ca model bắt đúng lỗi thật trong văn bản "sạch" thì còn khoảng
+**0,75%** — chừng một câu trong 130. Ở ngưỡng sản phẩm (0,95 / biên 0,25), P/R
+trên VSEC giữ kín là **0,9550 / 0,7670** (argmax là 0,9126 / 0,8330). Chi tiết:
+quyết định 23, 25 và `docs/false_alarm_review.md`.
+
+**Chỗ yếu đã đo, chưa sửa:** recall theo lớp lệch rất nặng — thanh điệu 78,7%
+(682/867) nhưng phụ âm và âm cuối chỉ 38,4% (28/73), riêng `d_gi_r` là 0/8.
+Nguyên nhân: `class_weights.json` cho d/gi/r tổng cộng 0,92%. Xem quyết định 25.
 
 ---
 

@@ -621,3 +621,87 @@ nối đường dẫn rồi tải lúc chạy — thứ không phép quét tĩnh
 Đã kiểm chứng nó bắt được đúng lỗi này: bỏ `vendor/*` ra khỏi manifest thì 2/4
 test đỏ ngay, kèm tên file thiếu. Một bài test không chứng minh được là nó bắt
 được lỗi thật thì chưa phải bài test.
+
+---
+
+### 25. Lượng tử hoá per-channel, và cái giá của INT8 lớn hơn báo cáo cũ 9 lần
+
+Chẩn đoán bằng `diagnose.py` — chia 230 ca bỏ sót ở ngưỡng sản phẩm thành hai
+nhóm có cách sửa khác hẳn nhau:
+
+| | Số ca | Cách sửa |
+|---|---|---|
+| Đoán **đúng** nhãn, chỉ thiếu tự tin | 163 (71%) | ngưỡng / lượng tử hoá — vài phút |
+| Đoán **sai**, hoặc nhãn đúng không nằm trong ứng viên | 67 (29%) | train lại — vài tiếng GPU |
+
+Phần lớn là nhóm thứ nhất, nên trước khi tiêu giờ GPU phải vắt hết nhóm này.
+
+### INT8 per-tensor tốn 45 ca, không phải "gần như miễn phí"
+
+Chạy cùng `diagnose.py` lên bản fp32 để loại trừ nghi phạm:
+
+| Bản | Bắt được (ngưỡng sản phẩm) |
+|---|---|
+| fp32 | 755/940 |
+| INT8 **per-tensor** | 710/940 |
+| INT8 **per-channel** | **747/940** |
+
+Quyết định 19 và 21 ghi INT8 "gần như miễn phí" — **đo bằng argmax không
+ngưỡng**, ở đó nó chỉ kém 0,56 điểm F1. Ở ngưỡng sản phẩm nó tốn **45 ca, tức
+4,8 điểm recall** — gấp gần 9 lần. Lượng tử hoá không làm đổi thứ hạng nhãn,
+nó làm xác suất TỤT; argmax không thấy gì còn ngưỡng thì thấy hết.
+
+Đây là lần thứ hai trong dự án phải sửa lại một kết luận vì nó đo ở chế độ mà
+sản phẩm không chạy. Lần trước là dev tự sinh (quyết định 16), lần này là
+argmax không ngưỡng.
+
+**per-channel cứu 37 trong 45 ca** — mỗi cột trọng số một hệ số tỷ lệ riêng
+thay vì một hệ số chung cho cả ma trận. Loại thêm head phân loại ra khỏi lượng
+tử hoá không thay đổi gì (747 y nguyên), nên bỏ.
+
+### Ngưỡng phải đổi CÙNG LÚC, không thì mất precision
+
+per-channel trả lại phần xác suất mà per-tensor làm tụt, nên ngưỡng 0,90 cũ bỗng
+lỏng hơn ý định ban đầu:
+
+| Cấu hình | P | R | F1 | Báo oan (wiki / VSEC) | Gói nén |
+|---|---|---|---|---|---|
+| per-tensor @0,90 — bản cũ | 0,9556 | 0,7553 | 0,8437 | 1,40% / 1,20% | 49,8 MB |
+| **per-channel @0,95 — đang dùng** | **0,9550** | **0,7670** | **0,8507** | **1,25% / 1,30%** | **58,6 MB** |
+| per-channel @0,90 | 0,9420 | 0,7947 | 0,8621 | 1,45% / 1,50% | 58,6 MB |
+| per-tensor @0,80 | 0,9448 | 0,7830 | 0,8563 | 1,50% / 1,45% | 49,8 MB |
+
+**Chọn hàng 2:** giữ precision đúng mức cũ (0,9550 so với 0,9556) mà hơn 1,2
+điểm recall, và báo oan trên Wikipedia còn giảm. Hai hàng dưới đều mua recall
+bằng precision — đúng thứ quyết định 3 nói không được làm.
+
+**Cái giá phải nói rõ: +8,8 MB gói nén.** Kích thước thô chỉ tăng 0,1 MB, nhưng
+hệ số tỷ lệ theo từng cột làm trọng số khó nén hơn hẳn, và người dùng tải về
+bản nén. Suýt báo "gần như miễn phí" lần nữa vì nhìn nhầm vào con số thô — đúng
+loại sai lầm mà mục trên vừa ghi lại.
+
+### Còn lại: lớp phụ âm, và VSEC không đo được nó
+
+Chia recall theo lớp lỗi thì lộ ra chỗ yếu thật:
+
+| Nhóm | Bắt được |
+|---|---|
+| Thanh điệu (mất dấu, sai dấu, hỏi/ngã) | 682/867 = **78,7%** |
+| Phụ âm và âm cuối (ch/tr, s/x, d/gi/r, n/ng) | 28/73 = **38,4%** |
+
+Trong đó `d_gi_r` — lớp của `dành`/`giành`, ví dụ đầu bảng trong README — bắt
+được **0/8**. Một mình n=8 không kết luận được, nhưng gộp cả nhóm phụ âm thì
+n=73, đủ để tin.
+
+Nguyên nhân nằm ngay trong `class_weights.json`: d/gi/r cộng lại chỉ **0,92%**
+số lỗi sinh ra, `R_GI` và `GI_R` mỗi cái 0,03%. Model gần như không được học.
+
+**Và đây là chỗ tréo ngoe:** trọng số đó ĐÚNG — nó đo từ VSEC, và đo phân bố
+thật đáng +9,2 điểm F1 (quyết định 16). Nhưng VSEC thu lỗi từ người **gõ**, còn
+sản phẩm nhắm người **không biết viết thế nào** (quyết định 14 đã ghi rõ). Phân
+bố đúng cho corpus lại bỏ đói đúng lớp làm nên điểm khác biệt của sản phẩm.
+
+Nên bước tiếp theo không phải "train thêm cho F1 cao hơn", mà là hai việc đi
+kèm nhau: **cân lại trọng số lớp** khi sinh dữ liệu, và **dựng một tập chấm
+riêng cho đồng âm** — vì với n=8, VSEC không thể nói cho biết việc đó có hiệu
+quả hay không.

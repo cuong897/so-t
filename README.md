@@ -163,7 +163,7 @@ l/n/ch/tr/s/x mới có lỗi phụ âm.
 |---|---|---|---|---|---|
 | Teacher fp32 | 134,4M | 539,4 | 0,9169 | 0,8691 | **0,8924** |
 | 768 fp32 | 77,7M | 311,5 | 0,8966 | 0,8574 | 0,8766 |
-| **768 INT8 ← đang dùng** | 77,7M | **74,8** | **0,9126** | 0,8330 | **0,8710** |
+| **768 INT8 per-channel ← đang dùng** | 77,7M | **78,5** | **0,9126** | 0,8330 | **0,8710** |
 | 384 INT8 | 31,8M | 32,4 | 0,8378 | 0,7309 | 0,7807 |
 
 Trong trình duyệt (768 INT8): nạp 325ms, p50 **15,6ms**, p95 **18,7ms**, bắt
@@ -185,8 +185,12 @@ có lỗi**, hai nguồn khác miền:
 
 | Nguồn | Máy đếm | Đọc tay, chỉ tính oan thật |
 |---|---|---|
-| Wikipedia sạch (chưa từng train) | 1,40% số câu | **0,85%** |
-| VSEC nửa giữ kín, câu đã sửa đúng | 1,20% số câu | **0,70%** |
+| Wikipedia sạch (chưa từng train) | 1,25% số câu | ~0,75% |
+| VSEC nửa giữ kín, câu đã sửa đúng | 1,30% số câu | ~0,75% |
+
+*(Số đọc tay ở trên đo trên bản per-tensor @0,90 — 0,85% và 0,70%; bản
+per-channel @0,95 hiện tại có tỷ lệ máy đếm tương đương nên tỷ lệ thật cũng
+xấp xỉ, nhưng chưa đọc tay lại.)*
 
 Khoảng **một câu trong 120–140**. Chênh lệch giữa hai cột là điểm đáng nói:
 **26% số "báo động giả" hoá ra là model bắt đúng lỗi thật trong văn bản được coi
@@ -195,9 +199,10 @@ nên số máy đếm là chặn trên chứ không phải sự thật — cả 
 đọc tay và để nguyên ngữ cảnh trong
 [docs/false_alarm_review.md](docs/false_alarm_review.md).
 
-**Ngưỡng mua được gì:** so với argmax, ngưỡng sản phẩm giảm một nửa số báo oan
-(2,4% → 1,4%) và đẩy precision 0,9126 → **0,9556**, trả giá 7,8 điểm recall
-(0,8330 → 0,7553). Đó mới là cặp số người dùng thật sự thấy.
+**Ngưỡng mua được gì:** so với argmax, ngưỡng sản phẩm (0,95 / biên 0,25) đẩy
+precision 0,9126 → **0,9550** và recall 0,8330 → **0,7670**. Đó mới là cặp số
+người dùng thật sự thấy — `evaluate.py` mặc định chấm bằng argmax không ngưỡng,
+tức năng lực thô.
 
 **Và nâng ngưỡng không phải cách sửa:** trung vị độ tin cậy của các ca oan là
 **0,981**, 12/31 ca ở p ≥ 0,99 — model **tự tin khi sai**. Vặn lên 0,99 thì báo
