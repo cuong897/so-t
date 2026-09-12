@@ -102,7 +102,39 @@ def scope_report(rows: list[dict], lexicon: set[str] | None) -> dict:
 
 # --- B/C. chấm model ----------------------------------------------------------
 
-def predict(model, tok, device, words: list[str], lexicon, max_len: int) -> list[str]:
+def _gate(logit_row, allowed: list[str], token: str,
+          threshold: float, margin: float) -> str:
+    """Chọn nhãn theo ĐÚNG phép quyết định của onnxEngine.js.
+
+    threshold = margin = 0 thì thoái về argmax — tức nếp cũ của file này, và là
+    mặc định, để mọi con số đã báo cáo trước đây vẫn tái lập được y nguyên.
+
+    Khác 0 thì đây là thứ NGƯỜI DÙNG thật sự thấy: softmax chỉ trên tập nhãn
+    hợp lệ, phải vượt ngưỡng VÀ hơn KEEP một biên mới dám báo.
+    """
+    import numpy as np
+
+    z = np.asarray(logit_row, dtype=np.float64)
+    if threshold <= 0 and margin <= 0:
+        return allowed[int(z.argmax())]
+
+    e = np.exp(z - z.max())
+    p = e / e.sum()
+    keep_p = float(p[allowed.index("KEEP")]) if "KEEP" in allowed else 0.0
+
+    best_j, best_p = -1, 0.0
+    for j, t in enumerate(allowed):
+        if t == "KEEP":
+            continue
+        if p[j] > best_p:
+            best_j, best_p = j, float(p[j])
+    if best_j < 0 or best_p < threshold or best_p - keep_p < margin:
+        return "KEEP"
+    return allowed[best_j]
+
+
+def predict(model, tok, device, words: list[str], lexicon, max_len: int,
+            threshold: float = 0.0, margin: float = 0.0) -> list[str]:
     """Dự đoán nhãn cho từng từ, CHẶN trong applicable_tags như lúc chạy thật.
 
     Dùng encode_words chứ không dùng word_ids() của HuggingFace: PhoBERT không
@@ -130,12 +162,13 @@ def predict(model, tok, device, words: list[str], lexicon, max_len: int) -> list
         if len(allowed) <= 1:
             continue
         idxs = [vi.TAG_INDEX[t] for t in allowed]
-        sub = logits[pos, idxs]
-        tags[w] = allowed[int(sub.argmax())]
+        tags[w] = _gate(logits[pos, idxs].cpu().numpy(), allowed, token,
+                        threshold, margin)
     return tags
 
 
-def predict_onnx(sess, tok, words: list[str], lexicon, max_len: int) -> list[str]:
+def predict_onnx(sess, tok, words: list[str], lexicon, max_len: int,
+                 threshold: float = 0.0, margin: float = 0.0) -> list[str]:
     """Bản ONNX của predict().
 
     Cần thiết để trả lời câu hỏi mà export_onnx.py không tự trả lời được:
@@ -164,7 +197,7 @@ def predict_onnx(sess, tok, words: list[str], lexicon, max_len: int) -> list[str
         if len(allowed) <= 1:
             continue
         idxs = [vi.TAG_INDEX[t] for t in allowed]
-        tags[w] = allowed[int(np.argmax(logits[pos, idxs]))]
+        tags[w] = _gate(logits[pos, idxs], allowed, token, threshold, margin)
     return tags
 
 
@@ -216,6 +249,12 @@ def main() -> None:
     ap.add_argument("--vsec", type=Path, default=Path("data/raw/VSEC.jsonl"))
     ap.add_argument("--lexicon", type=Path, default=Path("data/lexicon.tsv"))
     ap.add_argument("--max-len", type=int, default=128)
+    ap.add_argument("--threshold", type=float, default=0.0,
+                    help="ngưỡng tin cậy như onnxEngine.js (sản phẩm: 0.90). "
+                         "0 = argmax không ngưỡng, tức NĂNG LỰC THÔ của model "
+                         "chứ không phải thứ người dùng thấy")
+    ap.add_argument("--margin", type=float, default=0.0,
+                    help="biên phải hơn KEEP (sản phẩm: 0.25)")
     ap.add_argument("--limit", type=int, default=0, help="chỉ chấm N câu đầu")
     ap.add_argument("--held-out", action="store_true",
                     help="chỉ chấm nửa VSEC mà mine_errors.py không đụng tới. "
@@ -269,7 +308,8 @@ def main() -> None:
                                     providers=["CPUExecutionProvider"])
         print(f"\nmodel: {args.onnx}  "
               f"{args.onnx.stat().st_size / 1e6:.1f} MB  (onnxruntime, 1 luồng CPU)")
-        fn = lambda words: predict_onnx(sess, tok, words, lexicon, args.max_len)
+        fn = lambda words: predict_onnx(sess, tok, words, lexicon, args.max_len,
+                                        args.threshold, args.margin)
     else:
         import torch
         from transformers import AutoModelForTokenClassification
@@ -279,7 +319,8 @@ def main() -> None:
                  .from_pretrained(args.model).to(device).eval())
         n_params = sum(p.numel() for p in model.parameters())
         print(f"\nmodel: {args.model}  {n_params / 1e6:.1f}M tham số  ({device})")
-        fn = lambda words: predict(model, tok, device, words, lexicon, args.max_len)
+        fn = lambda words: predict(model, tok, device, words, lexicon, args.max_len,
+                                   args.threshold, args.margin)
 
     print("\n=== B. TRONG TẦM (so sánh công bằng) ===")
     b = score(rows, fn, scoped=True, lexicon=lexicon)
@@ -297,7 +338,8 @@ def main() -> None:
     Path("out").mkdir(exist_ok=True)
     Path("out/eval.json").write_text(json.dumps(
         {"scope": {k: v for k, v in sc.items() if k != "by_tag"},
-         "in_scope": b, "full": c, "model": str(args.onnx or args.model)},
+         "in_scope": b, "full": c, "model": str(args.onnx or args.model),
+         "threshold": args.threshold, "margin": args.margin},
         ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     print("\nđã lưu -> out/eval.json")
 

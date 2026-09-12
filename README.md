@@ -175,6 +175,41 @@ lượng tử hoá cắt đi những dự đoán ở vùng ranh giới, vốn ph
 Còn thiếu — và là nhóm khó bịa nhất: **tỷ lệ chấp nhận gợi ý**, retention
 D1/D7/D30, tỷ lệ gỡ cài. Extension đã đếm sẵn, chỉ chờ người dùng thật.
 
+### Báo động giả trên văn bản viết đúng
+
+Mọi con số trên đây đo trên câu **có sẵn lỗi**, bằng **argmax không ngưỡng**.
+Người dùng thì sống với câu hỏi ngược lại: *tôi viết đúng, bao lâu một lần thì
+nó gạch chân oan?* `false_alarm.py` dựng lại đúng phép quyết định của
+`onnxEngine.js` (p ≥ 0,90 và hơn KEEP ≥ 0,25) rồi chạy trên 2.000 câu **không
+có lỗi**, hai nguồn khác miền:
+
+| Nguồn | Máy đếm | Đọc tay, chỉ tính oan thật |
+|---|---|---|
+| Wikipedia sạch (chưa từng train) | 1,40% số câu | **0,85%** |
+| VSEC nửa giữ kín, câu đã sửa đúng | 1,20% số câu | **0,70%** |
+
+Khoảng **một câu trong 120–140**. Chênh lệch giữa hai cột là điểm đáng nói:
+**26% số "báo động giả" hoá ra là model bắt đúng lỗi thật trong văn bản được coi
+là sạch** (`cứ trú`→`cư trú`, `nỗi danh`→`nổi danh`). Văn bản sạch không sạch,
+nên số máy đếm là chặn trên chứ không phải sự thật — cả 54 lần gạch chân được
+đọc tay và để nguyên ngữ cảnh trong
+[docs/false_alarm_review.md](docs/false_alarm_review.md).
+
+**Ngưỡng mua được gì:** so với argmax, ngưỡng sản phẩm giảm một nửa số báo oan
+(2,4% → 1,4%) và đẩy precision 0,9126 → **0,9556**, trả giá 7,8 điểm recall
+(0,8330 → 0,7553). Đó mới là cặp số người dùng thật sự thấy.
+
+**Và nâng ngưỡng không phải cách sửa:** trung vị độ tin cậy của các ca oan là
+**0,981**, 12/31 ca ở p ≥ 0,99 — model **tự tin khi sai**. Vặn lên 0,99 thì báo
+oan còn 0,60% nhưng recall rơi xuống 0,5862. Chỗ oan tập trung ở tên riêng,
+thuật ngữ chuyên ngành và từ thường gặp trong ngữ cảnh lạ — tức chỗ **cả hai
+dạng đều là từ thật**, đúng nơi từ điển bó tay.
+
+```bash
+cd ml && python false_alarm.py --limit 2000
+python evaluate.py --onnx ../extension/models/soat.int8.onnx                    --tokenizer out/student768 --held-out --limit 1500                    --threshold 0.9 --margin 0.25
+```
+
 ### Đo phân bố lỗi thật đáng +9,2 điểm F1
 
 Ablation sạch: cùng checkpoint epoch 0, cùng lệnh, cùng 1.500 câu VSEC giữ kín.

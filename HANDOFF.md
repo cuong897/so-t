@@ -40,6 +40,13 @@ viên viết khoá luận.
 Trong trình duyệt (bản 768 INT8): nạp 325ms, p50 15,6ms, p95 18,7ms, bắt 4/6
 câu mẫu, **0 báo động giả**.
 
+**Báo động giả trên văn bản viết đúng** (2.000 câu/nguồn, ngưỡng sản phẩm
+0,90/0,25): máy đếm 1,40% (Wikipedia) và 1,20% (VSEC) số câu bị gạch oan; đọc
+tay bỏ những ca model bắt đúng lỗi thật trong văn bản "sạch" thì còn **0,85% và
+0,70%** — khoảng một câu trong 120–140. Ở ngưỡng sản phẩm, P/R trên VSEC giữ
+kín là **0,9556 / 0,7553** (argmax là 0,9126 / 0,8330). Chi tiết: quyết định 23
+và `docs/false_alarm_review.md`.
+
 ---
 
 ## VIỆC TIẾP THEO — người dùng đang cân nhắc

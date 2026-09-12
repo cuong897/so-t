@@ -483,3 +483,90 @@ hạng là số trên **dev tự sinh**, thứ đã ba lần nói dối trong d�
 in cuối buổi train đều nói thẳng điều đó và đưa sẵn lệnh chấm lại trên VSEC giữ
 kín. Tự động hoá một lựa chọn bằng thước đo mình đã biết là dối trá thì phải nói
 rõ, chứ không được để người sau tưởng con số đó chốt được.
+
+---
+
+### 23. Đo báo động giả trên văn bản ĐÚNG — con số cả dự án chưa từng có
+
+Mọi số F1 trong repo đều đo trên câu **có sẵn lỗi**, bằng **argmax không
+ngưỡng**. Chúng trả lời "khi có lỗi thì model sửa đúng bao nhiêu phần". Chúng
+không trả lời câu hỏi mà người dùng sống cùng mỗi ngày, và là câu hỏi quyết
+định họ có gỡ cài hay không:
+
+> Tôi viết đúng. Bao lâu một lần thì nó gạch chân oan?
+
+`false_alarm.py` dựng lại **đúng** phép quyết định của `onnxEngine.js` (softmax
+chỉ trên tập nhãn hợp lệ, p ≥ 0,90 **và** hơn KEEP ≥ 0,25) rồi chạy trên văn bản
+không có lỗi. Kiểm chứng bản port trước khi tin nó: chạy lại 6 câu mẫu của
+`dev/onnx-test.html` ra **đúng 4/6, 0 báo động giả** — trùng khít số trình duyệt.
+
+Hai nguồn văn bản đúng, cố tình khác miền:
+
+| Nguồn | Câu | Câu bị gạch oan | Trên số từ |
+|---|---|---|---|
+| Wikipedia sạch (test, chưa từng train) | 2.000 | 28 = **1,40%** | 0,054% |
+| VSEC nửa giữ kín, câu đã sửa đúng | 2.000 | 24 = **1,20%** | 0,042% |
+
+### Nhưng con số máy đếm là CHẶN TRÊN, không phải sự thật
+
+Văn bản "sạch" không sạch. Đọc tay cả 54 lần gạch chân
+([docs/false_alarm_review.md](false_alarm_review.md), để nguyên ngữ cảnh để ai
+cũng phán lại được):
+
+| Phán | Số | |
+|---|---|---|
+| **OAN** — văn bản đúng, model báo bậy | **31** | báo động giả thật |
+| ĐÚNG — văn bản sai thật, model bắt trúng | 14 | `cứ trú`→`cư trú`, `nỗi danh`→`nổi danh`, `thực vât`→`thực vật` |
+| NỬA — chỗ đó sai thật nhưng đề xuất sai | 7 | `đinh tam giác` (phải là `đỉnh`) → model đoán `định` |
+| ? — ngữ cảnh cắt cụt | 2 | |
+
+**26% số "báo động giả" hoá ra là model bắt đúng lỗi trong văn bản được coi là
+sạch.** Wikipedia có lỗi chính tả thật, và câu đã-sửa-đúng của VSEC vẫn còn lỗi
+người gán nhãn bỏ sót. Ai chỉ chạy script rồi lấy số máy đếm sẽ tự bôi đen mình
+gần gấp đôi.
+
+**Tỷ lệ báo động giả thật: 0,85% (Wikipedia) và 0,70% (VSEC)** — khoảng **một
+câu trong 120–140**. Người viết content 50 câu mỗi ngày gặp một lần gạch oan
+chừng hai đến ba ngày. Không dễ chịu, nhưng không phải thứ chặn việc ship.
+
+### Ngưỡng mua được gì, và giá bao nhiêu
+
+Cùng model INT8, cùng 1.500 câu VSEC giữ kín (khối trong tầm) cho P/R/F1, cùng
+2.000 câu đúng cho phần báo oan:
+
+| Ngưỡng | P | R | F1 | Oan (wiki) | Oan (VSEC) |
+|---|---|---|---|---|---|
+| argmax, không ngưỡng | 0,9126 | 0,8330 | 0,8710 | 2,40% | 2,50% |
+| **0,90 / 0,25 ← đang chạy** | **0,9556** | 0,7553 | 0,8437 | 1,40% | 1,20% |
+| 0,95 / 0,25 | 0,9615 | 0,7181 | 0,8222 | 1,10% | 0,80% |
+| 0,99 / 0,25 | 0,9822 | 0,5862 | 0,7342 | 0,60% | 0,60% |
+
+Ngưỡng sản phẩm **giảm một nửa số báo oan** (2,4% → 1,4%) và đẩy precision
+0,9126 → 0,9556, trả giá 7,8 điểm recall. Đây là con số người dùng thật sự
+thấy, và trước hôm nay chưa ai đo — `evaluate.py` giờ nhận `--threshold` và
+`--margin` để đo lại được (mặc định 0, giữ nguyên mọi số đã báo cáo).
+
+### Phát hiện quan trọng nhất: model TỰ TIN KHI SAI
+
+Trung vị độ tin cậy của 31 ca oan là **0,981**. 19/31 ở p ≥ 0,95, và **12/31 ở
+p ≥ 0,99**.
+
+Nghĩa là **nâng ngưỡng không phải cách sửa sạch**. Từ 0,90 lên 0,99 đúng là hạ
+báo oan còn một nửa, nhưng recall rơi 0,7553 → 0,5862 — mất hơn một phần năm số
+lỗi bắt được, để đổi lấy chưa tới một phần trăm câu. Độ tin cậy của model **không
+phải** thước đo model đúng hay sai; dùng nó làm núm vặn thì vặn tới đâu cũng
+đang đánh đổi mù.
+
+**Chỗ oan tập trung vào đâu — và đây mới là hướng sửa:**
+
+- **Tên riêng**: `Hoàng Văn Nhủng`, `Tiểu Đương Giang`, `Thủy Biều`, `Đảo bảo tàng`
+- **Thuật ngữ chuyên ngành**: `thanh cái` (điện lực), `sổ chi tiết` (kế toán),
+  `dư lượng`, `bình phong`, `băng hình`, `điêu bảo`, `trưởng tràng`
+- **Từ nước ngoài** trong câu song ngữ: `no` (yes/no)
+- **Từ thường gặp ở ngữ cảnh lạ**: `nhưng`, `năm`, `nắm`, `cỏ`, `Nêu`, `Ôn`, `vơi`
+
+Cả bốn nhóm đều là chỗ **từ điển mỏng còn ngữ cảnh hiếm**. Từ điển 7.214 âm tiết
+rút từ corpus chỉ chặn được ứng viên không tồn tại; nó không nói gì khi **cả hai
+dạng đều là từ thật** — mà đó đúng là toàn bộ 31 ca oan. Hướng đáng thử tiếp
+là **tỷ lệ tần suất**: nếu dạng gốc phổ biến hơn hẳn dạng đề xuất thì đòi bằng
+chứng mạnh hơn. Chưa làm, và chưa đo.
