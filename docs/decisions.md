@@ -404,3 +404,60 @@ tầng mới thấy model thật: trang HTML, các module JS, **và chính file 
 Bài học: khi kết quả sau khi thay đổi *giống hệt* kết quả trước, nghi cache
 trước khi nghi logic. Con số trùng khít tới từng phần trăm là dấu hiệu của cache
 chứ không phải của một sự trùng hợp.
+
+---
+
+### 21. Chọn học trò 768 + copy trọng số teacher
+
+Đo trên cùng 1.500 câu VSEC giữ kín:
+
+| Model | Tham số | MB | P | R | F1 |
+|---|---|---|---|---|---|
+| Teacher fp32 | 134,4M | 539,4 | 0,9169 | 0,8691 | **0,8924** |
+| 768 fp32 | 77,7M | 311,5 | 0,8966 | 0,8574 | 0,8766 |
+| **768 INT8** | 77,7M | **78,4** | **0,9126** | 0,8330 | **0,8710** |
+| 384 INT8 | 31,8M | 32,4 | 0,8378 | 0,7309 | 0,7807 |
+
+**768 hơn 384 tới +9,0 điểm F1 và +7,5 điểm precision**, đổi lấy 46 MB.
+
+**Nhưng phải nói rõ phép so này không sạch.** Bản 384 chạy khi `build_model` còn
+luôn khởi tạo ngẫu nhiên, nên nó không chỉ thiệt vì hidden nhỏ mà còn vì chưa hề
+được copy trọng số. Đúng ra câu hỏi được trả lời ở đây là *"768 + copy trọng số
+đáng giá bao nhiêu so với 384 từ đầu"*, chứ không phải *"hidden 768 đáng giá bao
+nhiêu"*. Điều an ủi: 384 **không thể** copy được (lệch shape), nên đây vẫn là so
+sánh đúng về mặt kỹ thuật — tốt nhất đạt được ở 32 MB so với tốt nhất ở 78 MB.
+
+### INT8 làm precision TĂNG
+
+Bản 768 khi lượng tử hoá mất 0,56 điểm F1 nhưng precision tăng từ 0,8966 lên
+0,9126. Lượng tử hoá làm model dè dặt hơn, mất đi những dự đoán ở vùng ranh
+giới — mà phần lớn trong đó vốn sai.
+
+Hai lần trước tôi gọi INT8 là "gần như miễn phí". Chưa đúng: ở bản 768 nó **có
+lợi** cho đúng chỉ số quan trọng nhất của sản phẩm.
+
+### Trong trình duyệt
+
+| | 384 INT8 | 768 INT8 |
+|---|---|---|
+| Nạp | 375 ms | 325 ms |
+| p50 / p95 | 6,6 / 8,0 ms | 15,6 / 18,7 ms |
+| Bắt được | 4/6 | 4/6 |
+| **Báo động giả** | **2** | **0** |
+
+Chậm hơn 2,3 lần nhưng vẫn cách rất xa ngưỡng cảm nhận 100 ms, nên tốc độ không
+phải yếu tố quyết định. **Không còn báo động giả nào** mới là điểm đáng giá.
+
+Hai ca trượt vẫn là văn bản không dấu hoàn toàn — giới hạn cố hữu, vì model dựa
+vào ngữ cảnh mà cả câu mất dấu thì ngữ cảnh cũng hỏng.
+
+---
+
+### 22. train.py nên giữ checkpoint TỐT NHẤT, không phải mới nhất
+
+Mỗi epoch ghi đè vào cùng một thư mục, nên epoch 2 xoá epoch 1. Suýt mất
+checkpoint epoch 1 khi đang cân nhắc dùng nó vì precision.
+
+Với sản phẩm ưu tiên precision, epoch cuối **không nhất thiết** là epoch tốt
+nhất. Hiện phải copy tay (`out/student768_ep1`); nên sửa để tự giữ theo
+precision.
