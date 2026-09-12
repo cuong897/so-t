@@ -116,8 +116,38 @@ def collate(batch: list[dict], pad_id: int) -> dict:
     return {k: torch.tensor(v) for k, v in out.items()}
 
 
-def build_model(args, n_labels: int):
-    """Giáo viên: nạp nguyên PhoBERT. Học trò: cắt bớt tầng, thu nhỏ hidden."""
+def copy_from_teacher(student, teacher) -> int:
+    """Copy embedding, một số tầng, và cả head phân loại từ teacher sang học trò.
+
+    Đây là cách DistilBERT khởi tạo, và là LÝ DO DUY NHẤT để chọn hidden bằng
+    teacher. Nếu vẫn khởi tạo ngẫu nhiên thì model to hơn mà chẳng được gì.
+
+    Ba thứ được copy, giá trị giảm dần:
+      1. Embedding — 49M tham số đã pretrain, phần đắt nhất
+      2. Các tầng encoder, lấy cách đều và LUÔN GIỮ TẦNG CUỐI (tầng gần đầu ra
+         nhất mang nhiều thông tin phân loại nhất)
+      3. Head phân loại — teacher đã train sẵn trên đúng 23 nhãn này
+
+    Trả về số tầng đã copy.
+    """
+    s_bert, t_bert = student.roberta, teacher.roberta
+    s_bert.embeddings.load_state_dict(t_bert.embeddings.state_dict())
+
+    n_s, n_t = len(s_bert.encoder.layer), len(t_bert.encoder.layer)
+    if n_s == 1:
+        picks = [n_t - 1]
+    else:
+        picks = [round(i * (n_t - 1) / (n_s - 1)) for i in range(n_s)]
+    for i, j in enumerate(picks):
+        s_bert.encoder.layer[i].load_state_dict(t_bert.encoder.layer[j].state_dict())
+
+    student.classifier.load_state_dict(teacher.classifier.state_dict())
+    print(f"copy từ teacher: embedding + head + {n_s} tầng {picks}")
+    return len(picks)
+
+
+def build_model(args, n_labels: int, teacher=None):
+    """Giáo viên: nạp nguyên PhoBERT. Học trò: cắt tầng, có thể thu nhỏ hidden."""
     config = AutoConfig.from_pretrained(args.model, num_labels=n_labels)
     if args.layers:
         config.num_hidden_layers = args.layers
@@ -127,11 +157,22 @@ def build_model(args, n_labels: int):
         # num_attention_heads phải chia hết hidden_size
         config.num_attention_heads = max(1, args.hidden // 64)
 
-    if args.layers or args.hidden:
-        # Học trò khởi tạo ngẫu nhiên rồi học từ giáo viên — nạp trọng số gốc
-        # vào một cấu hình khác shape sẽ hỏng.
-        return AutoModelForTokenClassification.from_config(config)
-    return AutoModelForTokenClassification.from_pretrained(args.model, config=config)
+    if not (args.layers or args.hidden):
+        return AutoModelForTokenClassification.from_pretrained(args.model, config=config)
+
+    student = AutoModelForTokenClassification.from_config(config)
+
+    # Chỉ copy được khi hidden khớp. Lệch shape thì học trò phải học từ đầu —
+    # đó chính là cái giá 11 điểm F1 của bản hidden 384.
+    if teacher is not None and config.hidden_size == teacher.config.hidden_size:
+        copy_from_teacher(student, teacher)
+        student._warm_started = True
+    else:
+        if teacher is not None:
+            print(f"KHÔNG copy được: hidden học trò {config.hidden_size} "
+                  f"khác teacher {teacher.config.hidden_size} — học từ đầu")
+        student._warm_started = False
+    return student
 
 
 @torch.no_grad()
@@ -219,12 +260,24 @@ def main() -> None:
     dev_dl = DataLoader(dev_ds, batch_size=args.batch * 2, collate_fn=fn)
     print(f"train {len(train_ds):,} mẫu | dev {len(dev_ds):,} mẫu | {len(vi.TAG_NAMES)} nhãn")
 
+    # Teacher phải nạp TRƯỚC model, vì học trò có thể khởi tạo từ trọng số của
+    # nó khi hidden khớp — đó là khác biệt giữa "nhỏ và ngu" với "nhỏ và khá".
+    teacher = None
+    if args.teacher:
+        teacher = AutoModelForTokenClassification.from_pretrained(args.teacher).to(device)
+        teacher.eval()
+        for p in teacher.parameters():
+            p.requires_grad = False
+        print(f"distil từ {args.teacher}")
+
     if args.resume:
         model = AutoModelForTokenClassification.from_pretrained(args.resume).to(device)
+        warm = True
     else:
-        model = build_model(args, len(vi.TAG_NAMES)).to(device)
+        model = build_model(args, len(vi.TAG_NAMES), teacher).to(device)
+        warm = getattr(model, "_warm_started", False)
     n_params = sum(p.numel() for p in model.parameters())
-    from_scratch = bool(args.layers or args.hidden)
+    from_scratch = bool(args.layers or args.hidden) and not warm
 
     # Bảng embedding chiếm phần lớn học trò và KHÔNG nhỏ đi theo số tầng —
     # nó tỷ lệ với vocab (64k) nhân hidden. Cắt tầng gần như không giảm được
@@ -238,22 +291,20 @@ def main() -> None:
     # đây thì model gần như không học được gì mà vẫn ngốn đủ số giờ GPU, và
     # loss vẫn giảm đủ đẹp để không ai nghi ngờ.
     if args.lr is None:
-        args.lr = 3e-4 if from_scratch else 3e-5
-        print(f"learning rate: {args.lr:g} "
-              f"({'khởi tạo ngẫu nhiên' if from_scratch else 'fine-tune'}, tự chọn)")
+        if from_scratch:
+            args.lr, mode = 3e-4, "khởi tạo ngẫu nhiên"
+        elif warm:
+            # Học trò đã mang trọng số teacher. 3e-4 sẽ phá hỏng chúng ngay
+            # những bước đầu — đúng thứ vừa bỏ công copy sang.
+            args.lr, mode = 1e-4, "copy từ teacher"
+        else:
+            args.lr, mode = 3e-5, "fine-tune"
+        print(f"learning rate: {args.lr:g} ({mode}, tự chọn)")
     else:
         print(f"learning rate: {args.lr:g} (do người dùng đặt)")
         if from_scratch and args.lr < 1e-4:
             print("  CẢNH BÁO: học trò khởi tạo ngẫu nhiên mà lr < 1e-4 "
                   "thì thường không hội tụ kịp.")
-
-    teacher = None
-    if args.teacher:
-        teacher = AutoModelForTokenClassification.from_pretrained(args.teacher).to(device)
-        teacher.eval()
-        for p in teacher.parameters():
-            p.requires_grad = False
-        print(f"distil từ {args.teacher}")
 
     # bfloat16 không cần GradScaler và ổn định hơn fp16 trên Ampere/Ada.
     use_amp = args.amp and device == "cuda" and torch.cuda.is_bf16_supported()
@@ -343,6 +394,7 @@ def main() -> None:
         "lr": args.lr,
         "batch": args.batch,
         "from_scratch": from_scratch,
+        "warm_started": warm,
         "teacher": str(args.teacher) if args.teacher else None,
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"đã lưu -> {args.out}  ({n_params / 1e6:.1f}M tham số)")
