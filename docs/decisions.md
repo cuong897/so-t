@@ -320,3 +320,34 @@ cấu hình và **không nhỏ đi theo số tầng** — nó tỷ lệ với vo
 Cắt tầng gần như không giảm kích thước file. Muốn nhỏ thì phải giảm `hidden` —
 và cái giá là không copy được trọng số teacher (lệch shape), học trò phải học
 từ đầu.
+
+---
+
+### 18. Opset 18, và một lời nói dối trong chính code
+
+**Lỗi chỉ lộ ra khi chạy trên model thật.** `export_onnx.py` đặt
+`opset_version=14`, nhưng RoBERTa/PhoBERT dùng `LayerNormalization` — toán tử
+chỉ có từ opset 17. Bộ chuyển phiên bản ném `RuntimeError`, `torch.onnx` **nuốt
+lỗi**, và file vẫn xuất ra ở opset 18.
+
+Nghĩa là hằng số `OPSET = 14` trong code nói một đằng, file nói một nẻo. Không
+ai phát hiện được bằng cách đọc code.
+
+**Sửa:** đặt `OPSET = 18` kèm lý do, thêm `actual_opset()` đọc lại opset THẬT từ
+file sau khi xuất và cảnh báo nếu lệch, ghi opset vào report.
+
+**Đã kiểm chứng đầu kia:** dựng một model RoBERTa nhỏ cùng kiến trúc, xuất ra
+opset 18, nạp bằng onnxruntime-web 1.29 trong trình duyệt thật — chạy được,
+shape `[1, 8, 23]` đúng. Nếu để tới lúc có model thật mới thử thì phát hiện ở
+phút chót, khi không còn đường lùi nào rẻ.
+
+**Số thật của teacher** (134M, 1 luồng CPU, 30 subword):
+
+| | fp32 | INT8 |
+|---|---|---|
+| Kích thước | 539,4 MB | 136,3 MB (nhẹ hơn 4,0×) |
+| p50 | 63,3 ms | 21,7 ms |
+| p95 | 68,4 ms | 23,0 ms |
+
+136 MB quá nặng để đóng gói vào extension — đây là con số biện minh cho bước
+distil, chứ không phải cảm tính.
