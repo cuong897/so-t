@@ -16,3 +16,9 @@ __pycache__/
 
 # onnxruntime-web đóng gói kèm (14MB) — tải bằng ml/fetch_vendor.sh
 extension/vendor/
+
+# Artifact đóng gói: zip 50MB + ảnh chụp, sinh lại được bằng
+# ml/package_extension.py và ml/make_screenshots.py
+dist/
+# Sinh bởi make_screenshots.py từ popup.html thật
+dev/popup-demo.html

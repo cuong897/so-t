@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
+  "minimum_chrome_version": "105",
   "name": "Soát — kiểm tra chính tả tiếng Việt",
-  "version": "0.1.0",
-  "description": "Bắt lỗi hỏi/ngã, ch-tr, s-x ngay trong ô nhập liệu. Chạy hoàn toàn trên máy bạn, không gửi dữ liệu đi đâu.",
+  "version": "1.0.0",
+  "description": "Sửa lỗi dấu tiếng Việt ngay khi bạn gõ: thiếu dấu, sai dấu, hỏi/ngã. Chạy trên máy bạn, không gửi dữ liệu đi.",
 
   "permissions": ["storage", "activeTab"],
 

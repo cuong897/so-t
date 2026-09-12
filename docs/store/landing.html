@@ -1,0 +1,640 @@
+<title>Soát</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;800&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+  :root {
+    /* Nền xám lạnh — extension sống trong ô nhập liệu trên web, không trên giấy */
+    --ground: #eef1f4;
+    --surface: #ffffff;
+    --surface-2: #f7f9fb;
+    --edge: #d9dfe5;
+    --edge-soft: #e6ebf0;
+    --ink: #12171d;
+    --ink-2: #4a5560;
+    --ink-3: #78838e;
+    /* Ba màu lấy thẳng từ CSS của sản phẩm, không chọn lại */
+    --mark: #d93025;        /* gạch chân "chắc chắn sai" */
+    --mark-soft: #e8a33d;   /* gạch chân "nên xem lại" */
+    --act: #2f6feb;         /* nút Sửa */
+    --good: #1a7f37;
+    --mark-wash: #fdeceb;
+    --act-wash: #eaf1fe;
+
+    --display: "Be Vietnam Pro", "Segoe UI", system-ui, sans-serif;
+    --body: "Source Serif 4", Georgia, serif;
+    --util: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  }
+
+  /* Mặc định của trình duyệt là "system": KHÔNG có data-theme nào được
+     đóng lên :root, nên chỉ prefers-color-scheme phân biệt sáng với tối.
+     Viết phẳng thay vì lồng @media trong selector — CSS nesting mới có
+     gần đây, và hỏng thì hỏng im lặng: chữ tối trên nền tối. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0e1318;
+      --surface: #161d24;
+      --surface-2: #1b232b;
+      --edge: #2a353f;
+      --edge-soft: #222c35;
+      --ink: #e8edf2;
+      --ink-2: #a8b4bf;
+      --ink-3: #7d8995;
+      --mark: #ff6b5e;
+      --mark-soft: #f0b458;
+      --act: #6c9bff;
+      --good: #4ec46f;
+      --mark-wash: #2c1a18;
+      --act-wash: #16233d;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0e1318;
+    --surface: #161d24;
+    --surface-2: #1b232b;
+    --edge: #2a353f;
+    --edge-soft: #222c35;
+    --ink: #e8edf2;
+    --ink-2: #a8b4bf;
+    --ink-3: #7d8995;
+    --mark: #ff6b5e;
+    --mark-soft: #f0b458;
+    --act: #6c9bff;
+    --good: #4ec46f;
+    --mark-wash: #2c1a18;
+    --act-wash: #16233d;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 17px;
+    line-height: 1.65;
+    margin: 0;
+  }
+
+  .wrap {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 0 24px 96px;
+  }
+
+  h1, h2, h3, .ui { font-family: var(--display); }
+
+  h2 {
+    font-size: 27px;
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+    margin: 0 0 6px;
+  }
+
+  h3 {
+    font-size: 17px;
+    font-weight: 600;
+    margin: 0 0 6px;
+    letter-spacing: -0.01em;
+  }
+
+  p { margin: 0 0 18px; }
+  p:last-child { margin-bottom: 0; }
+
+  section { padding: 52px 0; border-top: 1px solid var(--edge-soft); }
+
+  .eyebrow {
+    font-family: var(--util);
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 14px;
+  }
+
+  .lede { font-size: 19px; color: var(--ink-2); }
+
+  /* ---------- mở đầu ---------- */
+
+  header { padding: 76px 0 8px; }
+
+  .brand {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 34px;
+  }
+
+  .brand .name {
+    font-family: var(--display);
+    font-size: 21px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+
+  .brand .tag {
+    font-family: var(--util);
+    font-size: 12px;
+    color: var(--ink-3);
+    letter-spacing: 0.04em;
+  }
+
+  h1 {
+    font-size: clamp(38px, 6.4vw, 56px);
+    font-weight: 800;
+    line-height: 1.05;
+    letter-spacing: -0.035em;
+    text-wrap: balance;
+    margin: 0 0 20px;
+  }
+
+  /* Dấu thanh là toàn bộ luận điểm của sản phẩm, nên nó là thứ duy nhất
+     được tô màu ở khung hình đầu tiên. */
+  .mark { color: var(--mark); }
+
+  /* ---------- khối diff: một câu viết hai lần ---------- */
+
+  .diff {
+    background: var(--surface);
+    border: 1px solid var(--edge);
+    border-radius: 12px;
+    overflow: hidden;
+    margin: 34px 0 22px;
+  }
+
+  .diff-row {
+    display: grid;
+    grid-template-columns: 92px 1fr;
+    gap: 18px;
+    align-items: start;
+    padding: 20px 22px;
+  }
+
+  .diff-row + .diff-row { border-top: 1px solid var(--edge-soft); }
+  .diff-row.after { background: var(--surface-2); }
+
+  .diff-label {
+    font-family: var(--util);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    padding-top: 5px;
+  }
+
+  .diff-text {
+    font-family: var(--display);
+    font-size: 18.5px;
+    line-height: 1.7;
+  }
+
+  /* Gạch chân sóng — cùng thông số với extension/src/content/index.js */
+  .wrong {
+    text-decoration: underline wavy var(--mark);
+    text-decoration-skip-ink: none;
+    text-underline-offset: 4px;
+  }
+
+  .fixed { color: var(--mark); font-weight: 600; }
+
+  .hint {
+    font-family: var(--util);
+    font-size: 12.5px;
+    color: var(--ink-3);
+    margin: 0;
+  }
+
+  .cta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 18px;
+    align-items: center;
+    margin-top: 30px;
+  }
+
+  .btn {
+    font-family: var(--display);
+    font-size: 15px;
+    font-weight: 600;
+    text-decoration: none;
+    padding: 11px 20px;
+    border-radius: 9px;
+    border: 1px solid transparent;
+    display: inline-block;
+  }
+
+  .btn.primary { background: var(--act); color: #fff; }
+  .btn.ghost { border-color: var(--edge); color: var(--ink); background: var(--surface); }
+  .btn:focus-visible { outline: 2px solid var(--act); outline-offset: 2px; }
+
+  .cta-note { font-family: var(--util); font-size: 12.5px; color: var(--ink-3); }
+
+  /* ---------- bảng ---------- */
+
+  .scroll { overflow-x: auto; margin: 22px 0 0; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 15.5px;
+    min-width: 480px;
+  }
+
+  th, td {
+    text-align: left;
+    padding: 11px 14px 11px 0;
+    border-bottom: 1px solid var(--edge-soft);
+    vertical-align: top;
+  }
+
+  th {
+    font-family: var(--util);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    border-bottom-color: var(--edge);
+  }
+
+  td.num, th.num {
+    font-variant-numeric: tabular-nums;
+    font-family: var(--display);
+    text-align: right;
+    padding-right: 0;
+  }
+
+  tr.now td { background: var(--act-wash); }
+  tr.now td:first-child { font-weight: 600; }
+
+  .pair-wrong { color: var(--mark); }
+  .pair-right { color: var(--good); font-weight: 600; }
+
+  /* ---------- bốn tầng ---------- */
+
+  .layers { display: grid; gap: 1px; background: var(--edge-soft); border: 1px solid var(--edge); border-radius: 12px; overflow: hidden; margin-top: 24px; }
+
+  .layer {
+    background: var(--surface);
+    display: grid;
+    grid-template-columns: 30px 1fr 84px;
+    gap: 16px;
+    align-items: baseline;
+    padding: 17px 20px;
+  }
+
+  .layer .n {
+    font-family: var(--util);
+    font-size: 12px;
+    color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .layer .body { font-size: 15.5px; color: var(--ink-2); }
+  .layer .body b { color: var(--ink); font-weight: 600; font-family: var(--display); }
+
+  .layer .cost {
+    font-family: var(--util);
+    font-size: 12px;
+    color: var(--ink-3);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------- giới hạn ---------- */
+
+  .limits { list-style: none; margin: 22px 0 0; padding: 0; display: grid; gap: 16px; }
+
+  .limits li {
+    padding-left: 26px;
+    position: relative;
+    color: var(--ink-2);
+    font-size: 16px;
+  }
+
+  .limits li::before {
+    content: "✗";
+    position: absolute;
+    left: 0;
+    top: 0;
+    color: var(--mark);
+    font-family: var(--util);
+    font-size: 14px;
+  }
+
+  .limits b { color: var(--ink); font-family: var(--display); font-weight: 600; }
+
+  /* ---------- riêng tư ---------- */
+
+  .vow {
+    background: var(--surface);
+    border: 1px solid var(--edge);
+    border-left: 3px solid var(--act);
+    border-radius: 0 12px 12px 0;
+    padding: 22px 24px;
+    margin: 24px 0;
+  }
+
+  .vow p { font-size: 17px; }
+  .vow p:last-child { margin-bottom: 0; }
+
+  .quiet-list { list-style: none; margin: 18px 0 0; padding: 0; display: grid; gap: 10px; }
+
+  .quiet-list li {
+    display: grid;
+    grid-template-columns: 22px 1fr;
+    gap: 10px;
+    font-size: 15.5px;
+    color: var(--ink-2);
+  }
+
+  .quiet-list li::before { content: "○"; color: var(--good); font-family: var(--util); font-size: 13px; }
+
+  code {
+    font-family: var(--util);
+    font-size: 0.88em;
+    background: var(--surface-2);
+    border: 1px solid var(--edge-soft);
+    border-radius: 5px;
+    padding: 1px 5px;
+  }
+
+  pre {
+    font-family: var(--util);
+    font-size: 13px;
+    line-height: 1.7;
+    background: var(--surface);
+    border: 1px solid var(--edge);
+    border-radius: 10px;
+    padding: 16px 18px;
+    overflow-x: auto;
+    margin: 18px 0 0;
+    color: var(--ink-2);
+  }
+
+  footer {
+    border-top: 1px solid var(--edge-soft);
+    padding: 34px 0 0;
+    font-family: var(--util);
+    font-size: 12.5px;
+    color: var(--ink-3);
+    line-height: 1.9;
+  }
+
+  a { color: var(--act); }
+
+  @media (max-width: 560px) {
+    .diff-row { grid-template-columns: 1fr; gap: 8px; }
+    .layer { grid-template-columns: 24px 1fr; }
+    .layer .cost { grid-column: 2; text-align: left; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <span class="name">Soát</span>
+      <span class="tag">kiểm tra chính tả tiếng Việt</span>
+    </div>
+
+    <h1>Cái dấu đặt sai chỗ<br>đọc được ngay,<br>nhưng thường là <span class="mark">quá muộn</span>.</h1>
+
+    <p class="lede">Soát bắt lỗi dấu tiếng Việt ngay trong ô bạn đang gõ — và
+      xử lý hoàn toàn trên máy bạn. Không máy chủ, không API, không một ký tự
+      nào rời khỏi trình duyệt.</p>
+
+    <div class="diff">
+      <div class="diff-row">
+        <div class="diff-label">Bạn gõ</div>
+        <div class="diff-text">Cả nhóm đã <span class="wrong">nổ</span> lực suốt ba tháng và cuối cùng cũng <span class="wrong">dành</span> được giải nhất.</div>
+      </div>
+      <div class="diff-row after">
+        <div class="diff-label">Soát</div>
+        <div class="diff-text">Cả nhóm đã <span class="fixed">nỗ</span> lực suốt ba tháng và cuối cùng cũng <span class="fixed">giành</span> được giải nhất.</div>
+      </div>
+    </div>
+
+    <p class="hint">Khác nhau đúng một cái móc và một chữ cái. Cả bốn từ đều
+      có thật trong từ điển.</p>
+
+    <div class="cta">
+      <a class="btn primary" href="#cai-dat">Cách cài ngay</a>
+      <a class="btn ghost" href="#rieng-tu">Quyền riêng tư</a>
+      <span class="cta-note">Chrome 105+ · 49,8 MB · miễn phí</span>
+    </div>
+  </header>
+
+  <section>
+    <p class="eyebrow">Vì sao cần mô hình ngôn ngữ</p>
+    <h2>Chỗ từ điển bó tay hoàn toàn</h2>
+    <p class="lede">Phần khó nhất không phải từ sai. Là khi <b>cả hai cách viết
+      đều đúng</b>, và chỉ ngữ cảnh cả câu mới phân biệt được.</p>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Người viết</th>
+            <th>Đúng phải là</th>
+            <th>Vì sao từ điển vô dụng</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>hộp <span class="pair-wrong">sửa</span> tươi</td>
+            <td>hộp <span class="pair-right">sữa</span> tươi</td>
+            <td>“sửa” và “sữa” đều là từ có thật</td>
+          </tr>
+          <tr>
+            <td><span class="pair-wrong">dành</span> chiến thắng</td>
+            <td><span class="pair-right">giành</span> chiến thắng</td>
+            <td>“dành” và “giành” đều đúng</td>
+          </tr>
+          <tr>
+            <td>đọc <span class="pair-wrong">chuyện</span> tranh</td>
+            <td>đọc <span class="pair-right">truyện</span> tranh</td>
+            <td>“chuyện” và “truyện” đều đúng</td>
+          </tr>
+          <tr>
+            <td><span class="pair-wrong">nổ</span> lực</td>
+            <td><span class="pair-right">nỗ</span> lực</td>
+            <td>“nổ” là từ có thật — phát nổ</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Cách hoạt động</p>
+    <h2>Bốn tầng, chạy hết trong trình duyệt</h2>
+    <p>Mô hình <b>không đoán từ</b>. Nó chọn một trong 23 phép biến đổi cố định
+      — đặt thanh, đổi phụ âm đầu, đổi âm cuối. Nhờ vậy nó nhẹ đủ để chạy trong
+      trình duyệt, và <b>về mặt cấu trúc không thể bịa ra từ lạ</b>.</p>
+
+    <div class="layers">
+      <div class="layer">
+        <span class="n">01</span>
+        <span class="body"><b>Tra từ điển</b> — 7.214 âm tiết rút từ corpus thật, không chép tay</span>
+        <span class="cost">&lt;1 ms</span>
+      </div>
+      <div class="layer">
+        <span class="n">02</span>
+        <span class="body"><b>Sinh ứng viên</b> — tập đóng, mô hình chỉ được chọn bên trong</span>
+        <span class="cost">&lt;1 ms</span>
+      </div>
+      <div class="layer">
+        <span class="n">03</span>
+        <span class="body"><b>Chấm theo ngữ cảnh</b> — PhoBERT rút gọn, 78 MB, ONNX INT8</span>
+        <span class="cost">15,6 ms</span>
+      </div>
+      <div class="layer">
+        <span class="n">04</span>
+        <span class="body"><b>Ngưỡng</b> — thà bỏ sót còn hơn báo sai</span>
+        <span class="cost">&lt;1 ms</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Số đo</p>
+    <h2>Và cái giá đi kèm</h2>
+    <p>Chấm trên 1.500 câu VSEC <b>giữ kín</b> — nửa tập chưa bao giờ được dùng
+      để tinh chỉnh, trên khối lỗi mà bộ nhãn biểu diễn được.</p>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Ngưỡng</th>
+            <th class="num">Precision</th>
+            <th class="num">Recall</th>
+            <th class="num">Báo oan</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Không ngưỡng (năng lực thô)</td>
+            <td class="num">0,9126</td>
+            <td class="num">0,8330</td>
+            <td class="num">2,4 %</td>
+          </tr>
+          <tr class="now">
+            <td>0,90 — đang chạy</td>
+            <td class="num">0,9556</td>
+            <td class="num">0,7553</td>
+            <td class="num">1,4 %</td>
+          </tr>
+          <tr>
+            <td>0,99 — chặt hơn</td>
+            <td class="num">0,9822</td>
+            <td class="num">0,5862</td>
+            <td class="num">0,6 %</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p style="margin-top:22px">Cột cuối là tỷ lệ câu <b>viết đúng</b> bị gạch
+      chân oan. Đọc tay từng trường hợp thì con số thật còn thấp hơn — <b>0,70 %
+      đến 0,85 %</b>, tức khoảng một câu trong 120–140 — vì hơn một phần tư số
+      “báo oan” hoá ra là mô hình bắt trúng lỗi thật trong văn bản vốn được coi
+      là sạch.</p>
+
+    <p>Ngưỡng hiện tại là một lựa chọn có giá: đổi 7,8 điểm recall lấy 4,3 điểm
+      precision và một nửa số lần gạch nhầm. Gạch chân oan một lần là người dùng
+      gỡ cài; bỏ sót thì họ không biết. Hai loại sai đó không đối xứng, nên
+      ngưỡng cũng không đối xứng.</p>
+  </section>
+
+  <section>
+    <p class="eyebrow">Nói trước cho rõ</p>
+    <h2>Soát không làm được gì</h2>
+
+    <ul class="limits">
+      <li><b>Google Docs.</b> Google Docs vẽ chữ bằng canvas chứ không dùng ô
+        nhập liệu, nên không extension nào chạm tới được.</li>
+      <li><b>Văn bản mất dấu hoàn toàn.</b> Câu như “luon co gang hoc tap” thì
+        Soát bắt rất kém — nó phân biệt bằng ngữ cảnh, mà cả câu mất dấu thì
+        chính ngữ cảnh cũng hỏng.</li>
+      <li><b>Lỗi thừa thiếu chữ cái.</b> “tranhh” → “tranh” nằm ngoài bộ nhãn.
+        Soát nhắm vào lỗi <b>dấu</b> ở mức âm tiết, không phải mọi lỗi gõ phím.</li>
+      <li><b>Ngữ pháp và cách dùng từ.</b> Không phải phạm vi của bản này.</li>
+    </ul>
+  </section>
+
+  <section id="rieng-tu">
+    <p class="eyebrow">Quyền riêng tư</p>
+    <h2>Không phải lời hứa — là kiến trúc</h2>
+
+    <div class="vow">
+      <p>Soát <b>không xin quyền truy cập mạng</b> (<code>host_permissions</code>).
+        Nghĩa là về mặt kỹ thuật extension <b>không thể</b> gửi dữ liệu tới bất
+        kỳ máy chủ nào, kể cả nếu tác giả muốn.</p>
+      <p>Ràng buộc này do chính Chrome thi hành. Nó không phụ thuộc vào việc bạn
+        có tin tác giả hay không — và đó là toàn bộ điểm mấu chốt.</p>
+    </div>
+
+    <h3>Extension lưu gì trên máy bạn</h3>
+    <p>Bốn thứ, nằm nguyên trong <code>chrome.storage.local</code> và không bao
+      giờ rời khỏi máy: số đếm theo tuần (chỉ là con số — không câu văn, không
+      tên miền, không thời điểm chính xác, giữ tối đa 8 tuần), danh sách từ bạn
+      chọn bỏ qua, danh sách trang bạn đã tắt Soát, và trạng thái bật/tắt. Gỡ
+      cài là toàn bộ biến mất cùng nó.</p>
+
+    <h3>Không thu thập gì</h3>
+    <p>Không nội dung bạn gõ, không địa chỉ trang, không IP, không cookie, không
+      thông tin cá nhân. Không Google Analytics, không Firebase, không SDK theo
+      dõi nào. Không có mã nào tải từ xa — Manifest V3 cấm, và Soát không tìm
+      cách lách. Mô hình 78 MB nằm sẵn trong gói cài và chạy bằng WebAssembly
+      ngay trên máy bạn.</p>
+
+    <h3>Nơi Soát tự động im lặng</h3>
+    <ul class="quiet-list">
+      <li>Ô mật khẩu, kể cả ô đánh dấu <code>autocomplete="new-password"</code></li>
+      <li>Ô thẻ ngân hàng và mã bảo mật — <code>cc-number</code>, <code>cc-csc</code>, hoặc tên ô chứa <code>card</code>, <code>cvv</code>, <code>iban</code></li>
+      <li>Ô mã dùng một lần — <code>one-time-code</code>, <code>otp</code>, <code>captcha</code></li>
+      <li>Ô tìm kiếm</li>
+      <li>Ô email, điện thoại, số, ngày tháng, URL, tải tệp</li>
+      <li>Trình soạn thảo mã nguồn — CodeMirror, Monaco, Ace</li>
+    </ul>
+    <p style="margin-top:18px">Danh sách đầy đủ nằm trong mã nguồn tại
+      <code>src/content/targets.js</code> — đọc được, kiểm chứng được.</p>
+
+    <h3>Vì sao cần chạy trên mọi trang</h3>
+    <p>Một công cụ hỗ trợ viết chỉ có ích khi nó có mặt ở nơi bạn viết, mà bạn
+      viết ở khắp nơi. Soát khớp mọi trang để <b>đọc ô nhập liệu tại chỗ</b> —
+      và vì không xin <code>host_permissions</code>, nó không thể gọi mạng tới
+      bất kỳ trang nào. Hai điều đó khác hẳn nhau, và khác biệt ấy chính là ranh
+      giới quyền riêng tư của bạn.</p>
+
+    <p>Nếu về sau có bất kỳ dữ liệu nào bắt đầu rời khỏi máy bạn, điều đó sẽ
+      được nói rõ <b>trước</b> khi xảy ra và cần bạn đồng ý.</p>
+  </section>
+
+  <section id="cai-dat">
+    <p class="eyebrow">Cài đặt</p>
+    <h2>Chưa lên Chrome Web Store</h2>
+    <p>Bản 1.0.0 đã đóng gói xong và đang chờ duyệt. Trong lúc đó, cài thủ công
+      mất chưa tới một phút:</p>
+
+<pre>1.  Tải và giải nén gói extension
+2.  Mở Chrome, vào  chrome://extensions
+3.  Bật  Developer mode  ở góc trên bên phải
+4.  Bấm  Load unpacked  và chọn thư mục vừa giải nén</pre>
+
+    <p style="margin-top:18px">Sau khi cài, mở bất kỳ ô nhập liệu nào và gõ thử
+      “<i>Mình xin chia sẽ lại một vài kinh nghiệm</i>”.</p>
+  </section>
+
+  <footer>
+    Soát 1.0.0 · Chrome 105 trở lên · gói cài 49,8 MB<br>
+    Số đo trên 1.500 câu VSEC giữ kín · báo động giả đo trên 4.000 câu viết đúng<br>
+    Cập nhật 12/09/2026
+  </footer>
+
+</div>

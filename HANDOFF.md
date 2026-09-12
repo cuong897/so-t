@@ -82,8 +82,18 @@ Cách làm, và chỗ nguy hiểm:
 - **Văn bản không dấu hoàn toàn** model bắt kém (`luon co gang` → không thấy).
   Giới hạn cố hữu: model dựa vào ngữ cảnh, cả câu mất dấu thì ngữ cảnh cũng
   hỏng. Cần nói rõ chứ đừng giấu.
-- **Chưa có người dùng thật.** Extension chưa nộp Chrome Web Store, chưa có
-  landing page.
+- **Chưa có người dùng thật** — nhưng bộ hồ sơ nộp store đã xong, chỉ còn phần
+  chỉ chủ tài khoản làm được:
+  - `dist/soat-1.0.0.zip` — 49,8 MB nén (91 MB là số CHƯA nén), sinh bằng
+    `python ml/package_extension.py`
+  - `dist/store/*.png` — 3 ảnh 1280×800, sinh bằng `python ml/make_screenshots.py`
+    từ `dev/shots.html`, dùng engine THẬT chứ không phải mockup
+  - `docs/store/listing.md` — chép thẳng vào từng ô của devconsole, kèm phần
+    giải trình quyền viết sẵn bằng tiếng Anh
+  - `docs/store/privacy-policy.md` — đã đối chiếu với `targets.js`
+  - `docs/store/landing.html` — trang giới thiệu, kiêm nơi đăng chính sách
+  - **Còn lại:** tạo tài khoản nhà phát triển (phí 5$), đăng chính sách lên một
+    URL công khai, upload và bấm Submit.
 
 ---
 
