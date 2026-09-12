@@ -884,4 +884,81 @@ Trượt bất kỳ dòng nào thì **v3 ở lại**, và kết quả v4 vẫn g
 train thất bại đã được ghi lại vẫn rẻ hơn một đợt train thất bại bị bỏ quên rồi
 có người làm lại.
 
-**Kết quả: xem mục tiếp theo.**
+#### Kết quả: sáu trên sáu, và không phải đánh đổi
+
+Lần đầu trong dự án một đợt train qua hết mọi điều kiện, và qua theo hướng
+không ai trong hai bản trước đạt được — **precision tăng chứ không giảm**:
+
+| Thước đo | v3 | v4 | Ngưỡng đã ghi trước | |
+|---|---|---|---|---|
+| recall d/gi/r (n=596) | 17,8% | **28,5%** | ≥ 22,8% | qua, +10,7 điểm |
+| precision VSEC trong tầm | 0,9600 | **0,9749** | ≥ 0,9500 | qua, *tăng* |
+| recall VSEC trong tầm | 0,7404 | **0,7426** | ≥ 0,7254 | qua, *tăng* |
+| F1 VSEC trong tầm | 0,8360 | **0,8430** | — | +0,7 điểm |
+| báo oan văn bản đúng | 1,45% / 1,25% | **1,30% / 1,00%** | ≤ 2,00% | qua, *giảm cả hai* |
+| recall phụ âm toàn bộ (n=1796) | 41,4% | **43,3%** | ≥ 40,2% | qua |
+| sửa sai d/gi/r | 8,1% (48 ca) | **5,2%** (31 ca) | ≤ 10% | qua, *giảm* |
+
+Độ trễ và dung lượng không đổi: p50 5,5ms (v3: 5,4ms), gói nén vẫn 58,6 MB —
+INT8 cùng kiến trúc thì cùng kích thước.
+
+#### Vì sao precision lại TĂNG — chẩn đoán đã đoán trước chuyện này
+
+Chỗ đáng học của đợt này. VSEC precision đi từ 0,9600 lên 0,9749, số lần báo
+sai từ **29 xuống 18** trên cùng tập. Bình thường đẩy recall một lớp thì
+precision phải trả giá. Ở đây không, và lý do nằm đúng trong bảng chẩn đoán ở
+trên: **45 trong 48 ca sửa sai của v3 là nhãn thanh điệu bắn ở p = 0,98 tại
+đúng vị trí mà đáp án là một phép đổi phụ âm.** Những ca đó không phải "bỏ sót"
+— chúng là **báo sai**. Dạy model rằng ở vị trí đó có một giả thuyết phụ âm
+đáng cân nhắc thì đồng thời dập bớt loại báo sai đó.
+
+Nói cách khác: tiên nghiệm lệch về thanh điệu vừa làm mất recall của lớp phụ
+âm, vừa **sinh ra** false positive ở chính những vị trí ấy. Sửa một nguyên
+nhân, hai con số cùng tốt lên. Bảng chẩn đoán trước/sau:
+
+| | v3 | v4 |
+|---|---|---|
+| sửa đúng | 106 | **170** |
+| sót, nhãn đúng dẫn đầu | 241 (p trung vị 0,099) | 244 (p trung vị **0,257**) |
+| sót, nhìn sang chỗ khác | 201 (p nhãn đúng 0,0014) | **151** (p nhãn đúng 0,0090) |
+| sửa sai | 48 (45 sang thanh điệu) | **31** (25 sang thanh điệu) |
+
+Cả bốn ô đều đi đúng hướng mong đợi. Đáng chú ý là ô "nhãn đúng dẫn đầu" gần
+như không đổi về số ca (241 → 244) nhưng p trung vị tăng 2,6 lần — model chưa
+vượt ngưỡng ở đó, nhưng đã nghiêng về đáp án đúng mạnh hơn nhiều. Đó là phần
+còn lại để dành cho đợt sau.
+
+#### Cái giá, vì luôn phải nói ra
+
+Các nhóm phụ âm khác **có** trả giá, đúng như thiết kế: phần dữ liệu d/gi/r
+tăng lấy từ họ.
+
+| Nhóm | v3 | v4 | |
+|---|---|---|---|
+| d/gi/r | 17,8% | 28,5% | +10,7 |
+| c/t | 60,4% | 62,1% | +1,7 |
+| ch/tr | 48,3% | 46,7% | −1,6 |
+| n/ng | 63,3% | 60,8% | −2,5 |
+| s/x | 48,3% | 44,2% | −4,1 |
+| l/n | 45,4% | 39,6% | −5,8 |
+
+Tính theo số ca: d/gi/r sửa đúng thêm **64 ca**, năm nhóm còn lại mất **30
+ca**, tổng +34.
+
+Đọc cho đúng mức: σ của một nhóm 240 ca là 3,2 điểm, nên riêng lẻ thì mức tụt
+của `l/n` (−5,8 điểm) mới là ~1,8σ và `s/x` là ~1,3σ — **chưa** đủ để kết luận
+từng nhóm. Nhưng bốn trong năm nhóm cùng tụt, và cùng tụt là đúng thứ cơ chế
+"lấy bớt dữ liệu của họ" dự đoán. Nên coi đây là cái giá thật, cỡ nhỏ, chứ
+không coi là nhiễu.
+
+Và **recall d/gi/r 28,5% vẫn là con số thấp.** Nó tốt hơn 60% tương đối so với
+v3, nhưng gần ba phần tư ca của lớp này vẫn bị bỏ sót. Đây là một bước, không
+phải một cái kết.
+
+#### Còn lại gì cho đợt sau
+
+244 ca "nhãn đúng đã dẫn đầu mà p trung vị 0,257" là túi tiền rõ nhất, và
+`consonant_diagnose.py` đã đo sẵn: hạ ngưỡng xuống 0,90 cứu 32 ca trong đó.
+Nhưng quyết định 26 đã thử hạ ngưỡng rồi và báo oan lên 1,65%/1,75%. Lần này
+v4 đang ở 1,30%/1,00% — **thấp hơn cả v3** — nên chỗ trống đó rộng hơn trước.
+Đáng đo lại, không đáng đoán.
