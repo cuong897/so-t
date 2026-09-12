@@ -5,6 +5,7 @@ ml/out/
 # Sinh ra bởi ml/export_tokenizer.py và ml/export_onnx.py — không commit,
 # vì chúng là artifact phái sinh và tokenizer.json nặng 2.5MB.
 extension/models/*.onnx
+extension/models/*.onnx.data
 extension/models/tokenizer.json
 extension/models/lexicon.json
 extension/models/*.meta.json
