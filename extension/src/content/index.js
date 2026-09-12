@@ -25,7 +25,7 @@
   // Tầng 3. Nạp nền, không chặn gì cả: nếu chưa có file model thì load()
   // thất bại êm và check() trả mảng rỗng — tầng luật vẫn chạy bình thường.
   const model = new onnx.OnnxEngine();
-  model.load({
+  const modelReady = model.load({
     // Bản wasm-only (73KB js + 14MB wasm). Bỏ qua bản WebGPU vì nó cần
     // .jsep.wasm nặng 27MB — gấp đôi dung lượng để đổi lấy tốc độ mà phần
     // lớn máy người dùng không tận dụng được.
@@ -35,6 +35,16 @@
     tokenizer: base + 'models/tokenizer.json',
     lexicon: base + 'models/lexicon.json',
     meta: base + 'models/soat.meta.json',
+  });
+
+  // Nạp model mất vài giây (78MB + 14MB wasm). Người dùng thường gõ xong
+  // TRƯỚC khi nó sẵn sàng, và lần soát cuối cùng đã thoát sớm ở `!model.ready`.
+  // Không soát lại ở đây thì tầng model im lặng biến mất cho tới khi người
+  // dùng gõ thêm một ký tự nữa — không lỗi, không crash, chỉ là mất tầng đắt
+  // nhất. Bắt được đúng cách: thử trên Facebook thật bằng một câu mà tầng luật
+  // cố ý không bắt.
+  modelReady.then((ok) => {
+    if (ok && active && active.isConnected) run(active);
   });
 
   // -------------------------------------------------------------------------

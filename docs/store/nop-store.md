@@ -39,6 +39,9 @@ Rồi thử thật:
 - [ ] Nếu thấy `[soát] không nạp được model, chỉ dùng tầng luật` thì model
       KHÔNG chạy — kiểm tra `extension/models/soat.int8.onnx` và
       `extension/vendor/` có đủ file không
+- [ ] **Tải lại trang và đợi khoảng 5 giây** trước khi gõ. Model nặng 78 MB
+      cộng 14 MB wasm nên mất vài giây mới sẵn sàng; gõ ngay lúc trang vừa mở
+      thì tầng model chưa kịp sống.
 - [ ] Gõ câu này — đã kiểm chứng là **tầng luật bỏ qua hoàn toàn**:
 
       > Hơn một nửa dân số cứ trú tại vùng đồng bằng ven biển.
