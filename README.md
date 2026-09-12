@@ -104,10 +104,17 @@ python dataset.py --corpus data/corpus.txt --out data --variants 2
 python train.py   --data data --out out/teacher --epochs 2
 python train.py   --data data --out out/student768 --teacher out/teacher \
                   --layers 4 --hidden 768 --epochs 3 --workers 4
-python evaluate.py --model out/student768 --held-out --limit 1500
+python evaluate.py --model out/student768/best --held-out --limit 1500
 python export_tokenizer.py
-python export_onnx.py --model out/student768 --out ../extension/models --name soat
+python export_onnx.py --model out/student768/best --out ../extension/models --name soat
 ```
+
+`train.py` giữ **hai** bản: `<out>` là epoch cuối (để `--resume` còn khớp với
+optimizer và scheduler đã cất), `<out>/best` là epoch tốt nhất trên dev theo
+`--select` (mặc định `f1`). Bản `best` là bản đem đi xuất ONNX — nhưng nó được
+xếp hạng bằng **dev tự sinh**, thứ đã ba lần nói dối trong dự án này, nên phải
+chấm lại trên VSEC giữ kín trước khi ship. `<out>/epochs.json` ghi số đo từng
+epoch để biết các epoch có sát nhau không.
 
 Tải VSEC (dùng cho `evaluate.py`) một lần:
 

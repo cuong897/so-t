@@ -63,9 +63,14 @@ Cách làm, và chỗ nguy hiểm:
 
 ### Việc khác đã biết, chưa làm
 
-- **`train.py` chỉ giữ checkpoint mới nhất, không phải tốt nhất.** Mỗi epoch ghi
-  đè lên epoch trước. Với sản phẩm ưu tiên precision thì epoch cuối không nhất
-  thiết tốt nhất. Hiện phải copy tay (đã làm với `out/student768_ep1`).
+- ~~`train.py` chỉ giữ checkpoint mới nhất~~ — **đã sửa.** `--select
+  {f1,precision,none}` (mặc định `f1`) giữ thêm bản tốt nhất vào `<out>/best`,
+  và `<out>/epochs.json` ghi số đo từng epoch. `<out>` vẫn là epoch cuối để
+  `--resume` khớp với `trainer_state.pt`. Xếp hạng bằng dev **tự sinh** nên chỉ
+  là sơ bộ — chốt lại bằng `evaluate.py --held-out`.
+- **`ml/data/demo/` đã cũ, không nạp được.** Vẫn dùng nhãn `NGA_HOI` đã bỏ từ
+  quyết định 11, nên `train.py --data data/demo` ném `KeyError: 'NGA_HOI'`.
+  Sinh lại bằng `dataset.py` hoặc bỏ hẳn.
 - **Google Docs không hỗ trợ** (render bằng canvas). Đã quyết bỏ ở v1.
 - **Văn bản không dấu hoàn toàn** model bắt kém (`luon co gang` → không thấy).
   Giới hạn cố hữu: model dựa vào ngữ cảnh, cả câu mất dấu thì ngữ cảnh cũng
@@ -99,7 +104,7 @@ docs/decisions.md   22 quyết định — vì sao chọn, bỏ gì, lỗi nào 
 | `teacher` | PhoBERT 134M, 2 epoch, phân bố **đo được** — F1 0,8924 |
 | `teacher_guessed` | Baseline phân bố **ước lượng** — F1 0,7634, giữ để đối chiếu |
 | `student768` | **Model đang dùng**, 4 tầng/768, copy trọng số teacher |
-| `student768_ep1` | Checkpoint epoch 1, giữ vì precision cao hơn epoch 0 |
+| `student768_ep1` | Checkpoint epoch 1. Ghi chú cũ nói "precision cao hơn epoch 0" là **sai**: đo được P ep0 0,8918 > ep1 0,8805, và epoch cuối 0,8966 cao nhất cả ba. Giữ để đối chiếu |
 | `student` | Bản 384 cũ, giữ để đối chiếu |
 | `s768_onnx` | ONNX fp32 + INT8 của bản 768 |
 

@@ -214,6 +214,22 @@ def evaluate(model, loader, device, lexicon, id2tag) -> dict:
     return {"precision": prec, "recall": rec, "f1": f1, "tp": tp, "fp": fp, "fn": fn}
 
 
+def save_checkpoint(out: Path, model, tok, meta: dict) -> None:
+    """Ghi một checkpoint ĐỦ để nạp lại: trọng số, tokenizer, bảng nhãn, cấu hình.
+
+    Phải đủ, không được thiếu train_meta.json: export_onnx.py đọc max_len từ
+    đó, thiếu thì nó đoán, và đoán sai thì model chạy kém ở phần đuôi câu mà
+    không có gì báo cho biết.
+    """
+    out.mkdir(parents=True, exist_ok=True)
+    model.save_pretrained(out)
+    tok.save_pretrained(out)
+    (out / "tags.json").write_text(
+        json.dumps(vi.TAG_NAMES, ensure_ascii=False, indent=2), encoding="utf-8")
+    (out / "train_meta.json").write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser()
@@ -243,6 +259,9 @@ def main() -> None:
     ap.add_argument("--alpha", type=float, default=0.7,
                     help="tỷ trọng loss distil so với loss nhãn cứng")
     ap.add_argument("--temperature", type=float, default=2.0)
+    ap.add_argument("--select", choices=["f1", "precision", "none"], default="f1",
+                    help="giữ thêm bản epoch tốt nhất trên dev theo số đo này "
+                         "vào <out>/best. 'none' = chỉ giữ epoch cuối như cũ")
     args = ap.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -339,6 +358,27 @@ def main() -> None:
                   f"không còn khớp.")
         print(f"resume từ {args.resume}, chạy tiếp từ epoch {start_epoch}")
 
+    # Cấu hình đã train, dựng sẵn để MỌI checkpoint ghi ra đều tự mô tả được —
+    # kể cả bản <out>/best, vốn là bản sẽ đem đi xuất ONNX.
+    meta = {
+        "max_len": args.max_len,
+        "tags": vi.TAG_NAMES,
+        "epochs": args.epochs,
+        "lr": args.lr,
+        "batch": args.batch,
+        "from_scratch": from_scratch,
+        "warm_started": warm,
+        "teacher": str(args.teacher) if args.teacher else None,
+    }
+
+    # Mỗi epoch trước đây ghi đè lên epoch trước, nên bản giữ lại luôn là bản
+    # CUỐI chứ không phải bản TỐT NHẤT. Với sản phẩm ưu tiên precision thì hai
+    # thứ đó không trùng nhau: epoch cuối có thể mạnh dạn hơn và báo sai nhiều
+    # hơn. Giữ epoch cuối ở <out> (để --resume còn khớp với trainer_state.pt)
+    # và giữ bản tốt nhất ở <out>/best.
+    history: list[dict] = []
+    best = {"epoch": -1, "score": -1.0, "metrics": None}
+
     for epoch in range(start_epoch, args.epochs):
         model.train()
         t0, running = time.time(), 0.0
@@ -374,9 +414,7 @@ def main() -> None:
                 running = 0.0
 
         m = evaluate(model, dev_dl, device, lexicon, id2tag)
-        args.out.mkdir(parents=True, exist_ok=True)
-        model.save_pretrained(args.out)
-        tok.save_pretrained(args.out)
+        save_checkpoint(args.out, model, tok, meta)
         torch.save({"optimizer": opt.state_dict(),
                     "scheduler": sched.state_dict(),
                     "epoch": epoch,
@@ -386,26 +424,45 @@ def main() -> None:
               f"P {m['precision']:.4f}  R {m['recall']:.4f}  F1 {m['f1']:.4f}  "
               f"(tp {m['tp']} fp {m['fp']} fn {m['fn']})")
 
-    args.out.mkdir(parents=True, exist_ok=True)
-    model.save_pretrained(args.out)
-    tok.save_pretrained(args.out)
-    (args.out / "tags.json").write_text(
-        json.dumps(vi.TAG_NAMES, ensure_ascii=False, indent=2), encoding="utf-8")
+        history.append({"epoch": epoch, **m})
+        # >= chứ không phải >: hoà điểm thì chọn epoch SAU, vì nó trùng với
+        # bản nằm ở <out> và đã được train nhiều hơn. Dùng > thì một model
+        # chưa học được gì (mọi epoch đều 0) sẽ báo "epoch 0 là tốt nhất".
+        if args.select != "none" and m[args.select] >= best["score"]:
+            best = {"epoch": epoch, "score": m[args.select], "metrics": m}
+            save_checkpoint(args.out / "best", model, tok, meta)
+            (args.out / "best" / "best.json").write_text(json.dumps({
+                "epoch": epoch,
+                "select": args.select,
+                "dev": m,
+                "canh_bao": "Số đo này lấy trên dev TỰ SINH. Dev tự sinh đã ba "
+                            "lần nói dối trong dự án này, và nói dối nhiều hơn "
+                            "cho model tệ hơn. Trước khi ship phải chấm lại "
+                            "bằng evaluate.py --held-out.",
+            }, ensure_ascii=False, indent=2), encoding="utf-8")
+            print(f"  -> tốt nhất tới giờ theo {args.select}, đã cất vào {args.out / 'best'}")
 
-    # Ghi lại cấu hình đã train để export_onnx.py không phải đoán. Model chưa
-    # bao giờ thấy chuỗi dài hơn max_len này; xuất ONNX với giá trị lớn hơn thì
-    # nó vẫn chạy nhưng kém đi ở phần đuôi, và không có gì báo cho biết.
-    (args.out / "train_meta.json").write_text(json.dumps({
-        "max_len": args.max_len,
-        "tags": vi.TAG_NAMES,
-        "epochs": args.epochs,
-        "lr": args.lr,
-        "batch": args.batch,
-        "from_scratch": from_scratch,
-        "warm_started": warm,
-        "teacher": str(args.teacher) if args.teacher else None,
-    }, ensure_ascii=False, indent=2), encoding="utf-8")
+    save_checkpoint(args.out, model, tok, meta)
+    if history:
+        (args.out / "epochs.json").write_text(json.dumps({
+            "select": args.select,
+            "best_epoch": best["epoch"],
+            "history": history,
+        }, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"đã lưu -> {args.out}  ({n_params / 1e6:.1f}M tham số)")
+
+    if best["epoch"] >= 0:
+        m = best["metrics"]
+        print(f"epoch tốt nhất trên dev theo {args.select}: epoch {best['epoch']}  "
+              f"P {m['precision']:.4f}  R {m['recall']:.4f}  F1 {m['f1']:.4f}")
+        if best["epoch"] != args.epochs - 1:
+            print(f"  epoch cuối KHÔNG phải epoch tốt nhất — bản đáng ship nằm ở "
+                  f"{args.out / 'best'}, còn {args.out} là epoch cuối.")
+        # Dev tự sinh luôn khớp với chính phân bố đã sinh ra nó, nên nó nịnh.
+        # Chênh lệch nhỏ trên dev không đủ để chọn; phải chấm trên lỗi người thật.
+        print("  Đây là số trên dev TỰ SINH — chỉ dùng để xếp hạng sơ bộ. "
+              "Chốt bằng:")
+        print(f"    python evaluate.py --model {args.out / 'best'} --held-out --limit 1500")
 
 
 if __name__ == "__main__":

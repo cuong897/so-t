@@ -459,5 +459,27 @@ Mỗi epoch ghi đè vào cùng một thư mục, nên epoch 2 xoá epoch 1. Su�
 checkpoint epoch 1 khi đang cân nhắc dùng nó vì precision.
 
 Với sản phẩm ưu tiên precision, epoch cuối **không nhất thiết** là epoch tốt
-nhất. Hiện phải copy tay (`out/student768_ep1`); nên sửa để tự giữ theo
-precision.
+nhất. Trước đây phải copy tay (`out/student768_ep1`).
+
+**Đã sửa.** `--select {f1,precision,none}` (mặc định `f1`) giữ thêm bản tốt nhất
+vào `<out>/best`, kèm `<out>/epochs.json` ghi số đo từng epoch.
+
+**Vì sao `best` là thư mục con chứ không phải ghi đè `<out>`:** `--resume` nạp
+lại optimizer và scheduler từ `trainer_state.pt`, vốn thuộc về epoch **cuối**.
+Nếu `<out>` giữ trọng số của epoch tốt nhất còn `trainer_state.pt` giữ trạng
+thái epoch cuối thì resume ghép nhầm hai thứ — lại đúng loại lỗi im lặng: không
+crash, chỉ học kém đi. Nên `<out>` = epoch cuối (khớp với trạng thái), `<out>/best`
+= epoch tốt nhất (bản đem đi xuất ONNX). Mỗi bản đều tự chứa `tags.json` và
+`train_meta.json` để `export_onnx.py` không phải đoán `max_len`.
+
+**Hoà điểm thì chọn epoch SAU**, vì nó trùng với bản ở `<out>` và được train
+nhiều hơn. Dùng `>` thì một model chưa học được gì — mọi epoch đều F1 0 — sẽ báo
+"epoch 0 tốt nhất" rồi kèm cảnh báo sai rằng epoch cuối không phải bản đáng ship.
+Bắt được lỗi này bằng một lần chạy thử 2 epoch trên 256 mẫu.
+
+**Chỗ phải cẩn thận, và nó mâu thuẫn với chính quyết định 16:** số dùng để xếp
+hạng là số trên **dev tự sinh**, thứ đã ba lần nói dối trong dự án này. Nên
+`best` chỉ là **xếp hạng sơ bộ**, không phải phán quyết. Cả `best.json` lẫn dòng
+in cuối buổi train đều nói thẳng điều đó và đưa sẵn lệnh chấm lại trên VSEC giữ
+kín. Tự động hoá một lựa chọn bằng thước đo mình đã biết là dối trá thì phải nói
+rõ, chứ không được để người sau tưởng con số đó chốt được.
