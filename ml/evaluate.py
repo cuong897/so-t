@@ -135,8 +135,50 @@ def predict(model, tok, device, words: list[str], lexicon, max_len: int) -> list
     return tags
 
 
+def predict_onnx(sess, tok, words: list[str], lexicon, max_len: int) -> list[str]:
+    """Bản ONNX của predict().
+
+    Cần thiết để trả lời câu hỏi mà export_onnx.py không tự trả lời được:
+    lượng tử hoá INT8 lấy mất bao nhiêu điểm F1. Không có con số đó thì báo cáo
+    "nhẹ hơn 4 lần, nhanh hơn 3 lần" mới kể một nửa câu chuyện — và là nửa đẹp.
+
+    Đi qua ĐÚNG đường mà trình duyệt đi: cùng encode_words, cùng đọc logit ở
+    subword đầu, cùng chặn theo applicable_tags.
+    """
+    import numpy as np
+
+    ids, word_ids = encode_words(tok, words, max_len)
+    first_idx = first_subword_index(word_ids, len(words))
+
+    logits = sess.run(None, {
+        "input_ids": np.array([ids], dtype=np.int64),
+        "attention_mask": np.ones((1, len(ids)), dtype=np.int64),
+    })[0][0]
+
+    tags = ["KEEP"] * len(words)
+    for w, token in enumerate(words):
+        pos = first_idx[w]
+        if pos < 0:
+            continue
+        allowed = vi.applicable_tags(token, lexicon)
+        if len(allowed) <= 1:
+            continue
+        idxs = [vi.TAG_INDEX[t] for t in allowed]
+        tags[w] = allowed[int(np.argmax(logits[pos, idxs]))]
+    return tags
+
+
 def score(rows, predict_fn, scoped: bool, lexicon) -> dict:
-    """tp: sửa đúng. fp: động vào chỗ không nên. fn: bỏ sót lỗi thật."""
+    """tp: sửa đúng. fp: động vào chỗ không nên. fn: bỏ sót lỗi thật.
+
+    CHÚ Ý KHI ĐỌC SỐ: ở đây model chọn bằng argmax trong tập nhãn hợp lệ, KHÔNG
+    có ngưỡng tin cậy. Sản phẩm thật thì khác — onnxEngine.js chỉ báo khi xác
+    suất > 0.9 VÀ hơn KEEP một biên 0.25.
+
+    Nên số ở đây đo NĂNG LỰC THÔ của model, còn ngoài sản phẩm precision sẽ cao
+    hơn và recall thấp hơn. Đừng đem con số này đi hứa với người dùng, và cũng
+    đừng lấy nó làm cớ để hạ ngưỡng.
+    """
     tp = fp = fn = 0
     for r in rows:
         pred = predict_fn(r["wrong"])
@@ -165,7 +207,12 @@ def score(rows, predict_fn, scoped: bool, lexicon) -> dict:
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", type=Path, default=None)
+    ap.add_argument("--model", type=Path, default=None, help="thư mục model PyTorch")
+    ap.add_argument("--onnx", type=Path, default=None,
+                    help="file .onnx để chấm thay bản PyTorch — dùng để đo "
+                         "lượng tử hoá INT8 lấy mất bao nhiêu F1")
+    ap.add_argument("--tokenizer", type=Path, default=None,
+                    help="thư mục tokenizer khi dùng --onnx (mặc định lấy --model)")
     ap.add_argument("--vsec", type=Path, default=Path("data/raw/VSEC.jsonl"))
     ap.add_argument("--lexicon", type=Path, default=Path("data/lexicon.tsv"))
     ap.add_argument("--max-len", type=int, default=128)
@@ -201,20 +248,38 @@ def main() -> None:
     print("nhãn hay gặp nhất : "
           + ", ".join(f"{t} {n}" for t, n in sc["by_tag"].most_common(5)))
 
-    if args.model is None:
-        print("\n(không truyền --model nên dừng ở phân tích phạm vi)")
+    if args.model is None and args.onnx is None:
+        print("\n(không truyền --model hoặc --onnx nên dừng ở phân tích phạm vi)")
         return
 
-    import torch
-    from transformers import AutoModelForTokenClassification, AutoTokenizer
+    from transformers import AutoTokenizer
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    tok = AutoTokenizer.from_pretrained(args.model)
-    model = AutoModelForTokenClassification.from_pretrained(args.model).to(device).eval()
-    n_params = sum(p.numel() for p in model.parameters())
-    print(f"\nmodel: {args.model}  {n_params / 1e6:.1f}M tham số  ({device})")
+    tok_dir = args.tokenizer or args.model
+    if tok_dir is None:
+        raise SystemExit("dùng --onnx thì phải kèm --model hoặc --tokenizer "
+                         "để biết lấy tokenizer ở đâu")
+    tok = AutoTokenizer.from_pretrained(tok_dir)
 
-    fn = lambda words: predict(model, tok, device, words, lexicon, args.max_len)
+    if args.onnx:
+        import onnxruntime as ort
+
+        opts = ort.SessionOptions()
+        opts.intra_op_num_threads = 1      # giống Web Worker, không phải batch GPU
+        sess = ort.InferenceSession(str(args.onnx), opts,
+                                    providers=["CPUExecutionProvider"])
+        print(f"\nmodel: {args.onnx}  "
+              f"{args.onnx.stat().st_size / 1e6:.1f} MB  (onnxruntime, 1 luồng CPU)")
+        fn = lambda words: predict_onnx(sess, tok, words, lexicon, args.max_len)
+    else:
+        import torch
+        from transformers import AutoModelForTokenClassification
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        model = (AutoModelForTokenClassification
+                 .from_pretrained(args.model).to(device).eval())
+        n_params = sum(p.numel() for p in model.parameters())
+        print(f"\nmodel: {args.model}  {n_params / 1e6:.1f}M tham số  ({device})")
+        fn = lambda words: predict(model, tok, device, words, lexicon, args.max_len)
 
     print("\n=== B. TRONG TẦM (so sánh công bằng) ===")
     b = score(rows, fn, scoped=True, lexicon=lexicon)
@@ -232,7 +297,7 @@ def main() -> None:
     Path("out").mkdir(exist_ok=True)
     Path("out/eval.json").write_text(json.dumps(
         {"scope": {k: v for k, v in sc.items() if k != "by_tag"},
-         "in_scope": b, "full": c, "params_m": round(n_params / 1e6, 1)},
+         "in_scope": b, "full": c, "model": str(args.onnx or args.model)},
         ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     print("\nđã lưu -> out/eval.json")
 
