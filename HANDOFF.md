@@ -34,7 +34,7 @@ viên viết khoá luận.
 |---|---|---|---|---|---|
 | Teacher fp32 | 134,4M | 539,4 | 0,9169 | 0,8691 | **0,8924** |
 | 768 fp32 | 77,7M | 311,5 | 0,8966 | 0,8574 | 0,8766 |
-| **768 INT8 per-channel ← đang dùng** | 77,7M | **78,5** | **0,9126** | 0,8330 | **0,8710** |
+| **v3 INT8 per-channel ← đang dùng** | 77,7M | **78,5** | **0,9600** | 0,7404 | **0,8360** (ở ngưỡng 0,95) |
 | 384 INT8 | 31,8M | 32,4 | 0,8378 | 0,7309 | 0,7807 |
 
 Trong trình duyệt (bản 768 INT8): nạp 325ms, p50 15,6ms, p95 18,7ms, bắt 4/6
@@ -47,9 +47,12 @@ tay bỏ những ca model bắt đúng lỗi thật trong văn bản "sạch" th
 trên VSEC giữ kín là **0,9550 / 0,7670** (argmax là 0,9126 / 0,8330). Chi tiết:
 quyết định 23, 25 và `docs/false_alarm_review.md`.
 
-**Chỗ yếu đã đo, chưa sửa:** recall theo lớp lệch rất nặng — thanh điệu 78,7%
-(682/867) nhưng phụ âm và âm cuối chỉ 38,4% (28/73), riêng `d_gi_r` là 0/8.
-Nguyên nhân: `class_weights.json` cho d/gi/r tổng cộng 0,92%. Xem quyết định 25.
+**Lớp phụ âm đã cân lại** (quyết định 26): model đang ship là `student768_v3`,
+fine-tune từ `student768` trên 25% dữ liệu bổ sung chỉ chứa lỗi phụ âm. Recall
+phụ âm 25,7% → **41,4%** trên `consonant_eval.py` (1.796 ca), báo oan không đổi.
+**Cái giá:** recall VSEC 0,7670 → 0,7404. Đây là đánh đổi thật — trên corpus
+phân bố như đời thật thì bản mới bắt ÍT lỗi hơn. Chỉ người dùng thật mới phân
+xử được, và popup đã đếm sẵn `byTag` để trả lời.
 
 ---
 

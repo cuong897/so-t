@@ -705,3 +705,75 @@ Nên bước tiếp theo không phải "train thêm cho F1 cao hơn", mà là ha
 kèm nhau: **cân lại trọng số lớp** khi sinh dữ liệu, và **dựng một tập chấm
 riêng cho đồng âm** — vì với n=8, VSEC không thể nói cho biết việc đó có hiệu
 quả hay không.
+
+---
+
+### 26. Cân lại lớp phụ âm: +15,7 điểm, và một đánh đổi phải nói thẳng
+
+Quyết định 25 để lại một chỗ yếu đo được: recall phụ âm 25,7% so với thanh điệu
+78,7%, riêng `d_gi_r` — lớp của `dành`/`giành`, ví dụ đầu bảng trong README —
+chỉ 6,2%.
+
+### Thước đo phải dựng TRƯỚC
+
+VSEC chỉ có 8 ca `d_gi_r`. Train xong mà chấm bằng n=8 thì không biết tốt lên
+hay tệ đi, nên `consonant_eval.py` phải có trước một dòng train nào.
+
+Cách dựng: khai cặp nhầm lẫn từ **chính từ điển** (âm tiết `a` có thật, đổi phụ
+âm ra `b` cũng có thật — đúng lớp bài toán mà từ điển bó tay), rồi ghép vào câu
+Wikipedia thật lấy từ `data/test.jsonl` mà model chưa từng thấy. **Không tự viết
+câu mẫu:** viết tay thì tập chấm phản ánh giả định của tôi về chỗ model sai chứ
+không phản ánh tiếng Việt — đúng cái bẫy quyết định 14 đã mắc. Giới hạn mỗi từ 3
+ca để "đo lớp d/gi/r" không hoá ra "đo mỗi chữ giành".
+
+**1.796 ca, cân đều 16 nhãn, riêng d/gi/r có 596 ca thay vì 8.**
+
+Đo **hai** con số, và con số thứ hai mới giữ cho phép đo lương thiện: recall, và
+báo oan trên chính câu gốc chưa đụng vào. Không có cái thứ hai thì chỉ cần model
+báo bừa mọi phụ âm là recall đẹp ngay.
+
+### Trộn 50/50 làm loãng lớp thanh điệu
+
+Dữ liệu bổ sung chỉ chứa lỗi phụ âm, trọng số trong lớp lấy **căn bậc hai** của
+tỷ lệ đo được rồi chuẩn hoá — giữ đúng thứ tự phổ biến thật nhưng nén khoảng
+cách 60 lần giữa `N_NG` và `R_GI` xuống còn 8 lần. Cào bằng hoàn toàn thì model
+học một thế giới không có thật.
+
+Fine-tune từ `student768` chứ không train lại từ đầu: phần thanh điệu đang tốt
+thì không nên đụng vào.
+
+| Bản | Trộn | VSEC P | VSEC R | VSEC F1 | Phụ âm | Báo oan |
+|---|---|---|---|---|---|---|
+| v1 @0,95 | — | 0,9550 | 0,7670 | 0,8507 | 25,7% | 1,25% / 1,30% |
+| v2 @0,95 | 50% | 0,9703 | 0,6947 | 0,8097 | 48,6% | 1,35% / 1,20% |
+| v2 @0,85 | 50% | 0,9591 | 0,7734 | 0,8563 | 55,8% | 1,75% / 1,85% |
+| **v3 @0,95** | **25%** | **0,9600** | 0,7404 | 0,8360 | **41,4%** | **1,45% / 1,25%** |
+| v3 @0,90 | 25% | 0,9505 | 0,7755 | 0,8541 | 46,1% | 1,65% / 1,75% |
+
+v2 (50% phụ âm) mất **7,2 điểm** recall VSEC — lớp thanh điệu chiếm 91% lỗi
+thật, pha loãng nửa dữ liệu là quá tay. Phải hạ ngưỡng xuống 0,85 mới bù lại
+được, mà hạ ngưỡng thì báo oan lên 1,75%/1,85%.
+
+**Đã thử ngưỡng theo lớp** (thanh điệu 0,85, phụ âm 0,95) để cứu: ra
+1,60%/1,75%, vẫn cao hơn v1. Nghĩa là báo oan tăng **không** do phụ âm mà do
+phải hạ ngưỡng thanh điệu. Bỏ hướng đó.
+
+### Chọn v3 @0,95, và cái giá của nó
+
+**Báo oan không đổi** — 29 so với 25 câu trên 2.000, chênh 4 câu nằm gọn trong
+nhiễu (độ lệch chuẩn ≈ 5). Precision nhích lên 0,9600. Recall phụ âm 25,7% →
+**41,4%**, tức hơn 60% tương đối.
+
+**Cái giá: recall VSEC 0,7670 → 0,7404, mất 2,7 điểm.** Trên một corpus phân bố
+như đời thật thì v3 bắt được **ít lỗi hơn** v1 — 696 so với 721 trên 940. Đây là
+đánh đổi thật, không phải chiến thắng sạch, và phải ghi đúng như vậy.
+
+**Vì sao vẫn chọn:** VSEC thu lỗi từ người **gõ**; sản phẩm nhắm người **không
+biết viết thế nào** (quyết định 14). Nếu người dùng thật mắc lỗi phụ âm và đồng
+âm nhiều hơn tỷ lệ VSEC gợi ý — và cả tiền đề sản phẩm đặt cược vào điều đó —
+thì v3 thắng cho họ. Nếu không thì v1 đúng hơn.
+
+**Không phép đo offline nào phân xử được chuyện này.** Nhưng popup đã đếm sẵn
+`byTag`, nên người dùng thật sẽ trả lời: nhóm lỗi nào được chấp nhận nhiều nhất
+chính là câu trả lời. Đây là lần đầu trong dự án một quyết định phải chờ người
+dùng thật mới khép lại được.

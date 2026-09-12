@@ -1,0 +1,628 @@
+<title>Đo đúng, sai chỗ</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;800&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+  :root {
+    --ground: #eef1f4;
+    --paper: #ffffff;
+    --sunk: #f7f9fb;
+    --edge: #dde3e9;
+    --edge-soft: #e8edf1;
+    --ink: #12171d;
+    --ink-2: #485360;
+    --ink-3: #7b8690;
+    --wrong: #c62b20;
+    --wrong-wash: #fdeceb;
+    --right: #16733a;
+    --right-wash: #eaf6ee;
+    --act: #2f6feb;
+
+    --display: "Be Vietnam Pro", "Segoe UI", system-ui, sans-serif;
+    --body: "Source Serif 4", Georgia, serif;
+    --util: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0e1318;
+      --paper: #161d24;
+      --sunk: #1b232b;
+      --edge: #2b363f;
+      --edge-soft: #222c35;
+      --ink: #e9eef3;
+      --ink-2: #aab6c1;
+      --ink-3: #7e8a96;
+      --wrong: #ff7063;
+      --wrong-wash: #2c1a18;
+      --right: #4fc776;
+      --right-wash: #14261a;
+      --act: #6c9bff;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0e1318;
+    --paper: #161d24;
+    --sunk: #1b232b;
+    --edge: #2b363f;
+    --edge-soft: #222c35;
+    --ink: #e9eef3;
+    --ink-2: #aab6c1;
+    --ink-3: #7e8a96;
+    --wrong: #ff7063;
+    --wrong-wash: #2c1a18;
+    --right: #4fc776;
+    --right-wash: #14261a;
+    --act: #6c9bff;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 18px;
+    line-height: 1.72;
+    margin: 0;
+  }
+
+  .wrap { max-width: 680px; margin: 0 auto; padding: 0 24px 110px; }
+
+  h1, h2, h3, .ui { font-family: var(--display); }
+
+  header { padding: 84px 0 0; }
+
+  .kicker {
+    font-family: var(--util);
+    font-size: 11.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 18px;
+  }
+
+  h1 {
+    font-size: clamp(36px, 6vw, 52px);
+    font-weight: 800;
+    line-height: 1.06;
+    letter-spacing: -0.035em;
+    text-wrap: balance;
+    margin: 0 0 22px;
+  }
+
+  .standfirst {
+    font-size: 20px;
+    line-height: 1.6;
+    color: var(--ink-2);
+    margin: 0 0 28px;
+  }
+
+  .byline {
+    font-family: var(--util);
+    font-size: 12px;
+    color: var(--ink-3);
+    border-top: 1px solid var(--edge);
+    padding-top: 16px;
+    line-height: 1.9;
+  }
+
+  h2 {
+    font-family: var(--display);
+    font-size: 25px;
+    font-weight: 700;
+    line-height: 1.25;
+    letter-spacing: -0.022em;
+    text-wrap: balance;
+    margin: 60px 0 4px;
+  }
+
+  h3 {
+    font-family: var(--display);
+    font-size: 17.5px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 38px 0 2px;
+  }
+
+  p { margin: 0 0 20px; }
+
+  .lead-in {
+    font-family: var(--util);
+    font-size: 11.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 14px;
+  }
+
+  strong, b { font-weight: 700; }
+  em { font-style: italic; }
+
+  /* Bộ đôi tưởng/đo — hình ảnh trung tâm của cả bài, và cũng chính là
+     hình ảnh của sản phẩm: một chữ viết sai đặt cạnh chữ viết đúng. */
+  .swap {
+    background: var(--paper);
+    border: 1px solid var(--edge);
+    border-radius: 12px;
+    overflow: hidden;
+    margin: 26px 0;
+  }
+
+  .swap-row {
+    display: grid;
+    grid-template-columns: 104px 1fr;
+    gap: 16px;
+    padding: 15px 20px;
+    align-items: baseline;
+  }
+
+  .swap-row + .swap-row { border-top: 1px solid var(--edge-soft); }
+  .swap-row.a { background: var(--wrong-wash); }
+  .swap-row.b { background: var(--right-wash); }
+
+  .swap-label {
+    font-family: var(--util);
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .swap-row.a .swap-label { color: var(--wrong); }
+  .swap-row.b .swap-label { color: var(--right); }
+
+  .swap-text {
+    font-family: var(--display);
+    font-size: 16px;
+    line-height: 1.55;
+  }
+
+  .swap-text .n {
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+  }
+
+  .cost {
+    font-family: var(--util);
+    font-size: 12.5px;
+    color: var(--ink-3);
+    border-left: 2px solid var(--edge);
+    padding-left: 14px;
+    margin: 22px 0;
+    line-height: 1.75;
+  }
+
+  .cost b { color: var(--ink); font-weight: 500; }
+
+  .scroll { overflow-x: auto; margin: 26px 0; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--display);
+    font-size: 14.5px;
+    min-width: 520px;
+  }
+
+  th, td {
+    text-align: left;
+    padding: 10px 14px 10px 0;
+    border-bottom: 1px solid var(--edge-soft);
+    vertical-align: top;
+  }
+
+  th {
+    font-family: var(--util);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    border-bottom-color: var(--edge);
+  }
+
+  td.num, th.num { font-variant-numeric: tabular-nums; text-align: right; padding-right: 0; }
+  td.bad { color: var(--wrong); }
+  td.good { color: var(--right); font-weight: 600; }
+
+  code {
+    font-family: var(--util);
+    font-size: 0.85em;
+    background: var(--sunk);
+    border: 1px solid var(--edge-soft);
+    border-radius: 5px;
+    padding: 1px 5px;
+  }
+
+  pre {
+    font-family: var(--util);
+    font-size: 12.5px;
+    line-height: 1.7;
+    background: var(--paper);
+    border: 1px solid var(--edge);
+    border-radius: 10px;
+    padding: 15px 18px;
+    overflow-x: auto;
+    margin: 24px 0;
+    color: var(--ink-2);
+  }
+
+  blockquote {
+    margin: 30px 0;
+    padding: 0 0 0 22px;
+    border-left: 3px solid var(--wrong);
+    font-size: 20px;
+    line-height: 1.55;
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  hr {
+    border: 0;
+    border-top: 1px solid var(--edge);
+    margin: 56px 0;
+  }
+
+  footer {
+    border-top: 1px solid var(--edge);
+    margin-top: 60px;
+    padding-top: 26px;
+    font-family: var(--util);
+    font-size: 12.5px;
+    color: var(--ink-3);
+    line-height: 1.9;
+  }
+
+  a { color: var(--act); }
+
+  @media (max-width: 560px) {
+    .swap-row { grid-template-columns: 1fr; gap: 4px; }
+  }
+</style>
+
+<div class="wrap">
+
+<header>
+  <p class="kicker">Nhật ký dựng một extension kiểm tra chính tả tiếng Việt</p>
+  <h1>Đo đúng, sai chỗ</h1>
+  <p class="standfirst">Tôi làm hỏng dự án này mười mấy lần. Không lần nào là do
+    tính sai. Lần nào cũng là đo một con số hoàn toàn đúng — của một đường dẫn
+    mà sản phẩm không đi qua.</p>
+  <p class="byline">
+    Soát — sửa lỗi dấu tiếng Việt ngay trong ô nhập liệu, chạy hoàn toàn trên
+    máy người dùng<br>
+    PhoBERT rút gọn 77,7M tham số · ONNX INT8 · 25 quyết định · 43 test JS + 9 test Python
+  </p>
+</header>
+
+<p>Sản phẩm thì đơn giản: bạn gõ <em>“chia sẽ kinh nghiệm”</em> trên Facebook,
+nó gạch chân chữ <em>sẽ</em> và đề nghị <em>sẻ</em>. Không server, không API,
+model nằm sẵn trong extension và chạy bằng WebAssembly ngay trong trình duyệt.</p>
+
+<p>Phần khó không nằm ở chỗ nhận ra từ sai. Nó nằm ở chỗ <strong>cả hai cách
+viết đều đúng</strong> — <em>hộp sửa tươi</em> và <em>hộp sữa tươi</em>,
+<em>dành chiến thắng</em> và <em>giành chiến thắng</em>. Từ điển bó tay hoàn
+toàn, chỉ ngữ cảnh cả câu mới phân biệt được. Đó là lý do cần một mô hình ngôn
+ngữ chứ không phải một danh sách từ.</p>
+
+<p>Nhưng bài này không viết về kiến trúc. Nó viết về những lần tôi tin vào một
+con số, và con số ấy đúng, và tôi vẫn sai.</p>
+
+<blockquote>Thước đo nào cũng đúng. Cái sai là chỗ nó không chạm tới.</blockquote>
+
+<hr>
+
+<h2>Lần 1 — Tôi đoán phân bố lỗi. Hai mươi điểm bốc hơi.</h2>
+
+<p class="lead-in">Dữ liệu train</p>
+
+<p>Dữ liệu train của bài này là miễn phí và vô hạn: lấy corpus sạch, tự làm hỏng
+nó, thế là có cặp (sai, đúng) mà không tốn một đồng gán nhãn. Nhưng làm hỏng
+<em>thế nào</em> mới là toàn bộ vấn đề. Nếu đảo hỏi/ngã ngẫu nhiên đều thì model
+học một phân bố lỗi không giống đời thật.</p>
+
+<p>Tôi dựng cả luận điểm sản phẩm quanh lỗi hỏi/ngã, nên tôi cấu hình bộ sinh
+nhiễu theo trực giác của mình.</p>
+
+<div class="swap">
+  <div class="swap-row a">
+    <span class="swap-label">Tôi tưởng</span>
+    <span class="swap-text">hỏi/ngã <span class="n">31,5%</span> · sai dấu <span class="n">9,3%</span> · mất dấu <span class="n">22,2%</span></span>
+  </div>
+  <div class="swap-row b">
+    <span class="swap-label">Đo ra</span>
+    <span class="swap-text">hỏi/ngã <span class="n">4,7%</span> · sai dấu <span class="n">43,6%</span> · mất dấu <span class="n">43,2%</span></span>
+  </div>
+</div>
+
+<p>Đo trên VSEC — 10.845 lỗi chính tả do người Việt thật mắc. Hỏi/ngã, thứ tôi
+tưởng là trung tâm, chiếm <strong>4,7%</strong>.</p>
+
+<p class="cost"><b>Giá phải trả:</b> bản train theo trọng số tôi đoán đạt F1
+<b>0,929</b> trên dev tự sinh, nhưng chỉ <b>0,732</b> trên lỗi người thật.
+Hai mươi điểm là khoảng cách giữa nhiễu nhân tạo và đời thật.</p>
+
+<p>Train lại với trọng số đo được: F1 trên lỗi người thật lên
+<strong>0,856</strong>. Cùng checkpoint, cùng lệnh, cùng tập chấm — khác đúng
+một thứ là trọng số <em>đoán</em> hay <em>đo</em>. <strong>+9,2 điểm.</strong></p>
+
+<h2>Lần 2 — Và benchmark của tôi bảo tôi vừa làm tệ đi</h2>
+
+<p>Đây mới là phần đáng giá.</p>
+
+<div class="scroll">
+<table>
+  <thead>
+    <tr><th>Chấm trên</th><th class="num">Trọng số đoán</th><th class="num">Trọng số đo</th><th class="num">Chênh</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Dev tự sinh</td><td class="num">0,9288</td><td class="num">0,9065</td><td class="num bad">−2,2</td></tr>
+    <tr><td>VSEC thật, giữ kín</td><td class="num">0,7634</td><td class="num">0,8556</td><td class="num good">+9,2</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Trên dev tự sinh, model mới <strong>tệ hơn</strong>. Trên lỗi người thật, nó
+<strong>tốt hơn rõ rệt</strong>.</p>
+
+<p>Lý do thì hiển nhiên khi đã thấy: dev tự sinh được sinh ra bằng <em>chính</em>
+phân bố dùng để train nó, nên nó luôn nịnh cái model khớp với nó nhất. Nó không
+chỉ nói dối — <strong>nó nói dối nhiều hơn cho model tệ hơn</strong>.</p>
+
+<p>Nếu hôm đó tôi chỉ nhìn dev tự sinh, tôi đã kết luận ngược hoàn toàn và vứt
+đúng thay đổi cần giữ.</p>
+
+<p class="cost"><b>Sửa:</b> <code>mine_errors.py</code> chia đôi VSEC bằng băm
+SHA-256 nội dung câu — một nửa để rút phân bố, một nửa <b>giữ kín</b>. Mọi con
+số báo cáo đều chấm trên nửa giữ kín. Tất định nên chạy lại luôn ra cùng cách
+chia, không cần lưu danh sách.</p>
+
+<hr>
+
+<h2>Ba lỗi không crash, không báo, chỉ âm thầm kém đi</h2>
+
+<h3>BPE hiểu ngược ký hiệu hậu tố</h3>
+
+<p>PhoBERT không có tokenizer bản nhanh, nên tôi tự viết BPE ~100 dòng cho trình
+duyệt. PhoBERT theo quy ước subword-nmt: hậu tố <code>@@</code> đánh dấu subword
+<strong>còn tiếp</strong>, subword cuối để trơn. Tôi giả định <code>&lt;/w&gt;</code>
+ở cuối từ — <strong>ngược hẳn</strong>.</p>
+
+<p>Ship như vậy thì mọi token thành <code>UNK</code>, model trả về rác, và
+<strong>không một lỗi nào bật ra</strong>. Extension vẫn chạy, chỉ là vô dụng.</p>
+
+<p>Bài test parity đối chiếu bản JS với tokenizer Python trên 5.609 token lấy từ
+corpus thật bắt được nó. Đây là loại lỗi không thể tìm ra bằng cách đọc code.</p>
+
+<h3>Hằng số trong code nói một đằng, file nói một nẻo</h3>
+
+<p><code>export_onnx.py</code> đặt <code>opset_version=14</code>. Nhưng PhoBERT
+dùng <code>LayerNormalization</code>, toán tử chỉ có từ opset 17. Bộ chuyển
+phiên bản ném lỗi, <code>torch.onnx</code> <strong>nuốt lỗi</strong>, và file
+vẫn xuất ra ở opset 18.</p>
+
+<p>Nghĩa là hằng số trong code là một lời nói dối. Sửa: đọc lại opset
+<em>thật</em> từ file sau khi xuất và cảnh báo nếu lệch.</p>
+
+<h3>Learning rate của fine-tune, dùng cho model khởi tạo ngẫu nhiên</h3>
+
+<p>Mặc định <code>--lr 3e-5</code> là mức fine-tune. Nhưng model học trò dựng
+bằng <code>from_config</code> nên khởi tạo <strong>ngẫu nhiên</strong> — tức
+train từ đầu, cần <code>3e-4</code>.</p>
+
+<p>Ở 3e-5 model gần như không học được gì, <strong>nhưng loss vẫn giảm đủ đẹp để
+không ai nghi ngờ</strong>. Hai tiếng GPU đổ đi mà không có một dấu hiệu nào.
+Bắt được bằng rà tĩnh, trước khi chạy.</p>
+
+<hr>
+
+<h2>Lần 3 — Model tôi đo suốt hai tuần chưa từng chạy một lần nào</h2>
+
+<p class="lead-in">Và đây là lần tệ nhất</p>
+
+<p>Extension đã cài được vào Chrome. Model đã đo: F1 0,871 trên VSEC giữ kín,
+p95 18,7ms trong trình duyệt, báo động giả 0,70–0,85%. Tôi đang viết hồ sơ nộp
+Chrome Web Store.</p>
+
+<p>Rồi tôi tự bắt mình làm một việc: <strong>cài vào Chrome thật và gõ trên
+Facebook thật</strong>, bằng một câu cố ý chọn để tầng luật không bắt được —
+<em>“Hơn một nửa dân số cứ trú tại vùng đồng bằng ven biển.”</em></p>
+
+<p>Không có gạch chân nào. Mục Errors của extension:</p>
+
+<pre>[soát] không nạp được model, chỉ dùng tầng luật:
+Failed to fetch dynamically imported module:
+chrome-extension://…/vendor/ort.wasm.bundle.min.mjs</pre>
+
+<p>Manifest khai <code>web_accessible_resources</code> gồm
+<code>src/engine/*.js</code>, <code>src/content/*.js</code>,
+<code>models/*</code> — <strong>quên <code>vendor/</code></strong>. Chrome chặn,
+<code>load()</code> bắt lỗi rồi ghi một dòng cảnh báo, và extension chạy tiếp
+bằng tầng luật như không có chuyện gì.</p>
+
+<p>Extension vẫn cài được. Vẫn gạch chân được. Vẫn trông như đang hoạt động. Chỉ
+là <strong>78 MB model chưa từng sống một lần nào</strong>.</p>
+
+<p>Vì sao không phép đo nào thấy: trang thử của tôi chạy qua
+<code>http://localhost</code>, nơi luật web-accessible <strong>không áp
+dụng</strong>. Còn <code>evaluate.py</code> nạp model thẳng từ đĩa bằng
+onnxruntime Python.</p>
+
+<p class="cost"><b>Mọi con số đều đúng.</b> Và mọi con số đều đo một đường dẫn
+mà sản phẩm thật không đi qua.</p>
+
+<p>Sửa xong lỗi đó lại lộ ra lỗi thứ hai nằm ngay sau nó: dòng đếm thống kê.
+<code>chrome.runtime.sendMessage</code> <strong>ném đồng bộ</strong> khi context
+của extension bị vô hiệu hoá, nên <code>.catch()</code> không đỡ được — mà dòng
+đó nằm giữa hàm soát, ngay trước đoạn gọi model:</p>
+
+<pre>hl.paint(el, kind, ruleIssues, map);   // tầng luật vẽ xong
+if (ruleIssues.length) bump('shown');  // ← NÉM Ở ĐÂY
+if (!model.ready) return;              // không bao giờ tới
+model.check(text)...                   // không bao giờ chạy</pre>
+
+<p>Tầng luật vẫn vẽ vì nó chạy trước. Tầng model im lặng biến mất. Nhìn y hệt
+như model hỏng. Và Chrome vô hiệu hoá context ở <strong>mọi lần extension tự cập
+nhật</strong>, nên chuyện này sẽ xảy ra với người dùng thật, không chỉ lúc phát
+triển.</p>
+
+<hr>
+
+<h2>Lần 4 — “Lượng tử hoá gần như miễn phí”</h2>
+
+<p>Tôi đã viết câu đó vào nhật ký quyết định hai lần. Nó dựa trên một phép đo
+thật: bản INT8 chỉ kém bản fp32 <strong>0,56 điểm F1</strong>.</p>
+
+<p>Phép đo ấy dùng <code>argmax</code> — chọn nhãn có điểm cao nhất. Nhưng sản
+phẩm không chạy bằng argmax. Sản phẩm đòi xác suất <strong>≥ 0,90</strong> và
+phải hơn lựa chọn “giữ nguyên” một biên 0,25, vì gạch chân nhầm một lần là người
+dùng gỡ cài.</p>
+
+<div class="swap">
+  <div class="swap-row a">
+    <span class="swap-label">Đo bằng argmax</span>
+    <span class="swap-text">INT8 kém fp32 <span class="n">0,56</span> điểm F1 — gần như miễn phí</span>
+  </div>
+  <div class="swap-row b">
+    <span class="swap-label">Đo ở ngưỡng thật</span>
+    <span class="swap-text">fp32 bắt <span class="n">755</span>/940 · INT8 bắt <span class="n">710</span>/940 — mất <span class="n">4,8</span> điểm recall</span>
+  </div>
+</div>
+
+<p>Lượng tử hoá không làm đổi <em>thứ hạng</em> của nhãn. Nó làm <em>xác
+suất</em> tụt. Argmax không thấy gì; ngưỡng thì thấy hết. Cái giá thật lớn gấp
+gần chín lần con số tôi đã báo cáo.</p>
+
+<p class="cost"><b>Sửa:</b> lượng tử hoá <b>per-channel</b> — mỗi cột trọng số
+một hệ số tỷ lệ riêng thay vì một hệ số chung cho cả ma trận. Cứu 37 trong 45 ca
+(747/940). Kèm nâng ngưỡng lên 0,95 để giữ precision đúng mức cũ: P 0,9550 và
+recall <b>+1,2 điểm</b>.</p>
+
+<p>Và tôi suýt lặp lại y hệt lỗi ấy trong cùng một giờ. Tôi viết “per-channel
+tốn thêm 0,1 MB” — đúng, nếu nhìn kích thước <strong>thô</strong>. Nén lại thì
+gói cài đi từ 49,8 lên <strong>58,6 MB</strong>, vì hệ số tỷ lệ theo từng cột làm
+trọng số khó nén hơn hẳn. Mà người dùng tải bản nén.</p>
+
+<hr>
+
+<h2>Lần 5 — Thước đo đúng, nhưng đo nhầm người</h2>
+
+<p>Mọi con số trong dự án này chấm trên VSEC: 10.845 lỗi chính tả do người Việt
+thật mắc, nửa giữ kín, không bao giờ đụng tới khi tinh chỉnh. Nghiêm túc hết
+mức.</p>
+
+<p>Rồi tôi chia recall theo từng lớp lỗi:</p>
+
+<div class="scroll">
+<table>
+  <thead>
+    <tr><th>Nhóm lỗi</th><th class="num">Bắt được</th><th class="num">Tỷ lệ</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Thanh điệu (mất dấu, sai dấu, hỏi/ngã)</td><td class="num">682/867</td><td class="num good">78,7%</td></tr>
+    <tr><td>Phụ âm &amp; âm cuối (ch/tr, s/x, d/gi/r)</td><td class="num">28/73</td><td class="num bad">38,4%</td></tr>
+    <tr><td>Riêng d/gi/r — <em>dành</em> ↔ <em>giành</em></td><td class="num">0/8</td><td class="num bad">0%</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p><em>dành</em> ↔ <em>giành</em> là <strong>ví dụ đầu bảng trong README của
+chính tôi</strong> — thứ tôi bán như điểm khác biệt duy nhất mà không công cụ
+nào khác làm được. Model bắt được 0 trên 8.</p>
+
+<p>Nguyên nhân nằm ngay trong bảng trọng số: d/gi/r cộng lại chiếm
+<strong>0,92%</strong> số lỗi sinh ra lúc train. Model gần như không được học
+lớp đó.</p>
+
+<p>Và đây là chỗ tréo ngoe nhất của cả dự án: <strong>bảng trọng số ấy
+đúng.</strong> Nó đo từ VSEC, và chính việc đo thay vì đoán đã đáng +9,2 điểm F1
+ở lần 1.</p>
+
+<p>Nhưng VSEC thu lỗi từ người <strong>gõ</strong> — nên nó đầy lỗi gõ phím. Còn
+sản phẩm này nhắm người <strong>không biết viết thế nào</strong>, nơi
+<em>dành/giành</em> và <em>chuyện/truyện</em> mới là chuyện thường ngày. Hai quần
+thể khác nhau. Phân bố đúng cho corpus lại bỏ đói đúng lớp làm nên điểm khác biệt
+của sản phẩm.</p>
+
+<p class="cost"><b>Sửa, và phải sửa hai thứ cùng lúc:</b> cân lại trọng số lớp
+khi sinh dữ liệu — <b>và</b> dựng một tập chấm riêng cho lỗi phụ âm. Với n=8,
+VSEC không thể nói cho biết thay đổi có hiệu quả hay không. Làm cái thứ nhất mà
+bỏ cái thứ hai thì train xong không ai biết là tốt lên hay tệ đi.</p>
+
+<p>Tập chấm mới khai cặp nhầm lẫn từ chính từ điển (âm tiết <em>a</em> có thật,
+đổi phụ âm ra <em>b</em> cũng có thật) rồi ghép vào câu Wikipedia thật mà model
+chưa từng thấy: <strong>1.796 ca</strong>, riêng d/gi/r có 596 ca thay vì 8. Nó
+đo hai con số, và con số thứ hai mới là con số giữ cho phép đo lương thiện — báo
+oan trên chính câu viết đúng, vì không có nó thì chỉ cần model báo bừa mọi phụ âm
+là recall đẹp ngay.</p>
+
+<div class="scroll">
+<table>
+  <thead>
+    <tr><th>Nhóm</th><th class="num">Trước</th><th class="num">Sau</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>d/gi/r</td><td class="num">6,2%</td><td class="num good">24,7%</td></tr>
+    <tr><td>ch/tr</td><td class="num">26,7%</td><td class="num good">60,0%</td></tr>
+    <tr><td>l/n</td><td class="num">21,7%</td><td class="num good">50,8%</td></tr>
+    <tr><td><b>Cộng</b></td><td class="num">25,7%</td><td class="num good">48,6%</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Và rồi thước đo cũ lên tiếng: trên VSEC, model mới <strong>tụt 7,2 điểm
+recall</strong>. Fine-tune trên 50% dữ liệu phụ âm đã làm loãng mất lớp thanh
+điệu — lớp chiếm 91% lỗi thật.</p>
+
+<p>Đó là chỗ tôi đang đứng lúc viết bài này: một bản train nhẹ tay hơn đang chạy,
+và tôi chưa biết nó có thắng sạch hay không. Nếu không, đây là một đánh đổi thật
+chứ không phải một chiến thắng, và nó phải được ghi lại đúng như vậy.</p>
+
+<hr>
+
+<h2>Thứ tôi rút ra</h2>
+
+<p>Mười mấy lần sai, không lần nào là do tính toán sai. Gộp lại chúng có đúng một
+hình dạng:</p>
+
+<div class="scroll">
+<table>
+  <thead>
+    <tr><th>Tôi đo</th><th>Sản phẩm thật thì</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Dev tự sinh</td><td>gặp lỗi người thật mắc</td></tr>
+    <tr><td>argmax, không ngưỡng</td><td>đòi p ≥ 0,95 và biên 0,25</td></tr>
+    <tr><td><code>http://localhost</code></td><td>chạy qua <code>chrome-extension://</code></td></tr>
+    <tr><td>Kích thước thô</td><td>người dùng tải bản nén</td></tr>
+    <tr><td>VSEC — lỗi người <em>gõ</em></td><td>phục vụ người <em>không biết viết</em></td></tr>
+    <tr><td>Câu có sẵn lỗi</td><td>phần lớn thời gian người ta viết đúng</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Cột trái không có gì sai. Từng con số đều tái lập được, đều chấm trên tập giữ
+kín, đều nghiêm túc. Vấn đề là <strong>khoảng cách giữa cột trái và cột
+phải</strong> — và khoảng cách ấy không bao giờ xuất hiện trong bất kỳ con số nào
+ở cột trái.</p>
+
+<p>Nên thứ tôi thật sự học được không phải “hãy đo đạc”. Tôi đã đo đạc rất nhiều.
+Mà là:</p>
+
+<blockquote>Trước khi tin một con số, hỏi xem nó đã đi qua đúng con đường mà
+người dùng đi chưa.</blockquote>
+
+<p>Và cách rẻ nhất để trả lời câu hỏi đó, tôi tìm ra sau hai tuần đo đạc: cài sản
+phẩm vào máy mình, rồi dùng nó như một người dùng. Ba lỗi nặng nhất trong danh
+sách trên — model chưa từng chạy, dòng thống kê giết tầng model, lớp d/gi/r chết
+— đều lộ ra trong <strong>ba mươi phút đầu tiên</strong> làm việc đó, sau khi
+không có phép đo offline nào chạm tới chúng trong suốt hai tuần.</p>
+
+<footer>
+  Số liệu trong bài đều chấm trên nửa VSEC giữ kín, hoặc trên tập phụ âm dựng từ
+  câu Wikipedia model chưa từng thấy.<br>
+  Nhật ký đầy đủ 25 quyết định — vì sao chọn thế này, bỏ gì, lỗi nào đã mắc —
+  nằm trong <code>docs/decisions.md</code> của dự án.
+</footer>
+
+</div>

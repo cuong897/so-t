@@ -26,4 +26,4 @@ dev/popup-demo.html
 # Dữ liệu sinh ra cho đợt cân lại lớp phụ âm — dựng lại bằng
 # ml/dataset.py --class-weights data/class_weights_consonant.json
 ml/data_cons/
-ml/data_ft/
+ml/data_ft*/

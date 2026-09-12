@@ -231,7 +231,11 @@ def save_checkpoint(out: Path, model, tok, meta: dict) -> None:
 
 
 def main() -> None:
-    sys.stdout.reconfigure(encoding="utf-8")
+    # line_buffering: chạy nền và pipe stdout thì Python đệm KHỐI, nên suốt cả
+    # buổi train không có một dòng nào chạm đĩa — nhìn y như treo. Buổi train
+    # dài hàng giờ mà không xem được tiến độ là mất luôn khả năng biết nó hỏng
+    # từ lúc nào.
+    sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", type=Path, default=Path("data"))
     ap.add_argument("--out", type=Path, required=True)
