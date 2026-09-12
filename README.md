@@ -210,6 +210,13 @@ trúc vừa là lời hứa với người dùng, nên hai ràng buộc sau là 
 
 ---
 
+## Bàn giao
+
+Tiếp quản dự án: đọc [HANDOFF.md](HANDOFF.md) trước — trạng thái hiện tại, việc
+đang dở, và sáu chỗ dễ vấp đã mắc ít nhất một lần.
+
+---
+
 ## Cấu trúc
 
 ```
