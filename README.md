@@ -65,7 +65,7 @@ nhầm một lần là người dùng gỡ cài; bỏ sót thì họ không bi�
 ## Chạy thử
 
 ```bash
-npm test          # 38 test: lõi ngôn ngữ, bộ khớp luật, parity BPE
+npm run test:all  # 39 test JS + 9 test Python
 npm run dev       # rồi mở hai trang dưới đây
 ```
 
@@ -84,9 +84,13 @@ cd ml && python export_tokenizer.py     # tokenizer.json + lexicon.json
 Cài extension: Chrome → `chrome://extensions` → bật *Developer mode* →
 *Load unpacked* → chọn thư mục `extension/`.
 
-**Lưu ý dung lượng:** runtime 14MB + model ~35MB ≈ **50MB**, đủ lớn để ảnh
-hưởng tỷ lệ cài đặt. MV3 cấm nạp *code* từ xa nhưng không cấm nạp *dữ liệu*,
-nên có thể tải model lúc chạy lần đầu thay vì đóng gói, kéo bundle về ~14MB.
+**Lưu ý dung lượng:** runtime 14MB + model 75MB ≈ **91MB**, đủ lớn để ảnh hưởng
+tỷ lệ cài đặt. Hai hướng giảm, đã đo nhưng chưa làm:
+
+- **Cắt vocab** — chỉ 23.669/64.001 token PhoBERT thực sự xuất hiện. Giữ token
+  gặp ≥20 lần phủ 99,69% số lượt, embedding giảm 49,2M→11,9M, model về ~40MB.
+- **Tải model lúc chạy** — MV3 cấm nạp *code* từ xa nhưng không cấm nạp *dữ
+  liệu*, nên bundle có thể về ~14MB.
 
 ---
 
@@ -98,9 +102,11 @@ cd ml && pip install -r requirements.txt
 python build_corpus.py                  # 400k câu sạch từ Wikipedia tiếng Việt
 python dataset.py --corpus data/corpus.txt --out data --variants 2
 python train.py   --data data --out out/teacher --epochs 2
-python train.py   --data data --out out/student --teacher out/teacher --layers 4 --hidden 384
-python evaluate.py --model out/student   # đối chiếu VSEC
-python export_tokenizer.py && python export_onnx.py --model out/student
+python train.py   --data data --out out/student768 --teacher out/teacher \
+                  --layers 4 --hidden 768 --epochs 3 --workers 4
+python evaluate.py --model out/student768 --held-out --limit 1500
+python export_tokenizer.py
+python export_onnx.py --model out/student768 --out ../extension/models --name soat
 ```
 
 Tải VSEC (dùng cho `evaluate.py`) một lần:
@@ -144,13 +150,23 @@ l/n/ch/tr/s/x mới có lỗi phụ âm.
 
 ## Số liệu
 
-Cần điền sau khi train. Ba nhóm, và nhóm thứ ba mới là nhóm khó bịa:
+Đo trên 1.500 câu VSEC **giữ kín**, khối "trong tầm":
 
-| Nhóm | Chỉ số | Trạng thái |
-|---|---|---|
-| Chất lượng | P / R / F1 trên VSEC giữ kín | **F1 0,856** (teacher, epoch 0/2) |
-| Hiệu năng | kích thước model, p50/p95 **đo trên máy yếu, 1 luồng** | chờ distil |
-| Sản phẩm | **tỷ lệ chấp nhận gợi ý**, retention D1/D7/D30, tỷ lệ gỡ cài | extension đã đếm |
+| Model | Tham số | MB | P | R | F1 |
+|---|---|---|---|---|---|
+| Teacher fp32 | 134,4M | 539,4 | 0,9169 | 0,8691 | **0,8924** |
+| 768 fp32 | 77,7M | 311,5 | 0,8966 | 0,8574 | 0,8766 |
+| **768 INT8 ← đang dùng** | 77,7M | **74,8** | **0,9126** | 0,8330 | **0,8710** |
+| 384 INT8 | 31,8M | 32,4 | 0,8378 | 0,7309 | 0,7807 |
+
+Trong trình duyệt (768 INT8): nạp 325ms, p50 **15,6ms**, p95 **18,7ms**, bắt
+4/6 câu mẫu, **0 báo động giả**.
+
+**INT8 làm precision TĂNG** (0,8966 → 0,9126) chứ không phải cái giá phải trả:
+lượng tử hoá cắt đi những dự đoán ở vùng ranh giới, vốn phần lớn là sai.
+
+Còn thiếu — và là nhóm khó bịa nhất: **tỷ lệ chấp nhận gợi ý**, retention
+D1/D7/D30, tỷ lệ gỡ cài. Extension đã đếm sẵn, chỉ chờ người dùng thật.
 
 ### Đo phân bố lỗi thật đáng +9,2 điểm F1
 
