@@ -35,7 +35,13 @@ const say = (s, cls) => {
 const check = (cond, msg) => say(`${cond ? '✓' : '✗'} ${msg}`, cond ? 'ok' : 'bad');
 
 const t0 = performance.now();
-const engine = new OnnxEngine({ threshold: 0.0, margin: 0.0 });  // hạ ngưỡng để thấy đầu ra
+// Mặc định dùng NGƯỠNG SẢN XUẤT — nếu không thì số báo động giả bên dưới vô
+// nghĩa. Thêm ?loose vào URL để hạ ngưỡng về 0, dùng khi soi model giả hoặc
+// khi muốn xem model đang nghĩ gì ở những chỗ nó chưa đủ tự tin để báo.
+const loose = new URLSearchParams(location.search).has('loose');
+const engine = loose
+  ? new OnnxEngine({ threshold: 0.0, margin: 0.0 })
+  : new OnnxEngine();
 const ok = await engine.load({
   ort: '../extension/vendor/ort.wasm.bundle.min.mjs',
   wasmDir: '../extension/vendor/',
@@ -45,7 +51,7 @@ const ok = await engine.load({
   meta: '../extension/models/soat.meta.json',
 });
 
-check(engine.ready, `nạp xong sau ${Math.round(performance.now() - t0)}ms`);
+check(engine.ready, `nạp xong sau ${Math.round(performance.now() - t0)}ms`  + (loose ? '  — CHẾ ĐỘ ?loose, ngưỡng = 0' : `  — ngưỡng sản xuất `  + `${engine.threshold}/${engine.margin}`));
 if (!engine.ready) {
   say('dừng — xem console để biết lỗi nạp', 'bad');
 } else {
@@ -82,6 +88,38 @@ if (!engine.ready) {
   say('\nvài đề xuất (model GIẢ — nội dung vô nghĩa là bình thường):');
   for (const i of issues.slice(0, 6)) {
     say(`   ${i.original} → ${i.suggestion}   ${(i.confidence * 100).toFixed(0)}%  [${i.tag}]`);
+  }
+
+  // --- model có THỰC SỰ bắt được lỗi không ---------------------------------
+  // Phần trên chỉ kiểm tra ghép nối. Phần này mới trả lời câu hỏi đáng tiền.
+  // Với model giả thì gần như trượt hết — đó là điều bình thường và đúng.
+  const CASES = [
+    ['Cả nhóm đã nổ lực rất nhiều trong suốt học kỳ này.', 'nổ', 'nỗ'],
+    ['Mình xin chia sẽ lại một vài kinh nghiệm cho các bạn.', 'sẽ', 'sẻ'],
+    ['Đây là những trãi nghiệm quý báu với cả nhóm.', 'trãi', 'trải'],
+    ['Chuyện đó đã xãy ra từ rất lâu rồi.', 'xãy', 'xảy'],
+    ['Anh ấy luon co gang hoc tap that tot.', 'luon', 'luôn'],
+    ['Toi rat vui khi duoc gap lai ban.', 'duoc', 'được'],
+  ];
+
+  say('\n--- bắt lỗi thật ---');
+  let hit = 0;
+  let falsePos = 0;
+  for (const [sentence, bad, good] of CASES) {
+    const found = await engine.check(sentence);
+    const onTarget = found.find((i) => i.original === bad);
+    const ok = onTarget && onTarget.suggestion === good;
+    if (ok) hit++;
+    falsePos += found.filter((i) => i.original !== bad).length;
+    const got = onTarget ? `${onTarget.original}→${onTarget.suggestion}` : 'không thấy';
+    say(`   ${ok ? '✓' : '·'} ${bad}→${good}   model: ${got}`
+      + `   (+${found.filter((i) => i.original !== bad).length} chỗ khác)`);
+  }
+  say(`bắt được ${hit}/${CASES.length}  |  động vào ${falsePos} chỗ ngoài mục tiêu`,
+      hit === CASES.length ? 'ok' : null);
+  if (falsePos > CASES.length) {
+    say('báo động giả cao — với sản phẩm này precision quan trọng hơn recall, '
+      + 'cân nhắc nâng threshold/margin.', 'bad');
   }
 
   // Đo độ trễ: p50/p95 trên câu dài trung bình, giống trong Web Worker
