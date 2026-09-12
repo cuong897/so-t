@@ -35,7 +35,7 @@ việc.
 
 ```
 văn bản  ─►  ① tra từ điển   ─►  ② sinh ứng viên  ─►  ③ chấm ngữ cảnh  ─►  ④ lọc & ngưỡng  ─►  gạch chân
-              <1ms, JS            <1ms, tập đóng      ~60ms, ONNX INT8      <1ms
+              <1ms, JS            <1ms, tập đóng      ~6ms, ONNX INT8       <1ms
 ```
 
 **① + ②  Tầng luật** (`extension/src/engine/`) — 137 luật cụm sai tuyệt đối và
@@ -109,6 +109,32 @@ python export_tokenizer.py
 python export_onnx.py --model out/student768/best --out ../extension/models --name soat
 ```
 
+Bốn lệnh trên ra **bản v1**. Bản đang ship là `student768_v4`, thêm hai vòng
+fine-tune cân lại lớp phụ âm (quyết định 26 và 27) — không có hai vòng này thì
+`d/gi/r`, ví dụ đầu bảng của README, chỉ đạt recall 6,2%:
+
+```bash
+# tập bổ sung: một tập nặng phụ âm nói chung, một tập nhắm riêng d/gi/r.
+# --seed 13 là BẮT BUỘC: dataset.py dùng cùng seed đó để chia train/dev/test,
+# đổi seed là đổi phép chia và câu trong test.jsonl có thể lọt sang train.
+python dataset.py --corpus data/corpus.txt --out data_cons --variants 1 \
+  --class-weights data/class_weights_consonant.json --seed 13
+python dataset.py --corpus data/corpus.txt --out data_dgir --variants 1 \
+  --class-weights data/class_weights_dgir.json --seed 13
+
+python mix_datasets.py --pool data:304356 --pool data_cons:45389 \
+  --pool data_dgir:50255 --out data_ft_dgir --seed 13
+
+python train.py --data data_ft_dgir --out out/student768_v4 \
+  --model out/student768 --epochs 2 --batch 32 --workers 4 --select f1
+python export_onnx.py --model out/student768_v4/best --out ../extension/models --name soat
+```
+
+`mix_datasets.py` in ra phân bố **đo được** của tập đã trộn, và phải đọc con số
+đó chứ không đọc file cấu hình: trọng số lớp trong `noise.py` là **chặn trên**,
+vì nó chỉ bốc trong những lớp có mặt ở câu đang xét. Cấu hình `d/gi/r` 80% chỉ
+ra 47% thật.
+
 `train.py` giữ **hai** bản: `<out>` là epoch cuối (để `--resume` còn khớp với
 optimizer và scheduler đã cất), `<out>/best` là epoch tốt nhất trên dev theo
 `--select` (mặc định `f1`). Bản `best` là bản đem đi xuất ONNX — nhưng nó được
@@ -157,62 +183,103 @@ l/n/ch/tr/s/x mới có lỗi phụ âm.
 
 ## Số liệu
 
-Đo trên 1.500 câu VSEC **giữ kín**, khối "trong tầm":
+### Bản đang ship — đo ở ĐÚNG ngưỡng sản phẩm
+
+`student768_v4`, INT8 per-channel, ngưỡng **0,95** và biên **0,25** — đúng cặp
+số trong `onnxEngine.js`. Đây là những con số người dùng thật sự gặp:
+
+| Thước đo | Số | Đo bằng |
+|---|---|---|
+| VSEC giữ kín, trong tầm | P **0,9749** · R 0,7426 · F1 **0,8430** | `evaluate.py --held-out --threshold 0.95 --margin 0.25` |
+| Lỗi phụ âm (1.796 ca) | recall **43,3%** | `consonant_eval.py` |
+| riêng lớp `d/gi/r` (596 ca) | recall **28,5%** | `consonant_eval.py` |
+| Báo động giả trên văn bản đúng | **1,30%** / **1,00%** số câu | `false_alarm.py --limit 2000` |
+| Độ trễ, 1 luồng CPU | p50 **5,5ms** · p95 **5,7ms** | `export_onnx.py` |
+| Gói cài | 95,3 MB thô → **58,6 MB nén** | `package_extension.py` |
+
+Thời gian nạp model trong trình duyệt đo được ~325ms ở bản trước; v4 cùng kiến
+trúc và cùng đúng dung lượng file nên con số đó giữ nguyên, nhưng **chưa đo lại
+sau khi thay model**.
+
+### So sánh kiến trúc và lượng tử hoá — đo bằng argmax, KHÔNG ngưỡng
+
+Bảng dưới trả lời một câu hỏi khác: chọn kích thước model và kiểu lượng tử hoá
+nào. Nó đo bằng **argmax không ngưỡng**, tức **năng lực thô** chứ không phải
+thứ người dùng thấy, và bốn dòng đầu đo trên **đợt train v1** — trước hai lần
+cân lại lớp phụ âm (quyết định 26 và 27). Giữ lại vì so sánh kiến trúc vẫn đúng;
+đừng đọc nó như số của bản đang ship.
 
 | Model | Tham số | MB | P | R | F1 |
 |---|---|---|---|---|---|
 | Teacher fp32 | 134,4M | 539,4 | 0,9169 | 0,8691 | **0,8924** |
 | 768 fp32 | 77,7M | 311,5 | 0,8966 | 0,8574 | 0,8766 |
-| **768 INT8 per-channel ← đang dùng** | 77,7M | **78,5** | **0,9126** | 0,8330 | **0,8710** |
+| 768 INT8 per-channel | 77,7M | **78,5** | **0,9126** | 0,8330 | 0,8710 |
 | 384 INT8 | 31,8M | 32,4 | 0,8378 | 0,7309 | 0,7807 |
-
-Trong trình duyệt (768 INT8): nạp 325ms, p50 **15,6ms**, p95 **18,7ms**, bắt
-4/6 câu mẫu, **0 báo động giả**.
+| *768 INT8, đợt train v4 ← đang ship* | 77,7M | 78,5 | 0,8883 | **0,8543** | 0,8709 |
 
 **INT8 làm precision TĂNG** (0,8966 → 0,9126) chứ không phải cái giá phải trả:
 lượng tử hoá cắt đi những dự đoán ở vùng ranh giới, vốn phần lớn là sai.
+
+Và dòng cuối là một ví dụ sạch cho luận điểm của cả dự án này. **Đo bằng argmax
+thì v4 và v1 gần như không phân biệt được**: F1 0,8709 so với 0,8710, chênh một
+phần mười nghìn. Một phép đo hoàn toàn đúng, và hoàn toàn vô dụng cho việc phải
+quyết — vì nó ẩn mất chuyện hai model đó *lệch về hai phía khác nhau* (v1 nghiêng
+precision 0,9126/0,8330, v4 nghiêng recall 0,8883/0,8543), và cái ngưỡng 0,95
+của sản phẩm đối xử với hai kiểu lệch đó rất khác nhau.
+
+Ở ngưỡng sản phẩm, v4 hơn **v3** ở cả sáu thước đo (quyết định 27). So với
+**v1** thì vẫn là một đánh đổi chứ không phải thắng sạch: precision 0,9749 so
+với 0,9550, nhưng recall 0,7426 so với 0,7670 — đổi 2,4 điểm recall lấy 2,0
+điểm precision, cộng với recall phụ âm 25,7% → 43,3%.
 
 Còn thiếu — và là nhóm khó bịa nhất: **tỷ lệ chấp nhận gợi ý**, retention
 D1/D7/D30, tỷ lệ gỡ cài. Extension đã đếm sẵn, chỉ chờ người dùng thật.
 
 ### Báo động giả trên văn bản viết đúng
 
-Mọi con số trên đây đo trên câu **có sẵn lỗi**, bằng **argmax không ngưỡng**.
-Người dùng thì sống với câu hỏi ngược lại: *tôi viết đúng, bao lâu một lần thì
-nó gạch chân oan?* `false_alarm.py` dựng lại đúng phép quyết định của
-`onnxEngine.js` (p ≥ 0,90 và hơn KEEP ≥ 0,25) rồi chạy trên 2.000 câu **không
+Bảng so sánh kiến trúc ở trên đo trên câu **có sẵn lỗi**, bằng **argmax không
+ngưỡng**. Người dùng thì sống với câu hỏi ngược lại: *tôi viết đúng, bao lâu một
+lần thì nó gạch chân oan?* `false_alarm.py` dựng lại đúng phép quyết định của
+`onnxEngine.js` (p ≥ 0,95 và hơn KEEP ≥ 0,25) rồi chạy trên 2.000 câu **không
 có lỗi**, hai nguồn khác miền:
 
-| Nguồn | Máy đếm | Đọc tay, chỉ tính oan thật |
-|---|---|---|
-| Wikipedia sạch (chưa từng train) | 1,25% số câu | ~0,75% |
-| VSEC nửa giữ kín, câu đã sửa đúng | 1,30% số câu | ~0,75% |
+| Nguồn | Máy đếm (v4 đang ship) | v3 | v1 |
+|---|---|---|---|
+| Wikipedia sạch (chưa từng train) | **1,30%** số câu | 1,45% | 1,25% |
+| VSEC nửa giữ kín, câu đã sửa đúng | **1,00%** số câu | 1,25% | 1,30% |
 
-*(Số đọc tay ở trên đo trên bản per-tensor @0,90 — 0,85% và 0,70%; bản
-per-channel @0,95 hiện tại có tỷ lệ máy đếm tương đương nên tỷ lệ thật cũng
-xấp xỉ, nhưng chưa đọc tay lại.)*
-
-Khoảng **một câu trong 120–140**. Chênh lệch giữa hai cột là điểm đáng nói:
-**26% số "báo động giả" hoá ra là model bắt đúng lỗi thật trong văn bản được coi
-là sạch** (`cứ trú`→`cư trú`, `nỗi danh`→`nổi danh`). Văn bản sạch không sạch,
-nên số máy đếm là chặn trên chứ không phải sự thật — cả 54 lần gạch chân được
-đọc tay và để nguyên ngữ cảnh trong
+Khoảng **một câu trong 77–100**. Nhưng con số máy đếm là **chặn trên**, không
+phải sự thật: đọc tay 54 lần gạch chân của bản trước thì **26% số "báo động
+giả" hoá ra là model bắt đúng lỗi thật trong văn bản được coi là sạch**
+(`cứ trú`→`cư trú`, `nỗi danh`→`nổi danh`) — tỷ lệ oan thật khoảng **0,75%**.
+Cả 54 ca để nguyên ngữ cảnh trong
 [docs/false_alarm_review.md](docs/false_alarm_review.md).
 
-**Ngưỡng mua được gì:** so với argmax, ngưỡng sản phẩm (0,95 / biên 0,25) đẩy
-precision 0,9126 → **0,9550** và recall 0,8330 → **0,7670**. Đó mới là cặp số
-người dùng thật sự thấy — `evaluate.py` mặc định chấm bằng argmax không ngưỡng,
-tức năng lực thô.
+Danh sách của v4 cũng vậy: trong 26 lần gạch ở Wikipedia có `cứ`→`cư`,
+`vât`→`vật`, `trỗ`→`chỗ`, `dộng`→`rộng` — đều là lỗi thật trong văn bản "sạch".
+**Phần đọc tay chưa làm lại cho v4**, nên 0,75% là số của bản trước, không phải
+số của bản này.
 
-**Và nâng ngưỡng không phải cách sửa:** trung vị độ tin cậy của các ca oan là
-**0,981**, 12/31 ca ở p ≥ 0,99 — model **tự tin khi sai**. Vặn lên 0,99 thì báo
-oan còn 0,60% nhưng recall rơi xuống 0,5862. Chỗ oan tập trung ở tên riêng,
+**Ngưỡng mua được gì:** với chính model đang ship, ngưỡng sản phẩm (0,95 / biên
+0,25) đổi argmax P 0,8883 · R 0,8543 thành P **0,9749** · R **0,7426**. Trả 11
+điểm recall để lấy 8,7 điểm precision — và cặp sau mới là cặp người dùng thấy.
+`evaluate.py` **mặc định chấm bằng argmax không ngưỡng**; quên hai cờ
+`--threshold/--margin` là đo một đường mà sản phẩm không đi qua.
+
+**Và nâng ngưỡng không phải cách sửa:** đo trên bản per-tensor @0,90, trung vị
+độ tin cậy của các ca oan là **0,981**, 12/31 ca ở p ≥ 0,99 — model **tự tin
+khi sai**, nên vặn ngưỡng lên chỉ cắt đúng phần đang làm việc tốt. Vặn lên 0,99
+thì báo oan còn 0,60% mà recall rơi xuống 0,5862. Chỗ oan tập trung ở tên riêng,
 thuật ngữ chuyên ngành và từ thường gặp trong ngữ cảnh lạ — tức chỗ **cả hai
 dạng đều là từ thật**, đúng nơi từ điển bó tay.
 
 ```bash
-cd ml && python false_alarm.py --limit 2000
-python evaluate.py --onnx ../extension/models/soat.int8.onnx                    --tokenizer out/student768 --held-out --limit 1500                    --threshold 0.9 --margin 0.25
+cd ml
+python false_alarm.py --onnx ../extension/models/soat.int8.onnx \
+  --tokenizer out/student768_v4/best --limit 2000
+python evaluate.py --onnx ../extension/models/soat.int8.onnx \
+  --tokenizer out/student768_v4/best --held-out --limit 1500 \
+  --threshold 0.95 --margin 0.25
 ```
 
 ### Đo phân bố lỗi thật đáng +9,2 điểm F1
@@ -288,8 +355,14 @@ extension/src/engine/   vi.js (âm tiết + 23 nhãn), rules.js, ruleEngine.js,
 extension/src/content/  targets.js (lọc ô), highlighter.js (gạch chân),
                         replace.js (thay chuỗi an toàn với React/Lexical), tooltip.js
 ml/                     vi.py (bản song song của vi.js), noise.py, encoding.py,
-                        build_corpus.py, dataset.py, evaluate.py,
+                        build_corpus.py, dataset.py, mix_datasets.py,
                         train.py, export_onnx.py, export_tokenizer.py
+ml/evaluate.py          VSEC — nhớ --held-out --threshold 0.95 --margin 0.25
+ml/false_alarm.py       báo động giả trên văn bản ĐÚNG
+ml/consonant_eval.py    tập chấm riêng cho lỗi phụ âm (1.796 ca)
+ml/consonant_diagnose.py  vì SAO lớp phụ âm sót: thiếu tự tin, đoán sai,
+                        hay bị nhãn thanh điệu ăn mất
+ml/diagnose.py          chia phần bỏ sót trên VSEC
 docs/decisions.md       nhật ký quyết định — vì sao chọn thế này, bỏ gì
 ```
 
