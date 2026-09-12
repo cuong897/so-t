@@ -266,6 +266,19 @@ def main() -> None:
     tok.save_pretrained(args.out)
     (args.out / "tags.json").write_text(
         json.dumps(vi.TAG_NAMES, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # Ghi lại cấu hình đã train để export_onnx.py không phải đoán. Model chưa
+    # bao giờ thấy chuỗi dài hơn max_len này; xuất ONNX với giá trị lớn hơn thì
+    # nó vẫn chạy nhưng kém đi ở phần đuôi, và không có gì báo cho biết.
+    (args.out / "train_meta.json").write_text(json.dumps({
+        "max_len": args.max_len,
+        "tags": vi.TAG_NAMES,
+        "epochs": args.epochs,
+        "lr": args.lr,
+        "batch": args.batch,
+        "from_scratch": from_scratch,
+        "teacher": str(args.teacher) if args.teacher else None,
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"đã lưu -> {args.out}  ({n_params / 1e6:.1f}M tham số)")
 
 

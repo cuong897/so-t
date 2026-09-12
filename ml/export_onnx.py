@@ -140,9 +140,22 @@ def main() -> None:
     ap.add_argument("--model", type=Path, required=True, help="thư mục model đã train")
     ap.add_argument("--out", type=Path, default=Path("../extension/models"))
     ap.add_argument("--name", default="soat")
-    ap.add_argument("--max-len", type=int, default=128)
+    ap.add_argument("--max-len", type=int, default=None,
+                    help="mặc định đọc từ train_meta.json của model")
     ap.add_argument("--skip-bench", action="store_true")
     args = ap.parse_args()
+
+    # max_len phải khớp lúc train, nếu không model chạy trên chuỗi nó chưa
+    # từng thấy — vẫn ra kết quả, chỉ là kém đi ở phần đuôi và không báo gì.
+    meta_path = args.model / "train_meta.json"
+    if args.max_len is None:
+        if meta_path.exists():
+            args.max_len = json.loads(meta_path.read_text(encoding="utf-8"))["max_len"]
+            print(f"max_len {args.max_len} (đọc từ train_meta.json)")
+        else:
+            args.max_len = 128
+            print(f"max_len {args.max_len} (mặc định — không thấy train_meta.json, "
+                  f"kiểm tra lại xem có khớp lúc train không)")
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     fp32 = args.out / f"{args.name}.fp32.onnx"
