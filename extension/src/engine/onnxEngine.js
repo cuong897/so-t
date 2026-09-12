@@ -17,7 +17,7 @@
  *     im lặng trả mảng rỗng — tầng luật vẫn hoạt động bình thường.
  */
 
-import { applicableTags, TAGS, TAG_NAMES, tokenize, isWordLike } from './vi.js';
+import { applicableTags, getTone, TAGS, TAG_NAMES, TONE, tokenize, isWordLike } from './vi.js';
 import { loadTokenizer } from './bpe.js';
 
 const DEFAULT_THRESHOLD = 0.90;
@@ -141,7 +141,7 @@ export class OnnxEngine {
         original: token,
         suggestion: issue.suggestion,
         why: `Model đề xuất "${issue.suggestion}" (${Math.round(issue.prob * 100)}%).`,
-        tag: tagGroup(issue.tag),
+        tag: tagGroup(issue.tag, token, issue.suggestion),
         confidence: issue.prob,
         source: 'model',
       });
@@ -193,9 +193,28 @@ export class OnnxEngine {
   }
 }
 
-/** Quy nhãn model về nhóm hiển thị mà tooltip đã biết. */
-function tagGroup(tag) {
-  if (tag.startsWith('TONE_')) return 'hoi-nga';
+/**
+ * Quy nhãn model về nhóm hiển thị.
+ *
+ * Nhãn TONE_* KHÔNG quy được về một nhóm cố định — phải nhìn cả thanh gốc.
+ * TONE_NGA vừa có thể là "viết hỏi đáng lẽ ngã" (lỗi kiến thức) vừa là "quên
+ * bỏ dấu" (lỗi gõ phím), và đó là hai nhóm khác hẳn nhau với người dùng.
+ *
+ * Bản đầu gán mọi TONE_* vào 'hoi-nga'. Sau khi đo được phân bố thật thì đó là
+ * sai rõ ràng: chỉ 4.7% lỗi là hỏi/ngã, còn 87% là mất dấu hoặc sai dấu — tức
+ * thống kê tuần sẽ báo "bạn sai hỏi/ngã 23 lần" trong khi hầu hết không phải.
+ */
+export function tagGroup(tag, original, suggestion) {
+  if (tag.startsWith('TONE_')) {
+    const from = getTone(original);
+    const to = getTone(suggestion);
+    const f = from ? from.tone : null;
+    const t = to ? to.tone : null;
+    const isHoiNga = (x) => x === TONE.HOI || x === TONE.NGA;
+    if (isHoiNga(f) && isHoiNga(t)) return 'hoi-nga';
+    if (f === TONE.NGANG && t !== TONE.NGANG) return 'thieu-dau';
+    return 'sai-dau';
+  }
   if (tag === 'CH_TR' || tag === 'TR_CH') return 'ch-tr';
   if (tag === 'S_X' || tag === 'X_S') return 's-x';
   if (tag.startsWith('D_') || tag.startsWith('GI_') || tag.startsWith('R_')) return 'd-gi-r';

@@ -8,6 +8,8 @@
 
 const TAG_LABEL = {
   'hoi-nga': 'Hỏi / ngã',
+  'thieu-dau': 'Thiếu dấu',
+  'sai-dau': 'Sai dấu',
   'ch-tr': 'ch / tr',
   's-x': 's / x',
   'd-gi-r': 'd / gi / r',

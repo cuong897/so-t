@@ -73,3 +73,27 @@ test('từ bị cắt vì vượt maxLen thì báo -1 chứ không trỏ bừa',
     const first = tok.firstSubwordIndex(wordIds, words.length);
     assert.ok(first.slice(-10).every((i) => i === -1));
   });
+
+// --- phân nhóm nhãn hiển thị ---------------------------------------------
+
+test('tagGroup phân biệt hỏi/ngã với thiếu dấu và sai dấu', async () => {
+  const { tagGroup } = await import('../extension/src/engine/onnxEngine.js');
+
+  // Lỗi KIẾN THỨC: cả hai đều có dấu, và đều thuộc {hỏi, ngã}
+  assert.equal(tagGroup('TONE_NGA', 'nổ', 'nỗ'), 'hoi-nga');
+  assert.equal(tagGroup('TONE_HOI', 'trãi', 'trải'), 'hoi-nga');
+
+  // Lỗi GÕ PHÍM: gốc không dấu -> thêm dấu vào
+  assert.equal(tagGroup('TONE_HOI', 'giam', 'giảm'), 'thieu-dau');
+  assert.equal(tagGroup('TONE_NANG', 'luc', 'lực'), 'thieu-dau');
+
+  // Đặt nhầm sang thanh khác, không dính tới hỏi/ngã
+  assert.equal(tagGroup('TONE_SAC', 'lùc', 'lúc'), 'sai-dau');
+  assert.equal(tagGroup('TONE_HUYEN', 'nhiếu', 'nhiều'), 'sai-dau');
+
+  // Phụ âm và âm cuối giữ nguyên như cũ
+  assert.equal(tagGroup('CH_TR', 'chân', 'trân'), 'ch-tr');
+  assert.equal(tagGroup('S_X', 'sử', 'xử'), 's-x');
+  assert.equal(tagGroup('D_GI', 'dành', 'giành'), 'd-gi-r');
+  assert.equal(tagGroup('N_NG', 'hoàn', 'hoàng'), 'n-ng');
+});
