@@ -29,13 +29,28 @@ chiếm phần nhỏ về số lượng nhưng là phần duy nhất không côn
 được — nên nó là điểm khác biệt, còn sửa dấu nói chung mới là khối lượng công
 việc.
 
+Và đây là mức làm được thật, đo trong trình duyệt trên bản đang ship, ở chính
+cặp câu khó nhất của lớp `d/gi/r` — hai câu gần như trùng nhau, một câu sai một
+câu đúng:
+
+| Câu | Model xếp | Ở ngưỡng 0,95 |
+|---|---|---|
+| Chúc mừng anh đã **dành** được phần quà. | `dành→giành` **p = 0,835** | chưa báo |
+| Chị **dành** phần quà cho em. *(đúng)* | không nhãn nào | không báo ✓ |
+
+Đó là **phân biệt đúng** — cùng chữ `dành`, cùng cụm `phần quà`, hai kết luận
+khác nhau. Tầng luật không làm được: thêm cue `phần`+`quà` cho `giành` thì bắt
+được câu trên nhưng gạch oan câu dưới (quyết định 26). Model làm được, chỉ chưa
+đủ tự tin để vượt ngưỡng 0,95 — nên hiện tại nó **im lặng ở cả hai câu**, và
+việc còn lại là chuyện ngưỡng, không còn là chuyện model không biết.
+
 ---
 
 ## Kiến trúc — bốn tầng
 
 ```
 văn bản  ─►  ① tra từ điển   ─►  ② sinh ứng viên  ─►  ③ chấm ngữ cảnh  ─►  ④ lọc & ngưỡng  ─►  gạch chân
-              <1ms, JS            <1ms, tập đóng      ~6ms, ONNX INT8       <1ms
+              <1ms, JS            <1ms, tập đóng      ~18ms, ONNX INT8      <1ms
 ```
 
 **① + ②  Tầng luật** (`extension/src/engine/`) — 137 luật cụm sai tuyệt đối và
@@ -194,12 +209,19 @@ số trong `onnxEngine.js`. Đây là những con số người dùng thật s�
 | Lỗi phụ âm (1.796 ca) | recall **43,3%** | `consonant_eval.py` |
 | riêng lớp `d/gi/r` (596 ca) | recall **28,5%** | `consonant_eval.py` |
 | Báo động giả trên văn bản đúng | **1,30%** / **1,00%** số câu | `false_alarm.py --limit 2000` |
-| Độ trễ, 1 luồng CPU | p50 **5,5ms** · p95 **5,7ms** | `export_onnx.py` |
+| Độ trễ **trong trình duyệt** (wasm) | nạp 434ms · p50 **18,4ms** · p95 **23,3ms** | `dev/onnx-test.html` |
+| Độ trễ onnxruntime Python, 1 luồng | p50 5,5ms · p95 5,7ms | `export_onnx.py` |
 | Gói cài | 95,3 MB thô → **58,6 MB nén** | `package_extension.py` |
 
-Thời gian nạp model trong trình duyệt đo được ~325ms ở bản trước; v4 cùng kiến
-trúc và cùng đúng dung lượng file nên con số đó giữ nguyên, nhưng **chưa đo lại
-sau khi thay model**.
+**Hai dòng độ trễ chênh nhau hơn ba lần, và đó là chỗ dễ báo cáo sai.**
+`export_onnx.py` đo bằng onnxruntime trên Python; trình duyệt chạy cùng file
+model qua **wasm**, chậm hơn hẳn. Con số người dùng thấy là dòng trên (18,4ms).
+Bản bàn giao trước ghi "trong trình duyệt p50 5,4ms" — đó là số của Python bị
+gán nhãn sai, và cũng là đúng loại lỗi mà cả README này nói về.
+
+*(Đo qua `http://localhost`, không phải `chrome-extension://`. Với **độ trễ**
+hai đường tương đương vì cùng file wasm và cùng model; với **việc nạp được tài
+nguyên hay không** thì không tương đương — xem quyết định 24.)*
 
 ### So sánh kiến trúc và lượng tử hoá — đo bằng argmax, KHÔNG ngưỡng
 

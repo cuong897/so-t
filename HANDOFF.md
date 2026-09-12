@@ -24,8 +24,13 @@ viết khoá luận.
 - 46 commit, cây git sạch
 - 43 test JS + 9 test Python, tất cả pass (`npm run test:all`)
 - Đã cài thật vào Chrome, gõ thật trên Facebook, cả bốn tầng đều sống —
-  **nhưng lần đó là với model v3.** v4 chưa gõ thử trong Chrome thật, xem
-  việc số 1.
+  **nhưng lần đó là với model v3.**
+- v4 đã chạy qua trình duyệt thật ở `dev/onnx-test.html`
+  (`http://localhost:8777`): nạp 434ms, 4/6 câu mẫu, **0 báo động giả**, mọi
+  bất biến pass (đề xuất trong từ điển, offset đúng, không trùng bản gốc). Đây
+  là tầng model qua wasm thật, **nhưng qua `http://` chứ không qua
+  `chrome-extension://`** — quyết định 24 đã dạy một lần rằng hai đường đó
+  khác nhau ở chỗ nạp tài nguyên. Vẫn cần cài thật, xem việc số 1.
 - Gói nộp store đã đóng lại với v4, **chưa nộp**
 
 ### Số liệu chốt
@@ -39,8 +44,15 @@ biên 0,25 (`onnxEngine.js`).
 | Lỗi phụ âm (1.796 ca) | recall **43,3%** | `consonant_eval.py` |
 | riêng lớp `d/gi/r` (596 ca) | recall **28,5%** | `consonant_eval.py` |
 | Báo động giả trên văn bản đúng | 1,30% / 1,00% số câu | `false_alarm.py` |
-| Độ trễ, 1 luồng CPU | p50 5,5ms · p95 5,7ms | `export_onnx.py` |
+| Độ trễ **trong trình duyệt** (wasm) | nạp 434ms · p50 **18,4ms** · p95 23,3ms | `dev/onnx-test.html` |
+| Độ trễ onnxruntime Python, 1 luồng | p50 5,5ms · p95 5,7ms | `export_onnx.py` |
 | Gói cài | 95,3 MB thô → **58,6 MB nén** | `package_extension.py` |
+
+**Bản bàn giao trước ghi "trong trình duyệt · p50 5,4ms · export_onnx.py" —
+sai.** 5,4ms là số onnxruntime trên Python; trình duyệt chạy cùng file model qua
+wasm và đo được 18,4ms, chậm hơn ba lần. Con số người dùng thấy là 18,4ms. Đây
+đúng là loại lỗi mà cả dự án này lấy làm luận điểm, mắc thêm một lần nữa ngay
+trong tài liệu bàn giao.
 
 **Ba lưu ý khi đọc bảng này:**
 
@@ -78,12 +90,15 @@ model:
 
 > Hơn một nửa dân số cứ trú tại vùng đồng bằng ven biển.
 
-Model phải bắt `cứ→cư`. Và thêm một câu cho đúng lớp v4 vừa được cải thiện:
+Model phải bắt `cứ→cư`. Đã kiểm qua `dev/onnx-test.html` với v4: bắt được ở
+100%. Còn lại cần Chrome thật để xác nhận là chuyện `chrome-extension://` nạp
+được `vendor/*` và `models/*`, cộng với việc gõ trong ô thật của Facebook —
+tức `targets.js`, `highlighter.js`, `replace.js`, ba tầng mà `onnx-test.html`
+không chạm tới.
 
-> Chúc mừng anh đã dành được phần quà.
-
-Cái này v3 bỏ qua hoàn toàn ở cả hai tầng. v4 chưa rõ — **đo thì biết, đoán thì
-không**. Nếu vẫn trượt thì đây là ca cụ thể để đào tiếp.
+**Đừng dùng `dành được phần quà` để kiểm ở bước này** — đã đo rồi, model xếp
+`dành→giành` ở p = 0,835 nên ở ngưỡng 0,95 nó im lặng *đúng theo thiết kế*. Đó
+là việc số 4, không phải lỗi cài đặt.
 
 **Nhớ cache:** trình duyệt phục vụ lại cả file `.onnx`. Thay model rồi mà kết
 quả giống hệt bản cũ thì nghi cache trước, đừng nghi logic. Bấm Reload ở
@@ -134,18 +149,49 @@ bước 0 là thử lại trên Chrome thật (tức việc số 1 ở trên).
 Sinh lại: `python ml/package_extension.py` và `python ml/make_screenshots.py`
 (cả hai neo đường dẫn theo vị trí file, đứng đâu chạy cũng được).
 
-### 4. Hạ ngưỡng xuống 0,90 — giờ có chỗ mà trước đây không có
+### 4. Ngưỡng RIÊNG cho lớp phụ âm — hướng chưa ai thử, và bằng chứng đã có
 
-`consonant_diagnose.py` đo được: trong 244 ca d/gi/r mà nhãn đúng **đã dẫn
-đầu** nhưng chưa vượt ngưỡng, có **32 ca ở p ≥ 0,90**. Tức hạ ngưỡng ăn được
-ngay chừng đó.
+Đây là việc đáng làm nhất còn lại, và nó **không cần train gì**.
 
-Quyết định 26 đã thử hạ ngưỡng và bỏ, vì báo oan lên 1,65%/1,75%. Nhưng v4 đang
-ở **1,30%/1,00%** — thấp hơn cả v3 — nên chỗ trống rộng hơn hẳn lúc đó.
+Đo trong trình duyệt trên v4, ở đúng cặp câu khó nhất của lớp `d/gi/r`:
 
-**Đáng đo lại, không đáng đoán.** Một vòng: đổi hai hằng số trong
-`onnxEngine.js`, rồi chạy `evaluate.py`, `false_alarm.py`, `consonant_eval.py`
-ở `--threshold 0.90`. Mất khoảng 20 phút, không phải train lại gì.
+| Câu | Model xếp | Ở ngưỡng 0,95 |
+|---|---|---|
+| Chúc mừng anh đã **dành** được phần quà. | `dành→giành` **p = 0,835** | chưa báo |
+| Chị **dành** phần quà cho em. *(đúng)* | không nhãn nào | không báo ✓ |
+
+Câu trên là **ví dụ đầu bảng của README** và v3 bỏ qua nó hoàn toàn ở cả hai
+tầng. v4 xếp nó ở p = 0,835 — tức model **đã biết**, chỉ chưa đủ tự tin. Và
+quan trọng hơn: ở câu dưới, gần như trùng chữ và trùng cụm `phần quà`, model
+**không xếp nhãn nào**. Đó là phân biệt đúng, thứ mà hướng sửa bằng cue của
+quyết định 26 làm không được (thêm cue `phần`+`quà` thì bắt câu trên nhưng gạch
+oan câu dưới).
+
+Nên phần còn lại là chuyện **ngưỡng**, không còn là chuyện model không biết.
+
+**Vì sao hạ ngưỡng riêng cho phụ âm chưa từng được thử.** Quyết định 26 có thử
+ngưỡng theo lớp, nhưng theo **chiều ngược lại**: thanh điệu 0,85 / phụ âm 0,95.
+Nó ra 1,60%/1,75% báo oan và bị bỏ — *và kết luận của chính nó là* "báo oan
+tăng **không** do phụ âm mà do phải hạ ngưỡng thanh điệu". Chiều đúng — **giữ
+thanh điệu ở 0,95, hạ riêng phụ âm** — chưa ai đo.
+
+Ba lý do nó hứa hẹn hơn lúc quyết định 26 thử:
+
+1. Báo oan của v4 đang ở **1,30%/1,00%**, thấp hơn cả v3 (1,45%/1,25%) và thấp
+   hơn v1. Chỗ trống rộng hơn hẳn lúc đó.
+2. `consonant_diagnose.py` đo sẵn phần ăn được: trong 244 ca d/gi/r mà nhãn
+   đúng đã dẫn đầu, **32 ca ở p ≥ 0,90** và **56 ca ở p ≥ 0,80**.
+3. Chính kết luận của quyết định 26 nói phụ âm không phải nguồn báo oan.
+
+Lưu ý `dành→giành` ở p = 0,835 thì **ngưỡng 0,90 không cứu được nó** — phải
+xuống 0,80. Nên đo cả hai mức, và đo báo oan ở từng mức chứ đừng chọn mức rồi
+mới đo.
+
+Cách làm: `onnxEngine.js` hiện dùng một `DEFAULT_THRESHOLD` cho mọi nhãn. Cho
+nó nhận ngưỡng theo nhóm nhãn (`vi.js` đã có sẵn nhóm), rồi chạy
+`evaluate.py`, `false_alarm.py`, `consonant_eval.py` ở từng mức. Khoảng một
+tiếng, không train lại gì. **Và ghi ngưỡng chấp nhận trước khi đo**, như
+`77a9148` đã làm.
 
 ### 5. Lớp d/gi/r vẫn còn ba phần tư ca bị bỏ sót
 
