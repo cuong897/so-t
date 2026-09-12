@@ -18,7 +18,7 @@ from collections import Counter
 from pathlib import Path
 
 import vi
-from noise import NoiseGenerator, load_lexicon, load_propensity
+from noise import NoiseGenerator, load_lexicon, load_propensity, load_class_weights
 
 MIN_TOKENS = 5
 MAX_TOKENS = 64
@@ -59,6 +59,8 @@ def main() -> None:
                     help="số bản hỏng sinh ra cho mỗi câu gốc")
     ap.add_argument("--error-rate", type=float, default=0.04)
     ap.add_argument("--propensity", type=Path, default=Path("data/propensity.json"))
+    ap.add_argument("--class-weights", type=Path,
+                    default=Path("data/class_weights.json"))
     ap.add_argument("--seed", type=int, default=13)
     args = ap.parse_args()
 
@@ -74,11 +76,18 @@ def main() -> None:
 
     lexicon = set(lex_counts)
     propensity = load_propensity(args.propensity)
+    class_weights = load_class_weights(args.class_weights)
+    if class_weights:
+        print(f"trọng số lớp: ĐO ĐƯỢC từ {args.class_weights} "
+              f"({len(class_weights)} lớp)")
+    else:
+        print("trọng số lớp: ĐANG ĐOÁN — chạy mine_errors.py trước khi train bản chính")
     print(f"bảng xu hướng lỗi: {len(propensity):,} từ"
           + ("" if propensity else "  (TRỐNG — đang dùng đều-trong-lớp, xem README)"))
 
     rng = random.Random(args.seed)
     gen = NoiseGenerator(lexicon=lexicon, propensity=propensity,
+                         class_weights=class_weights,
                          error_rate=args.error_rate, seed=args.seed)
 
     # Chia theo CÂU GỐC, trước khi sinh biến thể.

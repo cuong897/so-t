@@ -215,3 +215,52 @@ onnxruntime-web lo.
 
 `test/bpe.test.mjs` giờ đối chiếu `bpe.js` với tokenizer Python trên 5.609 token
 lấy từ corpus thật. Đây là loại lỗi không thể bắt bằng cách đọc code.
+
+---
+
+### 14. Mở rộng tiền đề: "sửa dấu tiếng Việt", không phải "sửa hỏi/ngã"
+
+**Số liệu buộc phải đổi.** `mine_errors.py` đo phân bố lỗi thật trên VSEC:
+
+| Lớp lỗi | Đo được | Tôi đã đoán |
+|---|---|---|
+| `other_tone` (sai sang thanh khác) | **43,6%** | 9,3% |
+| `missing` (mất dấu hoàn toàn) | **43,2%** | 22,2% |
+| `hoi_nga` | **4,7%** | 31,5% |
+
+Hỏi↔ngã — thứ tôi dựng cả luận điểm sản phẩm quanh nó — chỉ chiếm 4,7%.
+
+**Nhưng xu hướng theo TỪNG TỪ lại xác nhận giả thuyết:** `nỗ` bị viết sai 19/36
+lần (53%), `sàng` 11/24, `sẻ` 12/35, `ràng` 15/46, `dành` 6/25. Đúng nhóm từ
+hỏi/ngã và d/gi kinh điển.
+
+**Hai điều đó không mâu thuẫn.** Lỗi hỏi/ngã có thật và tập trung dữ dội vào một
+nhóm từ hẹp, nhưng VSEC với tư cách một corpus lại bị lỗi gõ phím lấn át — vì
+VSEC thu lỗi từ người *gõ*, còn tiền đề cũ nhắm người *không biết* viết hỏi hay
+ngã. Hai quần thể khác nhau.
+
+**Chọn:** mở rộng thành "sửa dấu tiếng Việt". Giữ đồng âm làm **điểm khác biệt**
+(không công cụ nào khác làm được) nhưng nhận rằng sửa dấu nói chung mới là khối
+lượng công việc.
+
+**Không phải làm lại kiến trúc** — bộ 23 nhãn vốn đã phục vụ cả hai. Chỉ đổi
+trọng số train và đổi câu chuyện.
+
+**Cái giá của việc đoán, tính được bằng số:** F1 0,929 trên dev tự sinh so với
+0,732 trên lỗi người thật. Hai mươi điểm là khoảng cách giữa nhiễu nhân tạo và
+đời thật.
+
+---
+
+### 15. Chia đôi VSEC để không tự lừa mình
+
+**Vấn đề:** rút phân bố lỗi từ VSEC rồi đem chấm trên chính VSEC thì số sẽ đẹp
+lên mà chẳng có nghĩa gì.
+
+**Chọn:** `mine_errors.py` chia VSEC làm đôi bằng băm SHA-256 nội dung câu —
+nửa `mine` để rút phân bố, nửa `eval` giữ kín. `evaluate.py --held-out` chấm
+trên đúng nửa giữ kín. Tất định nên không cần lưu danh sách, chạy lại luôn ra
+cùng cách chia.
+
+**Vì sao đáng làm dù không ai kiểm tra:** đây chính là chỗ nhiều đồ án sinh viên
+gian lận một cách vô thức, và là chỗ người phỏng vấn giỏi sẽ hỏi đúng vào.

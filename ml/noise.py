@@ -69,12 +69,17 @@ class NoiseGenerator:
         self,
         lexicon: set[str] | None = None,
         propensity: dict[str, float] | None = None,
+        class_weights: dict[str, float] | None = None,
         error_rate: float = DEFAULT_ERROR_RATE,
         seed: int | None = None,
     ) -> None:
         self.lexicon = lexicon
         #: từ (chữ thường) -> hệ số nhân xu hướng bị viết sai
         self.propensity = propensity or {}
+        #: lớp lỗi -> tỷ trọng, ĐO ĐƯỢC bằng mine_errors.py. None thì lùi về
+        #: bảng ước lượng bên dưới — nhưng đã đo được thì đừng dùng bảng đoán:
+        #: chênh lệch giữa hai bảng đúng bằng 20 điểm F1 (xem docs/decisions.md).
+        self.class_weights = class_weights
         self.error_rate = error_rate
         self.rng = random.Random(seed)
         # _corruptions_for tất định theo token, mà vốn từ chỉ vài chục nghìn.
@@ -132,6 +137,8 @@ class NoiseGenerator:
         return "other_tone"
 
     def _class_weight(self, cls: str) -> float:
+        if self.class_weights is not None:
+            return self.class_weights.get(cls, 0.0)
         base = TONE_PAIR_WEIGHTS.get(cls)
         return base if base is not None else CONSONANT_WEIGHTS.get(cls, 0.0)
 
@@ -225,6 +232,19 @@ def load_propensity(path: str | Path) -> dict[str, float]:
     p = Path(path)
     if not p.exists():
         return {}
+    return json.loads(p.read_text(encoding="utf-8"))
+
+
+def load_class_weights(path: str | Path) -> dict[str, float] | None:
+    """Bảng {lớp lỗi: tỷ trọng} do mine_errors.py đo từ dữ liệu người gán nhãn.
+
+    None nghĩa là chưa đo — NoiseGenerator sẽ lùi về bảng ước lượng. Lần đo đầu
+    tiên cho thấy ước lượng lệch rất xa: hoi_nga đoán 31.5% nhưng thực tế 4.7%,
+    other_tone đoán 9.3% nhưng thực tế 43.6%.
+    """
+    p = Path(path)
+    if not p.exists():
+        return None
     return json.loads(p.read_text(encoding="utf-8"))
 
 

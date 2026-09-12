@@ -1,21 +1,33 @@
 # Soát
 
-Kiểm tra chính tả tiếng Việt ngay trong ô nhập liệu, **chạy hoàn toàn trên máy
+Sửa lỗi **dấu tiếng Việt** ngay trong ô nhập liệu, **chạy hoàn toàn trên máy
 người dùng**. Không server, không API, không một ký tự nào rời khỏi trình duyệt.
 
-Trọng tâm là lớp lỗi mà từ điển và Hunspell **không thể** xử lý: cặp đồng âm mà
-cả hai dạng đều là từ đúng.
+Phạm vi là mọi lỗi ở mức **âm tiết**: thiếu dấu, sai dấu, và nhầm phụ âm đầu.
+Phân bố đo được trên VSEC — 10.845 lỗi do người thật mắc:
 
-| Người viết | Đúng phải là | Vì sao từ điển bó tay |
+| Lớp lỗi | Tỷ lệ thật |
+|---|---|
+| Sai dấu (đặt nhầm sang thanh khác) | 43,6% |
+| Mất dấu hoàn toàn | 43,2% |
+| Hỏi ↔ ngã | 4,7% |
+| Phụ âm đầu và âm cuối (`ch/tr`, `s/x`, `d/gi/r`, `n/ng`) | 8,5% |
+
+Phần **khó nhất** — và là lý do bài này cần mô hình ngôn ngữ chứ không phải một
+danh sách từ — là cặp đồng âm mà **cả hai dạng đều là từ đúng**. Từ điển và
+Hunspell bó tay hoàn toàn ở đây:
+
+| Người viết | Đúng phải là | Vì sao từ điển vô dụng |
 |---|---|---|
 | hộp **sửa** tươi | hộp **sữa** tươi | `sửa` và `sữa` đều là từ có thật |
 | **dành** chiến thắng | **giành** chiến thắng | `dành` và `giành` đều đúng |
 | đọc **chuyện** tranh | đọc **truyện** tranh | `chuyện` và `truyện` đều đúng |
 | **nổ** lực | **nỗ** lực | `nổ` là từ có thật (phát nổ) |
 
-Tên đúng của bài toán không phải *spell check* mà là **contextual homophone
-disambiguation**. Đó là lý do nó cần một mô hình ngôn ngữ chứ không phải một
-danh sách từ.
+Tên đúng của lớp bài toán đó là **contextual homophone disambiguation**. Nó chỉ
+chiếm phần nhỏ về số lượng nhưng là phần duy nhất không công cụ nào khác làm
+được — nên nó là điểm khác biệt, còn sửa dấu nói chung mới là khối lượng công
+việc.
 
 ---
 
@@ -107,8 +119,19 @@ Nếu đảo hỏi↔ngã **ngẫu nhiên đều** thì model học một phân 
 `mỹ`. Model train trên nhiễu đều sẽ vừa bỏ sót lỗi thật vừa báo động giả ở chỗ
 chẳng ai sai.
 
-`noise.py` vì vậy nhận một bảng xu hướng lỗi **theo từng từ**, ước lượng từ văn
-bản bẩn thật.
+`mine_errors.py` đo phân bố đó từ dữ liệu người gán nhãn rồi ghi ra
+`class_weights.json` (tỷ trọng từng lớp lỗi) và `propensity.json` (từ nào hay bị
+viết sai). `noise.py` nạp cả hai; thiếu thì lùi về bảng ước lượng và nói rõ.
+
+**Cái giá của việc đoán thay vì đo, đo được bằng số:** bản train đầu dùng trọng
+số tôi tự ước lượng đạt F1 0,929 trên dev tự sinh nhưng chỉ **0,732** trên lỗi
+người thật. Hai mươi điểm bốc hơi. Đo lại thì thấy ước lượng lệch rất xa —
+`hoi_nga` đoán 31,5% nhưng thực tế 4,7%, `other_tone` đoán 9,3% nhưng thực tế
+43,6%.
+
+**Và phải tránh tự lừa mình:** rút phân bố từ VSEC rồi chấm trên chính VSEC là
+vô nghĩa. `mine_errors.py` chia đôi VSEC bằng hàm băm tất định — một nửa để rút,
+một nửa giữ kín; `evaluate.py --held-out` chấm trên đúng nửa giữ kín.
 
 Phân bố thu được là thứ phải **đo**, không phải thứ tự tin là đã cấu hình đúng —
 riêng chỗ này đã sai hai lần trước khi đúng (xem `docs/decisions.md`, quyết định

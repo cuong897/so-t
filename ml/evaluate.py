@@ -35,12 +35,22 @@ PUNCT = ".,!?;:\"'()[]{}<>«»…-–—"
 
 # --- nạp VSEC -----------------------------------------------------------------
 
-def load_vsec(path: Path) -> list[dict]:
-    """Trả về [{tokens_sai, tokens_đúng}] đã chuẩn hoá, bỏ dấu câu dính token."""
+def load_vsec(path: Path, split: str | None = None) -> list[dict]:
+    """Trả về [{tokens_sai, tokens_đúng}] đã chuẩn hoá, bỏ dấu câu dính token.
+
+    `split='eval'` chỉ lấy nửa VSEC mà mine_errors.py KHÔNG dùng để rút phân bố.
+    Bắt buộc phải dùng cờ này khi báo cáo kết quả của model train bằng trọng số
+    đo được — nếu không thì đang chấm trên chính dữ liệu đã nhìn trộm đáp án,
+    và con số chỉ phản ánh việc đó chứ không phản ánh chất lượng model.
+    """
+    from mine_errors import split_of
+
     out = []
     with path.open(encoding="utf-8") as f:
         for line in f:
             row = json.loads(line)
+            if split is not None and split_of(row["text"]) != split:
+                continue
             wrong, right = [], []
             for a in row["annotations"]:
                 w = vi.normalize(a["current_syllable"]).strip(PUNCT)
@@ -160,6 +170,9 @@ def main() -> None:
     ap.add_argument("--lexicon", type=Path, default=Path("data/lexicon.tsv"))
     ap.add_argument("--max-len", type=int, default=128)
     ap.add_argument("--limit", type=int, default=0, help="chỉ chấm N câu đầu")
+    ap.add_argument("--held-out", action="store_true",
+                    help="chỉ chấm nửa VSEC mà mine_errors.py không đụng tới. "
+                         "BẮT BUỘC khi model train bằng trọng số đo từ VSEC.")
     args = ap.parse_args()
 
     from noise import load_lexicon
@@ -167,10 +180,14 @@ def main() -> None:
     print(f"từ điển âm tiết: {len(lexicon) if lexicon else 0:,}"
           + ("" if lexicon else "  (TRỐNG — chạy dataset.py trước để có lọc ứng viên)"))
 
-    rows = load_vsec(args.vsec)
+    split = "eval" if args.held_out else None
+    rows = load_vsec(args.vsec, split)
     if args.limit:
         rows = rows[: args.limit]
-    print(f"VSEC: {len(rows):,} câu\n")
+    print(f"VSEC: {len(rows):,} câu"
+          + ("  (NỬA GIỮ KÍN — mine_errors.py không đụng tới)" if args.held_out
+             else "  (TOÀN BỘ — nếu model train bằng trọng số đo từ VSEC thì số"
+                  " này bị thổi phồng; dùng --held-out)") + "\n")
 
     # --- A ---
     sc = scope_report(rows, lexicon)
