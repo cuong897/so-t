@@ -28,6 +28,7 @@ Chạy:
 
 from __future__ import annotations
 import argparse
+from functools import partial
 import json
 import sys
 import time
@@ -106,6 +107,13 @@ class TagDataset(Dataset):
 
 
 def collate(batch: list[dict], pad_id: int) -> dict:
+    """Phải là hàm cấp module, KHÔNG được là lambda trong main().
+
+    Windows tạo worker bằng spawn chứ không fork, nên collate_fn bị pickle sang
+    tiến trình con. Lambda cục bộ không pickle được và cả lần train đổ ngay ở
+    batch đầu tiên — nhưng chỉ khi num_workers > 0, nên chạy thử với workers=0
+    sẽ không bao giờ thấy lỗi này.
+    """
     n = max(len(b["input_ids"]) for b in batch)
     out = {"input_ids": [], "attention_mask": [], "labels": []}
     for b in batch:
@@ -250,7 +258,7 @@ def main() -> None:
                           args.limit, cache=not args.no_cache)
     dev_ds = TagDataset(args.data / "dev.jsonl", tok, args.max_len, 4000,
                         cache=not args.no_cache)
-    fn = lambda b: collate(b, tok.pad_token_id)
+    fn = partial(collate, pad_id=tok.pad_token_id)
     train_dl = DataLoader(
         train_ds, batch_size=args.batch, shuffle=True, collate_fn=fn,
         num_workers=args.workers, pin_memory=(device == "cuda"),
