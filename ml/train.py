@@ -53,28 +53,56 @@ class TagDataset(Dataset):
     Lúc suy luận cũng đọc logit ở đúng vị trí đó.
     """
 
-    def __init__(self, path: Path, tokenizer, max_len: int = 128, limit: int = 0):
-        with path.open(encoding="utf-8") as f:
-            self.rows = [json.loads(l) for i, l in enumerate(f) if not limit or i < limit]
-        self.tok = tokenizer
+    def __init__(self, path: Path, tokenizer, max_len: int = 128, limit: int = 0,
+                 cache: bool = True):
         self.max_len = max_len
+        cache_path = path.with_suffix(f".tok{max_len}{'' if not limit else f'.{limit}'}.npz")
+
+        if cache and cache_path.exists():
+            self._load_cache(cache_path)
+            return
+
+        with path.open(encoding="utf-8") as f:
+            rows = [json.loads(l) for i, l in enumerate(f) if not limit or i < limit]
+
+        # Tokenize MỘT LẦN rồi cất, thay vì tokenize lại mỗi epoch. Với 720k mẫu
+        # và 3 epoch thì cách cũ làm 2.16 triệu lượt tokenize, trong đó 1.44
+        # triệu là thừa — và đó chính là lý do GPU chỉ chạy 28%.
+        flat_ids, flat_labels, offsets = [], [], [0]
+        for row in rows:
+            ids, word_ids = encode_words(tokenizer, row["tokens"], max_len)
+            labels, prev = [], None
+            for wid in word_ids:
+                if wid is None or wid == prev:
+                    labels.append(IGNORE)
+                else:
+                    labels.append(vi.TAG_INDEX[row["tags"][wid]])
+                prev = wid
+            flat_ids.extend(ids)
+            flat_labels.extend(labels)
+            offsets.append(len(flat_ids))
+
+        import numpy as np
+        self.ids = np.asarray(flat_ids, dtype=np.int32)
+        self.labels = np.asarray(flat_labels, dtype=np.int16)
+        self.offsets = np.asarray(offsets, dtype=np.int64)
+        if cache:
+            np.savez(cache_path, ids=self.ids, labels=self.labels, offsets=self.offsets)
+
+    def _load_cache(self, cache_path: Path) -> None:
+        import numpy as np
+        z = np.load(cache_path)
+        self.ids, self.labels, self.offsets = z["ids"], z["labels"], z["offsets"]
 
     def __len__(self) -> int:
-        return len(self.rows)
+        return len(self.offsets) - 1
 
     def __getitem__(self, i: int) -> dict:
-        row = self.rows[i]
-        ids, word_ids = encode_words(self.tok, row["tokens"], self.max_len)
-
-        labels, prev = [], None
-        for wid in word_ids:
-            if wid is None or wid == prev:
-                labels.append(IGNORE)
-            else:
-                labels.append(vi.TAG_INDEX[row["tags"][wid]])
-            prev = wid
-
-        return {"input_ids": ids, "attention_mask": [1] * len(ids), "labels": labels}
+        a, b = self.offsets[i], self.offsets[i + 1]
+        ids = self.ids[a:b].tolist()
+        return {"input_ids": ids,
+                "attention_mask": [1] * len(ids),
+                "labels": self.labels[a:b].tolist()}
 
 
 def collate(batch: list[dict], pad_id: int) -> dict:
@@ -154,6 +182,13 @@ def main() -> None:
                          "pretrain, 3e-4 khi học trò khởi tạo ngẫu nhiên")
     ap.add_argument("--max-len", type=int, default=96)
     ap.add_argument("--limit", type=int, default=0, help="chỉ dùng N mẫu train đầu")
+    ap.add_argument("--workers", type=int, default=4,
+                    help="luồng nạp dữ liệu. 0 nếu gặp trục trặc trên Windows")
+    ap.add_argument("--resume", type=Path, default=None,
+                    help="thư mục checkpoint để train tiếp ĐÚNG NGHĨA — nạp lại "
+                         "cả optimizer, scheduler và số epoch đã chạy")
+    ap.add_argument("--no-cache", action="store_true",
+                    help="không dùng cache token đã mã hoá")
     ap.add_argument("--amp", action="store_true", default=True,
                     help="mixed precision — nhanh gần gấp đôi trên GPU RTX")
     ap.add_argument("--alpha", type=float, default=0.7,
@@ -170,15 +205,24 @@ def main() -> None:
     lexicon = load_lexicon(args.data / "lexicon.tsv")
     id2tag = {i: t for t, i in vi.TAG_INDEX.items()}
 
-    train_ds = TagDataset(args.data / "train.jsonl", tok, args.max_len, args.limit)
-    dev_ds = TagDataset(args.data / "dev.jsonl", tok, args.max_len, 4000)
+    train_ds = TagDataset(args.data / "train.jsonl", tok, args.max_len,
+                          args.limit, cache=not args.no_cache)
+    dev_ds = TagDataset(args.data / "dev.jsonl", tok, args.max_len, 4000,
+                        cache=not args.no_cache)
     fn = lambda b: collate(b, tok.pad_token_id)
-    train_dl = DataLoader(train_ds, batch_size=args.batch, shuffle=True, collate_fn=fn,
-                          num_workers=0, pin_memory=(device == "cuda"))
+    train_dl = DataLoader(
+        train_ds, batch_size=args.batch, shuffle=True, collate_fn=fn,
+        num_workers=args.workers, pin_memory=(device == "cuda"),
+        persistent_workers=args.workers > 0,
+        prefetch_factor=4 if args.workers > 0 else None,
+    )
     dev_dl = DataLoader(dev_ds, batch_size=args.batch * 2, collate_fn=fn)
     print(f"train {len(train_ds):,} mẫu | dev {len(dev_ds):,} mẫu | {len(vi.TAG_NAMES)} nhãn")
 
-    model = build_model(args, len(vi.TAG_NAMES)).to(device)
+    if args.resume:
+        model = AutoModelForTokenClassification.from_pretrained(args.resume).to(device)
+    else:
+        model = build_model(args, len(vi.TAG_NAMES)).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     from_scratch = bool(args.layers or args.hidden)
 
@@ -219,7 +263,24 @@ def main() -> None:
     steps = len(train_dl) * args.epochs
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=args.lr, total_steps=steps)
 
-    for epoch in range(args.epochs):
+    # --- resume ĐÚNG NGHĨA -------------------------------------------------
+    # Chỉ nạp lại trọng số là "warm start", không phải resume: optimizer mất
+    # hết momentum và OneCycleLR khởi động lại từ đầu, nên kết quả khác hẳn
+    # train liền mạch. Muốn resume thật thì phải cất cả ba thứ.
+    start_epoch = 0
+    if args.resume:
+        state = torch.load(args.resume / "trainer_state.pt", map_location=device,
+                           weights_only=False)
+        opt.load_state_dict(state["optimizer"])
+        sched.load_state_dict(state["scheduler"])
+        start_epoch = state["epoch"] + 1
+        if state.get("total_steps") != steps:
+            print(f"  CẢNH BÁO: lịch LR lúc trước dựng cho {state.get('total_steps')} "
+                  f"step, lần này {steps}. Đổi epochs/batch giữa chừng thì lịch "
+                  f"không còn khớp.")
+        print(f"resume từ {args.resume}, chạy tiếp từ epoch {start_epoch}")
+
+    for epoch in range(start_epoch, args.epochs):
         model.train()
         t0, running = time.time(), 0.0
         for step, batch in enumerate(train_dl):
@@ -257,6 +318,11 @@ def main() -> None:
         args.out.mkdir(parents=True, exist_ok=True)
         model.save_pretrained(args.out)
         tok.save_pretrained(args.out)
+        torch.save({"optimizer": opt.state_dict(),
+                    "scheduler": sched.state_dict(),
+                    "epoch": epoch,
+                    "total_steps": steps},
+                   args.out / "trainer_state.pt")
         print(f"epoch {epoch} ({time.time() - t0:.0f}s)  "
               f"P {m['precision']:.4f}  R {m['recall']:.4f}  F1 {m['f1']:.4f}  "
               f"(tp {m['tp']} fp {m['fp']} fn {m['fn']})")
