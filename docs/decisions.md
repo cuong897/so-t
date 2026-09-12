@@ -351,3 +351,56 @@ phút chót, khi không còn đường lùi nào rẻ.
 
 136 MB quá nặng để đóng gói vào extension — đây là con số biện minh cho bước
 distil, chứ không phải cảm tính.
+
+---
+
+### 19. Distil lấy mất 11 điểm F1, INT8 gần như miễn phí
+
+Đo trên cùng 1.500 câu VSEC giữ kín:
+
+| Model | Tham số | Kích thước | F1 trong tầm |
+|---|---|---|---|
+| Teacher fp32 | 134M | 539 MB | **0,8924** |
+| Học trò fp32 | 32M | 128 MB | 0,7824 |
+| Học trò INT8 | 32M | **32,4 MB** | **0,7807** |
+
+**Distil: −11,0 điểm. Lượng tử hoá: −0,17 điểm.**
+
+Con số thứ hai là bất ngờ dễ chịu — INT8 gần như miễn phí, nhẹ hơn 3,9 lần và
+nhanh gấp đôi. Con số thứ nhất mới là cái giá thật, và nó đắt.
+
+**Lý do distil đắt:** học trò hidden 384 lệch shape với teacher 768 nên không
+copy được trọng số nào, phải học lại từ đầu qua KD. Đổi lại là kích thước: giữ
+hidden 768 thì copy được nhưng model thành 78 MB.
+
+**Và một lần nữa dev tự sinh nói dối:** nó báo khoảng cách teacher↔học trò chỉ
+5,5 điểm (0,9335 vs 0,8788), trong khi trên lỗi người thật là 11,0 điểm. Lần
+thứ ba trong dự án này benchmark tự sinh làm đẹp cho model yếu hơn.
+
+### Trong trình duyệt thật
+
+| | |
+|---|---|
+| Nạp model | 375 ms |
+| Suy luận | p50 **6,6 ms**, p95 **8,0 ms** |
+| Bắt lỗi (6 câu mẫu, ngưỡng sản xuất) | **4/6**, 2 báo động giả |
+| Độ tin cậy khi báo | 99–100% |
+
+Hai ca trượt đều là văn bản **không dấu hoàn toàn** (`luon co gang`,
+`duoc gap lai`). Giải thích được: model phân biệt bằng ngữ cảnh, mà khi cả câu
+mất dấu thì chính ngữ cảnh cũng hỏng. Đây là giới hạn thật, không phải bug —
+và là phạm vi cần nói rõ chứ không giấu.
+
+---
+
+### 20. Cache trình duyệt suýt cho một kết luận sai hoàn toàn
+
+Thay model 32 MB vào rồi chạy lại trang test: kết quả **y hệt** model giả cũ,
+kể cả các con số phần trăm. Suýt kết luận "model thật không bắt được gì".
+
+Thực ra trình duyệt phục vụ lại file `.onnx` trong cache. Phải cache-bust cả ba
+tầng mới thấy model thật: trang HTML, các module JS, **và chính file model**.
+
+Bài học: khi kết quả sau khi thay đổi *giống hệt* kết quả trước, nghi cache
+trước khi nghi logic. Con số trùng khít tới từng phần trăm là dấu hiệu của cache
+chứ không phải của một sự trùng hợp.

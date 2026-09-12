@@ -15,9 +15,10 @@
 </head>
 <body>
   <h1>Kiểm chứng đường ONNX trong trình duyệt</h1>
-  <p class="muted">Chạy với <strong>model giả</strong> đúng shape. Bài này KHÔNG nói gì
-  về chất lượng model — nó kiểm tra phần ghép nối: nạp onnxruntime-web, mã hoá BPE,
-  suy luận, chặn theo tập ứng viên, và ánh xạ về offset ký tự.</p>
+  <p class="muted">Chạy model thật trong <code>extension/models/</code>. Kiểm tra hai
+  thứ: phần ghép nối (nạp onnxruntime-web, mã hoá BPE, chặn theo tập ứng viên, ánh xạ
+  offset) và <strong>khả năng bắt lỗi thật</strong> ở ngưỡng sản xuất. Thêm
+  <code>?loose</code> để hạ ngưỡng về 0.</p>
   <pre id="log">đang chạy…</pre>
 
 <script type="module">
@@ -36,8 +37,8 @@ const check = (cond, msg) => say(`${cond ? '✓' : '✗'} ${msg}`, cond ? 'ok' :
 
 const t0 = performance.now();
 // Mặc định dùng NGƯỠNG SẢN XUẤT — nếu không thì số báo động giả bên dưới vô
-// nghĩa. Thêm ?loose vào URL để hạ ngưỡng về 0, dùng khi soi model giả hoặc
-// khi muốn xem model đang nghĩ gì ở những chỗ nó chưa đủ tự tin để báo.
+// nghĩa. Thêm ?loose vào URL để hạ ngưỡng về 0, dùng khi soi model hoặc
+// khi muốn xem model đang nghĩ gì ở chỗ nó chưa đủ tự tin để báo.
 const loose = new URLSearchParams(location.search).has('loose');
 const engine = loose
   ? new OnnxEngine({ threshold: 0.0, margin: 0.0 })
@@ -45,10 +46,13 @@ const engine = loose
 const ok = await engine.load({
   ort: '../extension/vendor/ort.wasm.bundle.min.mjs',
   wasmDir: '../extension/vendor/',
-  model: '../extension/models/soat.int8.onnx',
-  tokenizer: '../extension/models/tokenizer.json',
-  lexicon: '../extension/models/lexicon.json',
-  meta: '../extension/models/soat.meta.json',
+  // Cache-buster cho CẢ file model. Thay model xong tải lại trang mà vẫn thấy
+  // kết quả y hệt bản cũ — mất một lúc mới nhận ra đó là cache chứ không phải
+  // model mới cho ra cùng con số.
+  model: `../extension/models/soat.int8.onnx${v}`,
+  tokenizer: `../extension/models/tokenizer.json${v}`,
+  lexicon: `../extension/models/lexicon.json${v}`,
+  meta: `../extension/models/soat.meta.json${v}`,
 });
 
 check(engine.ready, `nạp xong sau ${Math.round(performance.now() - t0)}ms`  + (loose ? '  — CHẾ ĐỘ ?loose, ngưỡng = 0' : `  — ngưỡng sản xuất `  + `${engine.threshold}/${engine.margin}`));
@@ -85,14 +89,14 @@ if (!engine.ready) {
   const noop = issues.filter((i) => i.suggestion === i.original);
   check(noop.length === 0, `không có đề xuất trùng bản gốc (${noop.length} vô nghĩa)`);
 
-  say('\nvài đề xuất (model GIẢ — nội dung vô nghĩa là bình thường):');
+  say('\nđề xuất trên câu mẫu:');
   for (const i of issues.slice(0, 6)) {
     say(`   ${i.original} → ${i.suggestion}   ${(i.confidence * 100).toFixed(0)}%  [${i.tag}]`);
   }
 
   // --- model có THỰC SỰ bắt được lỗi không ---------------------------------
   // Phần trên chỉ kiểm tra ghép nối. Phần này mới trả lời câu hỏi đáng tiền.
-  // Với model giả thì gần như trượt hết — đó là điều bình thường và đúng.
+  // Model chưa train sẽ trượt hết ở ngưỡng sản xuất — đó là hành vi đúng.
   const CASES = [
     ['Cả nhóm đã nổ lực rất nhiều trong suốt học kỳ này.', 'nổ', 'nỗ'],
     ['Mình xin chia sẽ lại một vài kinh nghiệm cho các bạn.', 'sẽ', 'sẻ'],
@@ -130,9 +134,9 @@ if (!engine.ready) {
     times.push(performance.now() - s);
   }
   times.sort((a, b) => a - b);
-  say(`\nđộ trễ (model giả, 1 luồng wasm): p50 ${times[15].toFixed(1)}ms  `
+  say(`\nđộ trễ (1 luồng wasm): p50 ${times[15].toFixed(1)}ms  `
     + `p95 ${times[28].toFixed(1)}ms`);
-  say('CHÚ Ý: model thật nặng hơn nhiều — con số này chỉ đo chi phí ghép nối.');
+  say('Đo trên máy này; máy người dùng yếu hơn sẽ chậm hơn.');
 }
 </script>
 </body>
