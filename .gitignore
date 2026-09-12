@@ -1,5 +1,13 @@
 node_modules/
-ml/data/
+# ml/data/* chứ không phải ml/data/: loại cả THƯ MỤC thì không phủ định lại
+# được file nào bên trong — git không bước vào đó nữa.
+ml/data/*
+# Mấy file cấu hình bé định nghĩa cách sinh nhiễu thì PHẢI version: chúng là
+# đầu vào của công thức dựng lại dữ liệu ghi trong docs/decisions.md, mà trước
+# đây không file nào được theo dõi — tức những công thức đó không chạy lại được
+# trên một máy trắng. Tổng cộng 45KB.
+!ml/data/class_weights*.json
+!ml/data/propensity.json
 ml/out/
 
 # Sinh ra bởi ml/export_tokenizer.py và ml/export_onnx.py — không commit,

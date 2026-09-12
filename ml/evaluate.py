@@ -250,12 +250,15 @@ def main() -> None:
     ap.add_argument("--lexicon", type=Path, default=Path("data/lexicon.tsv"))
     ap.add_argument("--max-len", type=int, default=128)
     ap.add_argument("--threshold", type=float, default=0.0,
-                    help="ngưỡng tin cậy như onnxEngine.js (sản phẩm: 0.90). "
+                    help="ngưỡng tin cậy như onnxEngine.js (sản phẩm: 0.95). "
                          "0 = argmax không ngưỡng, tức NĂNG LỰC THÔ của model "
                          "chứ không phải thứ người dùng thấy")
     ap.add_argument("--margin", type=float, default=0.0,
                     help="biên phải hơn KEEP (sản phẩm: 0.25)")
     ap.add_argument("--limit", type=int, default=0, help="chỉ chấm N câu đầu")
+    ap.add_argument("--result", default="out/eval.json",
+                    help="nơi lưu JSON. Mặc định out/eval.json bị GHI ĐÈ mỗi "
+                         "lần chạy — truyền tên riêng khi đối chiếu nhiều bản model.")
     ap.add_argument("--held-out", action="store_true",
                     help="chỉ chấm nửa VSEC mà mine_errors.py không đụng tới. "
                          "BẮT BUỘC khi model train bằng trọng số đo từ VSEC.")
@@ -335,13 +338,15 @@ def main() -> None:
           f"biểu diễn được phần còn lại.")
     print("VSEC công bố: 86.8% phát hiện / 81.5% sửa đúng (seq2seq, ~130M tham số).")
 
-    Path("out").mkdir(exist_ok=True)
-    Path("out/eval.json").write_text(json.dumps(
+    res = Path(args.result)
+    res.parent.mkdir(parents=True, exist_ok=True)
+    res.write_text(json.dumps(
         {"scope": {k: v for k, v in sc.items() if k != "by_tag"},
          "in_scope": b, "full": c, "model": str(args.onnx or args.model),
-         "threshold": args.threshold, "margin": args.margin},
+         "threshold": args.threshold, "margin": args.margin,
+         "held_out": bool(args.held_out), "limit": args.limit},
         ensure_ascii=False, indent=2, default=str), encoding="utf-8")
-    print("\nđã lưu -> out/eval.json")
+    print(f"\nđã lưu -> {res}")
 
 
 if __name__ == "__main__":

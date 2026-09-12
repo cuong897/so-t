@@ -777,3 +777,111 @@ thì v3 thắng cho họ. Nếu không thì v1 đúng hơn.
 `byTag`, nên người dùng thật sẽ trả lời: nhóm lỗi nào được chấp nhận nhiều nhất
 chính là câu trả lời. Đây là lần đầu trong dự án một quyết định phải chờ người
 dùng thật mới khép lại được.
+
+---
+
+### 27. Đẩy riêng lớp d/gi/r — ngưỡng chấp nhận ghi TRƯỚC khi có số
+
+Quyết định 26 để lại lớp `d/gi/r` ở recall 17,8% (106/596), thấp nhất trong sáu
+nhóm phụ âm, mà nó lại đúng là ví dụ đầu bảng của README: `dành` / `giành`.
+
+#### Chẩn đoán trước, không train trước
+
+`consonant_eval.py` nói "bao nhiêu". `consonant_diagnose.py` — viết mới cho đợt
+này — nói "vì sao", và câu trả lời đổi hẳn hướng sửa:
+
+| Kết cục | Ca | | |
+|---|---|---|---|
+| sửa đúng | 106 | 17,8% | |
+| sót, nhãn đúng đã dẫn đầu | 241 | 40,4% | p trung vị **0,099** |
+| sót, model nhìn sang chỗ khác | 201 | 33,7% | p của nhãn đúng **0,0014** |
+| sửa sai | 48 | 8,1% | **45/48 bắn sang nhãn THANH ĐIỆU** |
+
+Ba điều không nhìn từ recall mà thấy được:
+
+1. Gọi 241 ca kia là "thiếu tự tin" là quá tử tế. p trung vị 0,099 nghĩa là
+   nhãn đúng chỉ dẫn đầu trong đám non-KEEP, còn KEEP vẫn áp đảo. Hạ ngưỡng
+   xuống 0,90 cứu được **26 ca trong 241**. Phần còn lại phải học.
+2. Với 201 ca còn lại, nhãn đúng nhận p = 0,0014. Model không do dự giữa hai
+   phương án — nó không có phương án đúng trong tầm nhìn.
+3. Và phần đáng giá nhất: trong 48 ca sửa sai, **45 ca bắn sang một nhãn thanh
+   điệu**, chỉ 3 ca nhầm sang phụ âm khác — ở p = 0,98:
+
+   ```
+   dơi  -> đúng rơi  | model chọn TONE_HUYEN p=0,982  (p của D_R  = 0,016)
+   day  -> đúng ray  | model chọn TONE_NGA   p=0,979  (p của D_R  = 0,000)
+   giáo -> đúng ráo  | model chọn TONE_NGANG p=0,983  (p của GI_R = 0,000)
+   ```
+
+Model **không** lẫn `d` với `r`. Nó bỏ hẳn hướng phụ âm rồi với tay sang lớp
+chiếm 91% lỗi trong dữ liệu train. Đó là vấn đề **tiên nghiệm của đầu ra**, và
+ngưỡng không sửa được — đặt ngưỡng nào thì 0,98 cũng vượt. Chỉ tỷ lệ dữ liệu
+sửa được. Nên đợt này đẩy tỷ lệ, không chỉnh ngưỡng lần nữa.
+
+#### Hai con số của quyết định 26 đo lại thì khác
+
+* Bàn giao ghi d/gi/r chiếm ~1,5% dữ liệu train. Đếm thẳng trên
+  `data_ft25/train.jsonl` thì là **3,08%** — con số 1,5% chỉ tính nhãn `D_GI`,
+  bỏ năm nhãn còn lại của lớp.
+* **Trọng số lớp trong `noise.py` là CHẶN TRÊN, không phải thứ đặt là được.**
+  `corrupt_tokens` bốc lớp lỗi trước rồi mới bốc token, nhưng chỉ bốc trong
+  những lớp **có mặt** ở câu đang xét. Lớp d/gi/r đòi âm tiết bắt đầu bằng
+  d/gi/r mà đổi phụ âm ra vẫn là từ thật — điều kiện hiếm. Nên cấu hình 20,2%
+  chỉ ra 11,07% thật, và cấu hình 80% cho đợt này chỉ ra 47%. Từ giờ đọc phân
+  bố **đo được**, đừng đọc file cấu hình.
+
+#### Trộn một biến, không trộn hai
+
+v2 thất bại vì đẩy phụ âm lên 50% làm loãng lớp thanh điệu — thứ chiếm 91% lỗi
+thật. Nên đợt này **giữ nguyên tổng tỷ lệ phụ âm ở mức v3** và chỉ đổi thành
+phần bên trong nó:
+
+| | tổng phụ âm | riêng d/gi/r |
+|---|---|---|
+| v3 (`data_ft25`) | 29,60% | 3,08% |
+| v4 (`data_ft_dgir`) | **28,62%** | **7,42%** |
+
+Phần d/gi/r tăng lấy từ các nhóm phụ âm khác, **không** lấy từ lớp thanh điệu.
+Nếu recall VSEC vẫn tụt thì nguyên nhân không thể là pha loãng thanh điệu, và
+đó là thông tin — khác với v2, nơi hai biến đổi cùng lúc nên không quy được
+trách nhiệm.
+
+Mix dựng bằng `mix_datasets.py`, viết mới cho đợt này vì **bản v3 đang ship
+được trộn bằng tay trong shell và không dựng lại được**: không ghi pool nào lấy
+bao nhiêu dòng, seed nào. Một con số không dựng lại được thì không phải phép đo.
+Lệnh của v4:
+
+```bash
+python dataset.py --corpus data/corpus.txt --out data_dgir --variants 1 \
+  --class-weights data/class_weights_dgir.json --seed 13
+python mix_datasets.py --pool data:304356 --pool data_cons:45389 \
+  --pool data_dgir:50255 --out data_ft_dgir --seed 13
+```
+
+`--seed 13` là bắt buộc, không phải thói quen: `dataset.py` dùng cùng seed cho
+việc chia train/dev/test. Đổi seed là đổi phép chia, và câu đang nằm trong
+`test.jsonl` có thể lọt sang train — tức tự làm rò rỉ thước đo của chính mình.
+
+#### Ngưỡng chấp nhận — ghi ở commit này, TRƯỚC khi v4 train xong
+
+Đây là chỗ dự án này đã tự lừa mình nhiều lần: đo xong rồi mới chọn con số nào
+đáng kể. Nên lần này viết trước, và commit trước, để lịch sử git làm chứng cho
+thứ tự. Mốc nền là số **tự đo lại**, không phải số chép từ bàn giao — v3 tái lập
+đúng P 0,9600 · R 0,7404 · F1 0,8360 (tp 696, fp 29, fn 244).
+
+Sai số chuẩn tính theo `sqrt(p(1-p)/n)` trên đúng cỡ mẫu của từng phép đo:
+
+| Thước đo | v3 | Điều kiện để v4 thay v3 | Vì sao mốc đó |
+|---|---|---|---|
+| recall d/gi/r (n=596) | 17,8% | **≥ 22,8%** (+5 điểm) | σ = 1,6 điểm; +5 là ~3σ, dưới mức đó thì không phân biệt được với nhiễu |
+| precision VSEC trong tầm | 0,9600 | **≥ 0,9500** | ranh giới cứng. Quyết định 25 nâng ngưỡng lên 0,95 chính là để giữ precision ở mức này; bỏ nó là phá lại việc cũ |
+| recall VSEC trong tầm | 0,7404 | **≥ 0,7254** (−1,5 điểm) | σ = 1,4 điểm. v3 đã trả 2,7 điểm so với v1; trả thêm quá 1σ nữa là cộng dồn thành cái giá không còn biện hộ được |
+| báo oan văn bản đúng | 1,45% / 1,25% | **≤ 2,00%** cả hai nguồn | σ = 0,27 điểm; 2,00% là ~2σ |
+| recall phụ âm toàn bộ (n=1796) | 41,4% | **≥ 40,2%** | σ = 1,2 điểm. Phần d/gi/r tăng lấy từ nhóm khác, nên nhóm khác tụt là dự kiến — nhưng tổng không được tụt |
+| sửa sai d/gi/r | 8,1% | **≤ 10%** | đây là lỗi precision, thứ người dùng nhìn thấy (quyết định 8) |
+
+Trượt bất kỳ dòng nào thì **v3 ở lại**, và kết quả v4 vẫn ghi vào đây — một đợt
+train thất bại đã được ghi lại vẫn rẻ hơn một đợt train thất bại bị bỏ quên rồi
+có người làm lại.
+
+**Kết quả: xem mục tiếp theo.**
