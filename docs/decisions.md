@@ -962,3 +962,114 @@ phải một cái kết.
 Nhưng quyết định 26 đã thử hạ ngưỡng rồi và báo oan lên 1,65%/1,75%. Lần này
 v4 đang ở 1,30%/1,00% — **thấp hơn cả v3** — nên chỗ trống đó rộng hơn trước.
 Đáng đo lại, không đáng đoán.
+
+---
+
+### 28. Phi từ vẫn phải qua ngưỡng 0,95 — một hướng nghe rất đúng, đo thì sai
+
+Người dùng gõ thật trên Facebook và gửi lại ảnh màn hình:
+
+> chúc **mựng** anh chị đã giành được phần quà **trí** giá 10 triệu **đuồng**
+
+Extension **không gạch gì cả**. Vệt gạch dưới `đuồng` trong ảnh là spellcheck
+của Chrome, không phải của sản phẩm này. Mổ ra từng chữ:
+
+| Chữ | Đúng phải là | Sản phẩm làm gì | Vì sao |
+|---|---|---|---|
+| `mựng` | `mừng` | bỏ sót | model xếp p = 0,802, dưới ngưỡng 0,95 |
+| `trí giá` | `trị giá` | bỏ sót | model không xếp nhãn nào lên đầu |
+| `đuồng` | `đồng` | **không bao giờ bắt được** | `uô→ô` là đổi phẩm chất nguyên âm, ngoài 23 nhãn |
+| `giành được` | *(đúng)* | im lặng ✓ | |
+
+`đuồng` nằm trong 45,5% lỗi VSEC mà bộ nhãn không biểu diễn được, cùng rổ với
+`bức→bước` — giới hạn kiến trúc, không phải lỗi.
+
+#### Giả thuyết: cổng đang đối xử với hai tình huống khác hẳn nhau như một
+
+`mựng` **không phải từ tiếng Việt**. Tầng ① đã biết điều đó — nó là một phép tra
+từ điển. Và `mựng` có **đúng một** ứng viên có thật là `mừng`. Nên KEEP ở đây là
+phương án **sai chắc chắn**.
+
+Vậy mà `onnxEngine._decode` áp đúng một ngưỡng cho mọi token: `mựng` phải vượt
+0,95 y như `dành` — trong khi với `dành` thì KEEP hoàn toàn hợp lệ, vì có thể
+người ta thật sự muốn viết `dành`. Sản phẩm đang bắt ca DỄ chịu cái ngưỡng dựng
+cho ca KHÓ.
+
+Nghe rất thuyết phục. Và đếm từ điển thì càng thuyết phục (`oov_headroom.py`):
+
+| | |
+|---|---|
+| lỗi VSEC trong tầm | 2.925 |
+| token sai là phi từ, có ứng viên có thật | **726 — 24,8%** |
+| trong đó có đúng một ứng viên | 172 — 5,9% |
+| phi từ trong 53.322 token văn bản ĐÚNG | chỉ 47 — 0,09% |
+
+Đọc bảng đó thì đây là món hời: một phần tư số lỗi nằm ở ca dễ, mà rủi ro ở văn
+bản đúng chỉ 0,09% số token.
+
+#### Đo thật thì hỏng, và hỏng ở mọi mức ngưỡng
+
+`oov_gate_eval.py` chạy model thật, áp bảy luật quyết định lên **cùng một bộ
+logit** nên bảy dòng so được với nhau:
+
+| Cổng cho phi từ | P | R | F1 | báo oan |
+|---|---|---|---|---|
+| **P0 hiện tại (0,95 + biên)** | 0,8725 | 0,7426 | **0,8023** | **1,30%** |
+| bỏ KEEP | 0,7805 | 0,7489 | 0,7644 | 2,55% |
+| bỏ KEEP + bỏ qua chữ hoa | 0,7901 | 0,7489 | 0,7690 | 2,10% |
+| @0,80 | 0,8455 | 0,7511 | 0,7955 | 1,40% |
+| @0,85 | 0,8544 | 0,7489 | 0,7982 | 1,40% |
+| @0,90 | 0,8612 | 0,7457 | 0,7993 | 1,40% |
+| @0,93 | 0,8706 | 0,7447 | 0,8028 | 1,35% |
+
+Bỏ KEEP được **+6** ca sửa đúng và trả **+96** ca báo sai — mười sáu lần bắn
+nhầm cho một lần bắn trúng. Báo oan trên văn bản đúng tăng gấp đôi, 26 lên 51
+câu trên 2.000.
+
+Và cái quét ngưỡng mới là phần kết luận được: F1 **đi lên đơn điệu về phía P0**
+khi ngưỡng phi từ tiến về 0,95. Điểm tốt nhất trong cả họ là @0,93 với F1 0,8028
+so với 0,8023 — chênh 0,0005, tức *không phân biệt được với việc không làm gì*.
+Không có điểm ngọt nào để tìm. Đây không phải "ba cấu hình thất bại", đây là cả
+họ giải pháp bị P0 trội hơn.
+
+**Kết luận không phụ thuộc vào cách đếm fp.** Scorer của file này nghiêm hơn
+`evaluate.py` (nó tính fp cả ở vị trí lỗi NGOÀI tầm, chỗ `evaluate.py` bỏ qua),
+nên precision ở bảng trên không so được với con số 0,9749 đã công bố. Nhưng
+**recall** thì hai scorer đếm y hệt nhau, và báo oan trên văn bản đúng thì không
+dùng scorer nào cả. Cả họ ngưỡng được nhiều nhất **+0,85 điểm recall** trong khi
+báo oan tăng 1,30% → 1,40% ở mọi mức. Hai con số đó đủ kết luận.
+
+#### Vì sao con số đếm từ điển nói dối
+
+Bảng headroom đếm **726 ca mà một từ điển làm được**. Nó lặng lẽ giả định rằng
+khi bị ép phải chọn, model sẽ chọn đúng ứng viên. Nó không chọn đúng: ở đúng
+những vị trí đó, cái model thiếu tự tin **không phải là "có nên sửa không"** mà
+là **"sửa thành cái gì"**. Bỏ KEEP không thêm cho nó tri thức nào — nó chỉ đổi
+sự im lặng thành lỗi sai đầy tự tin. Khớp với thứ đã đo trước đây: model **tự
+tin khi sai**, trung vị p của ca báo oan là 0,981.
+
+Nên đây lại đúng một lần nữa cái luận điểm của cả dự án, lần này mắc vào chính
+phép đo dựng ra để kiểm nó: **tôi đo một con số hoàn toàn đúng — của một đường
+dẫn mà sản phẩm không đi qua.** Lần này đường dẫn tưởng tượng là "một model biết
+đáp án".
+
+#### Giữ lại gì
+
+Giữ P0 nguyên. Hai script ở lại trong repo vì chúng là bằng chứng của một hướng
+đã bị bác — lần sau ai thấy `mựng` bị bỏ sót và nghĩ ra đúng ý này thì đọc bảng
+trên, đừng train lại.
+
+Và ghi rõ ca `mựng`: model xếp nó p = 0,802, tức cổng @0,80 **có** bắt được đúng
+câu người dùng gửi. Nhưng cái giá của @0,80 là −2,7 điểm precision và 129 fp so
+với 102. Sửa được đúng một ca mình vừa nhìn thấy, trả bằng những ca không nhìn
+thấy — đó là cách tệ nhất để chọn ngưỡng.
+
+#### Một món nợ kỹ thuật lộ ra khi làm việc này
+
+Luật quyết định (softmax trên nhãn hợp lệ → ngưỡng → biên so với KEEP) hiện nằm
+ở **bốn** bản chép tay: `onnxEngine.js`, `evaluate.py::_gate`,
+`false_alarm.py::alarms`, `consonant_eval.py::decide`. Thí nghiệm này phải viết
+bản thứ năm. Đổi cổng mà quên một bản là phép đo và sản phẩm tách nhau ra âm
+thầm — đúng hạng mục lỗi mà test parity `vi.js`/`vi.py` được dựng ra để chặn.
+Chưa gộp, vì đợt này kết luận là **không đổi cổng**; nhưng lần sau ai định đụng
+vào ngưỡng thì gộp trước, đo sau.
