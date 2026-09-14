@@ -13,8 +13,15 @@
  *  2. Precision quan trọng hơn recall. Ngưỡng mặc định cao, và còn phải hơn
  *     KEEP một biên rõ rệt mới dám báo.
  *
- *  3. Không chặn luồng gõ. Chạy trong Web Worker; nếu model chưa nạp xong thì
- *     im lặng trả mảng rỗng — tầng luật vẫn hoạt động bình thường.
+ *  3. Model chưa nạp xong thì im lặng trả mảng rỗng — tầng luật vẫn hoạt động
+ *     bình thường.
+ *
+ *     Chỗ này từng ghi "Không chặn luồng gõ. Chạy trong Web Worker". CẢ HAI VẾ
+ *     ĐỀU SAI và đã sai từ đầu: không có Worker nào trong repo này, và
+ *     `ort.env.wasm.proxy` không bật, nên `session.run` giữ luồng chính của
+ *     trang suốt lượt chạy — 48ms cho một bài 280 ký tự, đo bằng
+ *     `dev/bench-blocking.html`. Ai gọi check() nhiều lượt liên tiếp thì PHẢI
+ *     tự nhả luồng giữa hai lượt; `await` không tự nhả cho ai cả.
  */
 
 import { applicableTags, getTone, TAGS, TAG_NAMES, TONE, tokenize, isWordLike } from './vi.js';

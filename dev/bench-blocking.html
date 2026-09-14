@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Soát — tầng model có CHẶN luồng chính không?</title>
+<style>
+  body { font: 400 15px/1.6 -apple-system, "Segoe UI", Roboto, sans-serif;
+         max-width: 900px; margin: 32px auto; padding: 0 20px; }
+  h1 { font-size: 19px; font-weight: 600; }
+  pre { background: #f6f8fa; padding: 14px; border-radius: 8px; white-space: pre-wrap;
+        font: 12px/1.55 ui-monospace, Menlo, Consolas, monospace; }
+  .bad { color: #cf222e; font-weight: 600; }
+</style>
+</head>
+<body>
+  <h1>Tầng model có chặn luồng gõ không?</h1>
+  <p>
+  <code>onnxEngine.js</code> ghi ở đầu file là "Chạy trong Web Worker", và
+  <code>bench-model.html</code> kết luận "nó chạy async sau tầng luật nên không
+  chặn lúc gõ". Trang này đo thẳng điều đó: chạy một vòng
+  <code>requestAnimationFrame</code> đếm khung hình, rồi gọi
+  <code>check()</code> và xem khung hình có ĐỨNG lại không.
+  </p>
+  <pre id="log">đang nạp model…</pre>
+<script type="module">
+const v = `?v=${Date.now()}`;
+const { OnnxEngine } = await import(`../extension/src/engine/onnxEngine.js${v}`);
+const { tokenize, isWordLike } = await import(`../extension/src/engine/vi.js${v}`);
+const lines = [];
+const say = (s, cls) => { lines.push(cls ? `<span class="${cls}">${s}</span>` : s);
+  document.getElementById('log').innerHTML = lines.join('\n'); };
+const ms = (x) => x.toFixed(1);
+
+const engine = new OnnxEngine();
+window.__engine = engine;
+const ok = await engine.load({
+  ort: '../extension/vendor/ort.wasm.bundle.min.mjs',
+  wasmDir: '../extension/vendor/',
+  model: `../extension/models/soat.int8.onnx${v}`,
+  tokenizer: `../extension/models/tokenizer.json${v}`,
+  lexicon: `../extension/models/lexicon.json${v}`,
+  meta: `../extension/models/soat.meta.json${v}`,
+});
+say(`${ok ? '✓' : '✗'} nạp model, maxLen = ${engine.maxLen}`);
+
+const cases = await (await fetch(`../extension/models/_sentence_cases.json${v}`)).json();
+const corpus = cases.map((c) => c.wrong.join(' '));
+function textOf(n){const out=[];let k=0;let i=Math.floor(Math.random()*corpus.length);
+  while(k<n){const s=corpus[i%corpus.length];out.push(s);k+=s.length+1;i++;}
+  return out.join(' ').slice(0,n);}
+
+// --- dong ho nhip dap -------------------------------------------------------
+// Khong dung requestAnimationFrame: tab o nen thi rAF KHONG chay, nen phep do se
+// ra "dung hinh" o ca truong hop lanh. MessageChannel khong bi bop nhip - no la
+// macrotask thuong, chay ngay khi luong chinh ranh.
+const mc = new MessageChannel();
+let ticks = 0, worstGap = 0, last = performance.now(), watching = false;
+mc.port1.onmessage = () => {
+  const now = performance.now();
+  if (watching) { ticks++; const gap = now - last; if (gap > worstGap) worstGap = gap; }
+  last = now;
+  mc.port2.postMessage(0);
+};
+mc.port2.postMessage(0);
+
+async function watch(label, fn) {
+  await new Promise((r) => setTimeout(r, 30));
+  ticks = 0; worstGap = 0; last = performance.now(); watching = true;
+  const t0 = performance.now();
+  await fn();
+  const dt = performance.now() - t0;
+  watching = false;
+  // Khong co nhip dap nao het nghia la luong chinh bi giu SUOT luot chay,
+  // chu khong phai "khong co do tre" - do la truong hop nang nhat.
+  const stall = ticks === 0 ? dt : worstGap;
+  say(`${label.padEnd(38)} mat ${ms(dt).padStart(8)}ms | nhip dap `
+    + `${String(ticks).padStart(6)} | DUNG LAU NHAT ${ms(stall).padStart(8)}ms`,
+    stall > 100 ? 'bad' : null);
+  return { dt, stall };
+}
+
+say('\nMốc so sánh — một việc async THẬT (không chặn):');
+await watch('sleep(300ms)', () => new Promise((r) => setTimeout(r, 300)));
+
+say('\nTầng model:');
+const t280 = textOf(280);
+await engine.check(t280);                       // chạy nóng
+await watch('check() một bài 280 ký tự', () => engine.check(t280));
+
+const t6000 = textOf(6000);
+await watch('check() một bài 6.000 ký tự (cắt cụt)', () => engine.check(t6000));
+
+// chia đoạn đúng theo subword
+const words = tokenize(t6000).filter(isWordLike).map((s) => s.text);
+const chunks = []; let acc = [], nSub = 0;
+for (const w of words) {
+  const p = engine.tokenizer.bpe(w).length;
+  if (nSub + p > engine.maxLen - 2) { chunks.push(acc.join(' ')); acc = []; nSub = 0; }
+  acc.push(w); nSub += p;
+}
+if (acc.length) chunks.push(acc.join(' '));
+say(`\nChia 6.000 ký tự thành ${chunks.length} đoạn ≤ ${engine.maxLen} subword:`);
+await watch(`check() ${chunks.length} đoạn, chạy liền một mạch`, async () => {
+  for (const c of chunks) await engine.check(c);
+});
+
+// Cung 15 doan, nhung nha luong chinh ra giua hai doan. Tong thoi gian gan nhu
+// khong doi; cai khac la moi lan giu luong chi con bang MOT doan.
+await watch(`check() ${chunks.length} đoạn, có NHẢ luồng giữa hai đoạn`, async () => {
+  for (const c of chunks) {
+    await engine.check(c);
+    await new Promise((r) => { const ch = new MessageChannel();
+      ch.port1.onmessage = () => r(); ch.port2.postMessage(0); });
+  }
+});
+
+await watch('check() ĐÚNG MỘT đoạn (ô đang gõ)', () => engine.check(chunks[0]));
+
+say("\n" + 'Doc bang: "DUNG LAU NHAT" la khoang thoi gian luong chinh khong nhan noi');
+say('mot viec nao khac. Phim nguoi dung go trong khoang do nam cho trong hang doi.');
+
+
+// --- BA CHIEN LUOC, cung mot van ban ----------------------------------------
+// Cot "dung lau nhat" moi la cot nguoi dung cam thay; cot "tong" chi la tien dien.
+// Ca ba deu nha luong giua hai luot chay.
+const yieldNow = () => new Promise((r) => { const ch = new MessageChannel();
+  ch.port1.onmessage = () => r(); ch.port2.postMessage(0); });
+
+const SENT_RE = new RegExp('(?<=[.!?…])@s+'.replace('@', '\\'));
+function splitSentences(t) {
+  return t.split(SENT_RE).map((x) => x.trim()).filter((x) => x.length > 1);
+}
+function packChunks(text, maxLen) {
+  // goi NHIEU CAU TRON VEN vao mot cua so, khong cat giua cau
+  const out = []; let acc = []; let n = 0;
+  for (const s of splitSentences(text)) {
+    const w = tokenize(s).filter(isWordLike).map((x) => x.text);
+    const k = w.reduce((a, x) => a + engine.tokenizer.bpe(x).length, 0);
+    if (acc.length && n + k > maxLen - 2) { out.push(acc.join(' ')); acc = []; n = 0; }
+    acc.push(s); n += k;
+  }
+  if (acc.length) out.push(acc.join(' '));
+  return out;
+}
+
+say('');
+say('=== BA CHIẾN LƯỢC, cùng một văn bản ===');
+say('');
+say(`${'cỡ văn bản'.padEnd(16)}${'chiến lược'.padEnd(32)}${'lượt'.padStart(6)}`
+  + `${'tổng'.padStart(11)}${'đứng lâu nhất'.padStart(15)}`);
+say('-'.repeat(80));
+// Cau VSEC khong co dau cham cuoi cau, nen phai tu noi bang '. ' - van ban that
+// cua nguoi dung co dau cau. (Truong hop KHONG co dau cau la mot truong hop rieng,
+// xem phan cuoi.)
+function docOf(n) {
+  const out = []; let k = 0; let i = Math.floor(Math.random() * corpus.length);
+  while (k < n) { const q = corpus[i % corpus.length]; out.push(q); k += q.length + 2; i++; }
+  return out.join('. ').slice(0, n);
+}
+for (const L of [280, 700, 2000, 6000]) {
+  const text = docOf(L);
+  const plans = [
+    ['hiện nay — một lượt, cắt cụt', [text]],
+    ['gói nhiều câu trọn vào cửa sổ', packChunks(text, engine.maxLen)],
+    ['từng CÂU một', splitSentences(text)],
+  ];
+  for (const [name, parts] of plans) {
+    const r = await watch('  ' + name, async () => {
+      for (const q of parts) { await engine.check(q); await yieldNow(); }
+    });
+    lines.pop();
+    say(`${(L + ' ký tự').padEnd(16)}${name.padEnd(32)}${String(parts.length).padStart(6)}`
+      + `${ms(r.dt).padStart(11)}${ms(r.stall).padStart(15)}`, r.stall > 100 ? 'bad' : null);
+  }
+}
+
+window.__benchDone = true;
+</script>
+</body>
+</html>

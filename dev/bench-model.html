@@ -237,9 +237,13 @@ say(`tầng luật, bài đăng 280 ký tự : 0,048ms   (dev/bench-rules.html)`
 say(`tầng model, cùng cỡ           : ${ms(kq[280].p50)}ms`);
 say(`tỷ lệ                         : model chậm hơn ~${Math.round(kq[280].p50 / 0.048)}x`);
 say('');
-say('Ngân sách một khung hình 60fps là 16,7ms. Tầng model VƯỢT ngân sách đó,');
-say('nhưng nó chạy async sau tầng luật nên không chặn lúc gõ — người dùng thấy');
-say('gạch chân của tầng luật trước, gạch chân của model đến sau.');
+say('Ngân sách một khung hình 60fps là 16,7ms. Tầng model VƯỢT ngân sách đó —');
+say('và nó vượt bằng cách GIỮ luồng chính, chứ không phải chạy ở đâu khác.');
+say('');
+say('Ba dòng ở đây từng kết luận ngược lại: "chạy async sau tầng luật nên không');
+say('chặn lúc gõ". dev/bench-blocking.html đo thẳng: trong suốt một lượt check()');
+say('luồng chính không nhận nổi một việc nào khác. Thứ tự thì đúng là tầng luật');
+say('vẽ trước; nhưng "đến sau" không có nghĩa là "không chặn".');
 </script>
 </body>
 </html>

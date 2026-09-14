@@ -1409,15 +1409,21 @@ Chia văn bản thành nhiều đoạn ≤96 subword rồi chạy từng đoạn
 | 2.000 ký tự | 5 | **353,8ms** | 70,5ms |
 | 6.000 ký tự | 15 | **1.127,9ms** | 71,4ms |
 
-Phủ hết thì trả tuyến tính theo độ dài. Nhưng ba điều làm cái giá này dễ chịu
-hơn vẻ ngoài của nó:
+Phủ hết thì trả tuyến tính theo độ dài. Hai điều làm cái giá này dễ chịu hơn vẻ
+ngoài của nó:
 
-1. Tầng model chạy **async**, sau tầng luật. Người dùng thấy gạch chân của tầng
-   luật trong 0,05ms; gạch chân của model đến sau, và đến chậm hơn thì cũng
-   không chặn việc gõ.
-2. `run()` đã bị **debounce 400ms**, nên nó không chạy mỗi phím gõ.
-3. Bài đăng ≤300 ký tự **không đổi gì cả** — đã phủ 100% rồi. Cái giá chỉ phát
+1. `run()` đã bị **debounce 400ms**, nên nó không chạy mỗi phím gõ.
+2. Bài đăng ≤300 ký tự **không đổi gì cả** — đã phủ 100% rồi. Cái giá chỉ phát
    sinh đúng ở chỗ hiện đang hỏng.
+
+> **Ở đây từng có điều thứ ba, và nó SAI.** Mục này viết "tầng model chạy async
+> nên đến chậm hơn thì cũng không chặn việc gõ". Quyết định 32 đo thẳng chuyện
+> đó: không có Web Worker nào, `ort.env.wasm.proxy` không bật, và `session.run`
+> giữ **luồng chính của trang** suốt lượt chạy. Mười lăm đoạn nối tiếp nhau giữ
+> luồng **1.013ms liền**, không nhả một nhịp nào. `async` trong JavaScript nói
+> về thứ tự, không nói về việc ai đang giữ luồng — đọc chữ `await` rồi kết luận
+> "không chặn" là suy từ cú pháp ra hành vi. Cách sửa rẻ có thật, nhưng nó phải
+> được **viết ra** chứ không tự có: nhả luồng giữa hai đoạn, xem quyết định 32.
 
 Trường hợp xấu thật sự là dán 6.000 ký tự rồi sửa liên tục: 1,1 giây CPU cho
 mỗi lần debounce nhả. Muốn ship thì nên kèm một trong hai: chỉ chạy lại đoạn
