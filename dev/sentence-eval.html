@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Soát — chấm theo CÂU, cả bốn tầng</title>
+<style>
+  body { font: 400 15px/1.6 -apple-system, "Segoe UI", Roboto, sans-serif;
+         max-width: 900px; margin: 32px auto; padding: 0 20px; }
+  h1 { font-size: 19px; font-weight: 600; }
+  .muted { color: #666; font-size: 13px; }
+  pre { background: #f6f8fa; padding: 14px; border-radius: 8px; white-space: pre-wrap;
+        font: 12px/1.6 ui-monospace, Menlo, Consolas, monospace; }
+  .ok { color: #1a7f37; } .bad { color: #cf222e; font-weight: 600; }
+</style>
+</head>
+<body>
+  <h1>Chấm theo CÂU — thứ người dùng thật sự nhìn thấy</h1>
+  <p class="muted">
+  <code>ml/sentence_eval.py</code> chấm theo câu nhưng chỉ chạy được <strong>tầng
+  model</strong>: tầng luật là JS, phía Python không có bản tương ứng. Trang này
+  chạy <strong>cả hai tầng</strong> đúng cách <code>content/index.js</code> gộp
+  chúng, trên cùng bộ câu, nên trả lời được câu hỏi tầng luật gỡ lại được bao
+  nhiêu.
+  <br><br>
+  Cần <code>extension/models/_sentence_cases.json</code> — sinh bằng
+  <code>python ml/sentence_eval.py --export-cases</code>.
+  </p>
+  <pre id="log">đang chạy…</pre>
+
+<script type="module">
+const v = `?v=${Date.now()}`;
+const { OnnxEngine } = await import(`../extension/src/engine/onnxEngine.js${v}`);
+const rules = await import(`../extension/src/engine/ruleEngine.js${v}`);
+
+const lines = [];
+const say = (s, cls) => {
+  lines.push(cls ? `<span class="${cls}">${s}</span>` : s);
+  document.getElementById('log').innerHTML = lines.join('\n');
+};
+
+const BUCKETS = ['sach_han', 'het_trong_tam', 'sua_mot_phan', 'khong_dung', 'co_sua_sai'];
+const NHAN = {
+  sach_han: 'SẠCH HẲN', het_trong_tam: 'HẾT PHẦN TRONG TẦM',
+  sua_mot_phan: 'SỬA MỘT PHẦN', khong_dung: 'KHÔNG ĐỤNG', co_sua_sai: 'CÓ SỬA SAI',
+};
+
+// Gộp hai tầng đúng thứ tự sản phẩm: luật đặt trước và giữ chỗ, model chỉ được
+// nói ở những ký tự luật chưa đụng tới.
+function merge(ruleIssues, modelIssues) {
+  const taken = new Set();
+  const out = [];
+  for (const i of ruleIssues) {
+    out.push(i);
+    for (let k = i.start; k < i.end; k++) taken.add(k);
+  }
+  for (const i of modelIssues) {
+    let overlap = false;
+    for (let k = i.start; k < i.end; k++) if (taken.has(k)) { overlap = true; break; }
+    if (!overlap) out.push(i);
+  }
+  return out;
+}
+
+// CHỖ DỄ ĐO SAI, đã mắc một lần: luật CỤM trả về một issue trải nhiều từ
+// (`mạnh mẻ` -> `mạnh mẽ`). So suggestion với MỘT âm tiết thì mọi luật cụm đều
+// bị đếm thành "sửa sai", và tầng luật trông như đang phá sản phẩm.
+function bucket(c, issues, startOf, endOf) {
+  let fixedWords = 0;
+  let bad = 0;
+  const errs = new Set(c.errs);
+  for (const it of issues) {
+    const i = startOf.get(it.start);
+    const j = endOf.get(it.end);
+    if (i === undefined || j === undefined || j < i) { bad++; continue; }
+    const want = c.right.slice(i, j + 1).join(' ');
+    let nErr = 0;
+    for (let k = i; k <= j; k++) if (errs.has(k)) nErr++;
+    if (it.suggestion === want && nErr) fixedWords += nErr;
+    else bad++;
+  }
+  if (bad) return 'co_sua_sai';
+  if (fixedWords === c.errs.length) return 'sach_han';
+  if (c.in_scope.length && fixedWords === c.in_scope.length) return 'het_trong_tam';
+  if (fixedWords) return 'sua_mot_phan';
+  return 'khong_dung';
+}
+
+const engine = new OnnxEngine();
+const t0 = performance.now();
+const ok = await engine.load({
+  ort: '../extension/vendor/ort.wasm.bundle.min.mjs',
+  wasmDir: '../extension/vendor/',
+  model: `../extension/models/soat.int8.onnx${v}`,
+  tokenizer: `../extension/models/tokenizer.json${v}`,
+  lexicon: `../extension/models/lexicon.json${v}`,
+  meta: `../extension/models/soat.meta.json${v}`,
+});
+say(`${ok ? '✓' : '✗'} nạp model ${Math.round(performance.now() - t0)}ms — `
+  + `ngưỡng thanh điệu ${engine.threshold}, phụ âm ${engine.thresholds?.D_GI ?? engine.threshold}`,
+  ok ? 'ok' : 'bad');
+say(`✓ tầng luật: ${rules.RULE_STATS.phrases} luật cụm, `
+  + `${rules.RULE_STATS.contextPairs} cặp đồng âm`, 'ok');
+
+let cases;
+try {
+  cases = await (await fetch(`../extension/models/_sentence_cases.json${v}`)).json();
+} catch {
+  say('✗ thiếu _sentence_cases.json — chạy: python ml/sentence_eval.py --export-cases', 'bad');
+  throw new Error('thiếu fixture');
+}
+say(`✓ ${cases.length.toLocaleString()} câu VSEC giữ kín, mỗi câu có ít nhất một lỗi\n`, 'ok');
+
+const stat = { model: {}, both: {} };
+for (const b of BUCKETS) { stat.model[b] = 0; stat.both[b] = 0; }
+let ruleCuu = 0;
+let ruleLamHong = 0;
+
+for (let n = 0; n < cases.length; n++) {
+  const c = cases[n];
+  const text = c.wrong.join(' ');
+  const startOf = new Map();
+  const endOf = new Map();
+  let at = 0;
+  c.wrong.forEach((w, i) => { startOf.set(at, i); at += w.length; endOf.set(at, i); at += 1; });
+
+  const m = await engine.check(text);
+  const r = rules.checkText(text);
+  const bm = bucket(c, m, startOf, endOf);
+  const bb = bucket(c, merge(r, m), startOf, endOf);
+  stat.model[bm]++;
+  stat.both[bb]++;
+  if (bm === 'khong_dung' && bb !== 'khong_dung') ruleCuu++;
+  if (bm !== 'co_sua_sai' && bb === 'co_sua_sai') ruleLamHong++;
+
+  if ((n + 1) % 250 === 0) {
+    lines[lines.length - 1] = `  ${n + 1}/${cases.length}…`;
+    document.getElementById('log').innerHTML = lines.join('\n');
+    await new Promise((res) => setTimeout(res, 0));   // nhả luồng cho trang vẽ lại
+  }
+}
+
+const n = cases.length;
+const pct = (x) => `${(x / n * 100).toFixed(1)}%`;
+say(`\n=== ${n.toLocaleString()} CÂU CÓ LỖI ===\n`);
+say(`${'kết cục'.padEnd(22)}${'tầng model'.padStart(14)}${'cả hai tầng'.padStart(14)}`);
+say('-'.repeat(50));
+for (const b of BUCKETS) {
+  say(`${NHAN[b].padEnd(22)}${pct(stat.model[b]).padStart(14)}${pct(stat.both[b]).padStart(14)}`);
+}
+say('-'.repeat(50));
+say(`\ntầng luật cứu thêm ${ruleCuu} câu khỏi rổ KHÔNG ĐỤNG, `
+  + `và đẩy ${ruleLamHong} câu vào rổ CÓ SỬA SAI.`);
+say('Trên VSEC tầng luật gần như không đổi được kết cục theo câu — nhưng VSEC thu');
+say('lỗi người GÕ, còn 137 luật cụm nhắm lỗi KIẾN THỨC, nên đây là quần thể mà nó');
+say('được dùng tới ít nhất. Đừng đọc thành "tầng luật vô dụng".');
+</script>
+</body>
+</html>

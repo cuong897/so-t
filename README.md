@@ -91,6 +91,7 @@ npm run dev       # rồi mở hai trang dưới đây
 |---|---|
 | `dev/playground.html` | Tầng DOM — gạch chân và thay chuỗi trong trình duyệt thật, không cần cài extension |
 | `dev/onnx-test.html` | Đường ONNX — nạp runtime, mã hoá BPE, suy luận, chặn theo tập ứng viên |
+| `dev/sentence-eval.html` | Chấm theo CÂU với **cả hai tầng** — phần mà `sentence_eval.py` không chạy được vì tầng luật là JS |
 
 Trước khi dùng `onnx-test.html` phải có runtime và model:
 
@@ -219,6 +220,28 @@ dùng thật sự gặp:
 
 Độ trễ ghi thành **khoảng** chứ không một con số: đo lại bốn lần trên cùng máy
 được 18,4 / 23,1 / 23,8ms. Một con số lẻ là một lần bốc thăm.
+
+### Và con số người dùng thật sự sống cùng: chấm theo CÂU
+
+Bảng trên chấm theo **lỗi**. Người dùng không sống theo đơn vị lỗi — họ gõ một
+**câu** rồi nhìn. `sentence_eval.py` chia 1.483 câu VSEC giữ kín có lỗi thành
+năm rổ (`dev/sentence-eval.html` chạy lại cùng phép đo với **cả hai tầng**):
+
+| Kết cục | Tầng model | Cả hai tầng |
+|---|---|---|
+| SẠCH HẲN | 38,8% | **39,2%** |
+| Hết phần trong tầm | 3,1% | 3,0% |
+| Sửa một phần | 1,1% | 1,3% |
+| **KHÔNG ĐỤNG** | 49,8% | **49,0%** |
+| CÓ SỬA SAI | 7,1% | 7,6% |
+
+**Một nửa số câu có lỗi thì sản phẩm im lặng hoàn toàn.** Đó là con số phải nói
+cạnh mọi con số recall, vì nó mới là thứ người dùng gặp.
+
+Và phải đọc `0,7457` kèm mẫu số của nó: đó là recall trên **phần bộ nhãn biểu
+diễn được**, tức 54,5% lỗi VSEC. Nhân ra thì tỷ lệ lỗi thật sự được sửa là
+**40,8%**. Hai con số cùng một model, nhưng "74,6%" và "40,8%" tạo ấn tượng rất
+khác nhau — và người đọc sẽ hiểu theo nghĩa thứ hai.
 
 **Hai dòng độ trễ chênh nhau hơn ba lần, và đó là chỗ dễ báo cáo sai.**
 `export_onnx.py` đo bằng onnxruntime trên Python; trình duyệt chạy cùng file
@@ -388,6 +411,8 @@ ml/                     vi.py (bản song song của vi.js), noise.py, encoding.
                         train.py, export_onnx.py, export_tokenizer.py
 ml/evaluate.py          VSEC — nhớ --held-out --threshold 0.95 --margin 0.25
 ml/false_alarm.py       báo động giả trên văn bản ĐÚNG
+ml/sentence_eval.py     chấm theo CÂU — năm rổ kết cục, chỉ tầng model
+ml/gate.py              phép quyết định, một bản duy nhất cho phía Python
 ml/consonant_eval.py    tập chấm riêng cho lỗi phụ âm (1.796 ca)
 ml/consonant_diagnose.py  vì SAO lớp phụ âm sót: thiếu tự tin, đoán sai,
                         hay bị nhãn thanh điệu ăn mất

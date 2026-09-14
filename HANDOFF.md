@@ -1,6 +1,6 @@
 # Bàn giao — dự án Soát
 
-Đọc file này trước, rồi `README.md` (tổng quan) và `docs/decisions.md` (29 quyết
+Đọc file này trước, rồi `README.md` (tổng quan) và `docs/decisions.md` (30 quyết
 định, kèm lý do và mọi lỗi đã mắc).
 
 ---
@@ -21,7 +21,7 @@ viết khoá luận.
 
 ## Trạng thái: CHẠY ĐƯỢC TRONG CHROME THẬT
 
-- 50 commit, cây git sạch
+- 52 commit, cây git sạch
 - 48 test JS + 9 test Python, tất cả pass (`npm run test:all`)
 - Đã cài thật vào Chrome, gõ thật trên Facebook, cả bốn tầng đều sống —
   **nhưng lần đó là với model v3.**
@@ -47,13 +47,15 @@ lớp nhãn**: thanh điệu **0,95**, phụ âm **0,90** (`onnxEngine.js`, quy�
 | Độ trễ **trong trình duyệt** (wasm) | nạp 355–585ms · p50 **18–24ms** · p95 23–30ms | `dev/onnx-test.html` |
 | Độ trễ onnxruntime Python, 1 luồng | p50 5,5ms · p95 5,7ms | `export_onnx.py` |
 | Gói cài | 95,3 MB thô → **58,6 MB nén** | `package_extension.py` |
+| **Theo CÂU** — câu sạch hẳn | **39,2%** | `sentence_eval.py` + `dev/sentence-eval.html` |
+| **Theo CÂU** — câu sản phẩm KHÔNG ĐỤNG | **49,0%** | nt |
 
 **Bản bàn giao trước ghi "trong trình duyệt · p50 5,4ms · export_onnx.py" —
 sai.** 5,4ms là số onnxruntime trên Python; trình duyệt chạy cùng file model qua
 wasm và đo được 18–24ms, chậm hơn ba tới bốn lần. Đây đúng là loại lỗi mà cả dự
 án này lấy làm luận điểm, mắc thêm một lần nữa ngay trong tài liệu bàn giao.
 
-**Bốn lưu ý khi đọc bảng này:**
+**Năm lưu ý khi đọc bảng này:**
 
 1. `evaluate.py` **mặc định chấm bằng argmax không ngưỡng** — đó là năng lực
    thô, không phải thứ người dùng thấy. Phải truyền `--threshold 0.95
@@ -70,6 +72,12 @@ wasm và đo được 18–24ms, chậm hơn ba tới bốn lần. Đây đúng 
 
 4. Độ trễ ghi thành **khoảng** chứ không một con số: đo bốn lần trên cùng máy
    được 18,4 / 23,1 / 23,8ms. Một con số lẻ là một lần bốc thăm.
+
+5. **`R 0,7457` PHẢI đi kèm mẫu số của nó.** Đó là recall trên phần bộ nhãn biểu
+   diễn được, tức 54,5% lỗi VSEC. Nhân ra: `0,7457 x 0,545 = 0,406`, nên tỷ lệ
+   lỗi thật sự được sửa là **40,8%**. Không phải lỗi tính toán — `evaluate.py`
+   khối C đã báo sẵn con số toàn bộ. Nhưng 0,7457 là con số hay bị trích ra khỏi
+   ngữ cảnh nhất, và người đọc CV sẽ hiểu nó là "sửa được 74,6% lỗi tôi mắc".
 
 ---
 
@@ -116,12 +124,10 @@ kế*. Câu bắt được ở lớp này: *"Rao động về hình dáng từ c
 quả giống hệt bản cũ thì nghi cache trước, đừng nghi logic. Bấm Reload ở
 `chrome://extensions` và hard-reload trang.
 
-**Và bài học chung từ lần gõ thử này:** ba trong bốn chữ sai của câu đó sản phẩm
-không đụng tới. Người dùng thật gõ sai theo kiểu **trộn nhiều lớp lỗi trong một
-câu**, trong đó có cả lớp nằm ngoài bộ nhãn. Mọi phép đo của dự án đều chấm từng
-lỗi một, không cái nào đo "một câu người thật gõ thì bao nhiêu phần được sửa".
-Đó là khoảng trống đo lường còn lại, và không phép đo offline hiện có nào lấp
-được nó.
+**Và bài học chung từ lần gõ thử này đã thành một phép đo** (quyết định 30):
+ba trong bốn chữ sai của câu đó sản phẩm không đụng tới, và đó không phải ca cá
+biệt. `sentence_eval.py` chấm theo CÂU thay vì theo lỗi: **49,0% số câu có lỗi thì
+sản phẩm im lặng hoàn toàn**, chỉ 39,2% sạch hẳn. Một nửa.
 
 ### 2. Xoá blob 311MB khỏi LỊCH SỬ git (CHẶN việc nộp store)
 
@@ -258,6 +264,8 @@ ml/                 vi.py (bản song song vi.js), noise.py, mine_errors.py,
   consonant_diagnose.py  vì SAO lớp phụ âm sót — thiếu tự tin, đoán sai, hay
                     bị nhãn thanh điệu ăn mất
   diagnose.py       chia phần bỏ sót trên VSEC
+  sentence_eval.py  chấm theo CÂU — năm rổ kết cục. CHỈ tầng model;
+                    dùng dev/sentence-eval.html để có số cả hai tầng
   gate.py           PHÉP QUYẾT ĐỊNH — một bản duy nhất cho phía Python. Đổi
                     ngưỡng thì sửa ở đây và ở onnxEngine.js, không chỗ nào khác
   export_gate_cases.py  sinh fixture parity cho gate.py <-> onnxEngine.js
@@ -267,7 +275,7 @@ ml/                 vi.py (bản song song vi.js), noise.py, mine_errors.py,
   oov_gate_eval.py  đo thật hướng đó — bảy luật trên cùng một lượt chạy
   package_extension.py, make_screenshots.py
 dev/                playground.html, onnx-test.html, shots.html (nguồn ảnh store)
-docs/decisions.md   29 quyết định
+docs/decisions.md   30 quyết định
 docs/blog.html      bài viết về toàn bộ quá trình và các lần sai
 docs/store/         hồ sơ nộp Chrome Web Store
 ```

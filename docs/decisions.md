@@ -1237,3 +1237,104 @@ báo oan @0,90 / mặc định: 1,35%/1,05% / 1,35%/1,05%
 
 Trùng từng con số. Và kiểm trong trình duyệt thật qua wasm: `Rao→Dao` ở 92,7%
 im lặng dưới cấu hình cũ, báo dưới cấu hình mới.
+
+---
+
+### 30. Chấm theo CÂU: một nửa số câu có lỗi thì sản phẩm im lặng hoàn toàn
+
+Ảnh chụp màn hình của người dùng ở quyết định 28 để lại một khoảng trống mà lúc
+đó tôi chỉ đặt tên chứ chưa lấp:
+
+> Mọi phép đo của dự án đều chấm từng lỗi một, không cái nào đo "một câu người
+> thật gõ thì bao nhiêu phần được sửa".
+
+`evaluate.py` cộng tp/fp/fn trên toàn bộ vị trí. `consonant_eval.py` chấm mỗi ca
+một vị trí. Cả hai trả lời "trong tất cả lỗi, bao nhiêu phần trăm được sửa" —
+một câu hỏi đúng, nhưng không phải câu hỏi người dùng sống cùng. Người dùng gõ
+một **câu** rồi nhìn.
+
+#### Năm rổ
+
+`sentence_eval.py` chia 1.483 câu VSEC giữ kín **có ít nhất một lỗi** thành:
+
+| Rổ | Tầng model | Cả hai tầng |
+|---|---|---|
+| SẠCH HẲN | 38,8% | **39,2%** |
+| HẾT PHẦN TRONG TẦM | 3,1% | 3,0% |
+| SỬA MỘT PHẦN | 1,1% | 1,3% |
+| **KHÔNG ĐỤNG** | 49,8% | **49,0%** |
+| CÓ SỬA SAI | 7,1% | 7,6% |
+
+Rổ CÓ SỬA SAI xếp cuối và tách riêng vì nó tệ nhất với người dùng: một câu vừa
+sửa đúng hai lỗi vừa gạch oan một chỗ vẫn vào rổ đó, vì gạch chân nhầm một lần
+là người ta gỡ cài (quyết định 8).
+
+**Con số đáng nhìn nhất là 49,0%.** Một nửa số câu có lỗi, người dùng gõ xong và
+sản phẩm không làm gì cả. Đó chính xác là thứ ảnh chụp Facebook cho thấy, và giờ
+nó có một con số thay vì một giai thoại.
+
+#### "Recall 0,7457" và "40,8%" là cùng một model
+
+Phép đo theo câu tính ra tỷ lệ lỗi được sửa là **40,8%**, trong khi mọi tài liệu
+của dự án đang ghi recall **0,7457**. Không mâu thuẫn:
+
+    0,7457  x  0,545  =  0,406
+    ^recall    ^phần VSEC mà bộ nhãn với tới được
+
+`evaluate.py` khối B cố ý chỉ chấm phần trong tầm, và nói rõ điều đó. Khối C đã
+báo sẵn con số toàn bộ. Nhưng **0,7457 là con số bị trích ra khỏi ngữ cảnh nhiều
+nhất**, và người đọc CV sẽ hiểu nó là "sửa được 74,6% lỗi tôi mắc" — trong khi
+con số đó là 40,8%.
+
+Không phải lỗi tính toán. Là lỗi **chọn con số nào để đặt lên đầu**, và nó cùng
+họ với mọi lần dự án này tự lừa mình.
+
+#### Câu càng nhiều lỗi càng ít cửa
+
+| Số lỗi trong câu | Câu | SẠCH HẲN | HẾT PHẦN TRONG TẦM |
+|---|---|---|---|
+| 1 | 1.292 | 42,5% | 0,0% |
+| 2 | 163 | 13,5% | 26,4% |
+| 3 | 19 | 15,8% | 15,8% |
+| 4+ | 9 | 33,3% | 11,1% |
+
+Xác suất một câu sạch hẳn là **tích** xác suất của từng lỗi. Recall 74,6% mỗi
+lỗi thì câu hai lỗi còn ~56%, ba lỗi ~42% — và đó là chưa tính lỗi ngoài tầm bộ
+nhãn, thứ làm câu **không bao giờ** sạch được. Câu người dùng gõ trên Facebook
+có bốn chữ ba sai, trong đó `đuồng→đồng` nằm ngoài tầm vĩnh viễn. Câu đó không
+có cửa nào.
+
+#### Tầng luật gỡ lại được bao nhiêu — và vì sao phải hỏi
+
+`sentence_eval.py` là Python nên **chỉ chạy được tầng model**; tầng luật là JS.
+Báo cáo con số tầng model như con số sản phẩm thì đúng là kiểu nhầm mà cả dự án
+này lấy làm luận điểm. Nên `dev/sentence-eval.html` chạy **cả hai tầng**, gộp
+đúng thứ tự `content/index.js` gộp, trên đúng bộ câu đó.
+
+Kết quả: tầng luật cứu thêm **13 câu** khỏi rổ KHÔNG ĐỤNG và đẩy **7 câu** vào
+rổ CÓ SỬA SAI. Gần như không đổi được kết cục.
+
+**Đừng đọc thành "tầng luật vô dụng".** VSEC thu lỗi người **gõ**, còn 137 luật
+cụm nhắm lỗi **kiến thức** (`nổ lực`, `chia sẽ`) — đây đúng là quần thể mà tầng
+luật được dùng tới ít nhất. Quyết định 14 đã nói chuyện này một lần rồi, và nó
+áp cho cả tầng luật chứ không riêng tầng model.
+
+#### Lại tự mắc bẫy của chính dự án, lần này ở tầng đọc dữ liệu
+
+Lần chạy đầu cho ra tầng luật làm **tệ đi** rõ rệt: CÓ SỬA SAI 7,1% → 9,0%, SẠCH
+HẲN tụt 12 câu. Kết luận sẽ là "tầng luật đang phá sản phẩm".
+
+Sai, và sai vì cách đo. Luật **cụm** trả về một issue trải nhiều từ —
+`mạnh mẻ → mạnh mẽ` trải hai từ — còn tôi so `suggestion` với **một âm tiết**
+trong câu đúng. Mọi luật cụm vì thế bị đếm thành "sửa sai". Sửa cách so — ánh xạ
+`[start, end)` về dải chỉ số từ rồi so với đúng dải đó — thì ra 7,6%.
+
+Phát hiện được vì con số trông vô lý nên đi kiểm cấu trúc dữ liệu trước khi kết
+luận, chứ không phải vì có test nào bắt. Cùng họ với bẫy số 11: sai ở tầng đọc
+số nguy hiểm y như sai ở tầng đo.
+
+#### Việc này đổi cách báo cáo
+
+Từ đây mọi chỗ báo recall phải kèm mẫu số. "Recall 0,7457 trên phần bộ nhãn biểu
+diễn được (54,5% lỗi VSEC), tức 40,8% tổng số lỗi" — dài hơn, và đúng. Và con số
+theo câu nên đứng cạnh nó, vì nó mới là thứ người dùng gặp.
