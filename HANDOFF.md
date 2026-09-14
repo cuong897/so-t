@@ -5,6 +5,30 @@
 
 ---
 
+## Phiên vừa rồi làm gì (14–15/09/2026)
+
+Mười lăm commit, `cfffea2..4bbd91b`. Ba nhóm việc:
+
+**Sửa lỗi tài liệu khai không đúng sự thật.** Blob 311MB vẫn nằm trong HEAD dù
+commit trước khai đã bỏ theo dõi (nó chỉ sửa `.gitignore`). README báo số của v1
+trong suốt thời gian ship v3. Công thức dựng lại dữ liệu tham chiếu file không hề
+được version. Đó là bẫy số 10.
+
+**Ba đợt đo và hai thay đổi sản phẩm.** Quyết định 27 (train v4 nhắm d/gi/r),
+28 (nới cổng cho phi từ — **đã bác**, thua ở mọi mức ngưỡng), 29 (hạ ngưỡng lớp
+phụ âm xuống 0,90 — **đã ship**), 30 (chấm theo CÂU), 31 (model cắt cụt bài đăng
+dài — **lỗi, chưa sửa**). Hai lần ghi ngưỡng chấp nhận TRƯỚC khi đo rồi commit,
+để lịch sử git làm chứng cho thứ tự (`77a9148`, `544c455`).
+
+**Gộp phép quyết định về một bản** (`331654c`). Trước đó nó có bốn bản chép tay;
+giờ phía Python có `ml/gate.py`, phía JS có `onnxEngine.js`, và `test/gate.test.mjs`
+canh hai bên bằng 1.200 ca.
+
+**Bốn ảnh chụp màn hình thật từ chủ repo** đã xác nhận tầng luật chạy trong
+Chrome, và luôn thể làm lộ ra chuyện model nạp chậm hơn tốc độ người ta gõ.
+
+---
+
 ## Sản phẩm là gì
 
 Extension Chrome sửa lỗi **dấu tiếng Việt** ngay trong ô nhập liệu, chạy **hoàn
@@ -21,16 +45,15 @@ viết khoá luận.
 
 ## Trạng thái: CHẠY ĐƯỢC TRONG CHROME THẬT
 
-- 54 commit, cây git sạch
+- 56 commit, cây git sạch
 - 48 test JS + 9 test Python, tất cả pass (`npm run test:all`)
-- Đã cài thật vào Chrome, gõ thật trên Facebook, cả bốn tầng đều sống —
-  **nhưng lần đó là với model v3.**
-- v4 đã chạy qua trình duyệt thật ở `dev/onnx-test.html`
-  (`http://localhost:8777`): 4/6 câu mẫu, **0 báo động giả**, mọi
-  bất biến pass (đề xuất trong từ điển, offset đúng, không trùng bản gốc). Đây
-  là tầng model qua wasm thật, **nhưng qua `http://` chứ không qua
-  `chrome-extension://`** — quyết định 24 đã dạy một lần rằng hai đường đó
-  khác nhau ở chỗ nạp tài nguyên. Vẫn cần cài thật, xem việc số 1.
+- **ĐÃ XÁC NHẬN CHẠY TRONG CHROME THẬT với bản đang ship.** Chủ repo gõ trên
+  Facebook câu *"mình xin chia sẽ một vãi trãi nghiệm cho mọi ngươi"* và thấy
+  gạch chân đúng hai chỗ — khớp chính xác với `chia sẽ→chia sẻ` và
+  `trãi→trải` mà tầng luật sinh ra. `targets.js`, `highlighter.js` và ô soạn
+  Lexical của Facebook đều hoạt động.
+- **Nhưng đó là tầng LUẬT.** Tầng model qua `chrome-extension://` vẫn chưa có
+  lần nào được xác nhận — xem việc số 1.
 - Gói nộp store đã đóng lại với v4, **chưa nộp**
 
 ### Số liệu chốt
@@ -49,11 +72,14 @@ lớp nhãn**: thanh điệu **0,95**, phụ âm **0,90** (`onnxEngine.js`, quy�
 | Gói cài | 95,3 MB thô → **58,6 MB nén** | `package_extension.py` |
 | **Theo CÂU** — câu sạch hẳn | **39,2%** | `sentence_eval.py` + `dev/sentence-eval.html` |
 | **Theo CÂU** — câu sản phẩm KHÔNG ĐỤNG | **49,0%** | nt |
+| **Phạm vi phủ của model** | 100% ở bài ≤300 ký tự · **58%** ở 700 · **7%** ở 6.000 | `dev/bench-model.html` |
 
-**Bản bàn giao trước ghi "trong trình duyệt · p50 5,4ms · export_onnx.py" —
-sai.** 5,4ms là số onnxruntime trên Python; trình duyệt chạy cùng file model qua
-wasm và đo được 18–24ms, chậm hơn ba tới bốn lần. Đây đúng là loại lỗi mà cả dự
-án này lấy làm luận điểm, mắc thêm một lần nữa ngay trong tài liệu bàn giao.
+**Con số độ trễ đã sai HAI lần trong tài liệu này.** Lần đầu ghi "p50 5,4ms ·
+export_onnx.py" — đó là số onnxruntime trên **Python**, còn trình duyệt chạy qua
+wasm. Lần hai ghi "p50 18–24ms" — đúng là số trình duyệt, nhưng đo trên **một
+câu 65 ký tự**, trong khi người dùng gõ cả bài đăng. Chỉ có `dev/bench-model.html`
+mới đo đủ các cỡ văn bản. Hai lần sai cùng một họ, và cùng là luận điểm của cả
+dự án.
 
 **Năm lưu ý khi đọc bảng này:**
 
@@ -70,8 +96,12 @@ wasm và đo được 18–24ms, chậm hơn ba tới bốn lần. Đây đúng 
    đổi: recall VSEC 0,7457 so với 0,7670, đổi lấy precision 0,9709 so với
    0,9550 và recall phụ âm 25,7% → 48,2%. Xem quyết định 26, 27 và 29.
 
-4. Độ trễ ghi thành **khoảng** chứ không một con số: đo bốn lần trên cùng máy
-   được 18,4 / 23,1 / 23,8ms. Một con số lẻ là một lần bốc thăm.
+4. Độ trễ phụ thuộc ĐỘ DÀI văn bản, và ghi thành **khoảng** chứ không một con
+   số. Bản bàn giao trước ghi "p50 18–24ms" — đó là số của một CÂU 65 ký tự;
+   một BÀI ĐĂNG tốn 51–58ms, gấp ba. Và từ 700 ký tự trở lên độ trễ **đứng
+   yên** — không phải vì model co giãn tốt mà vì nó cắt bớt văn bản (quyết
+   định 31). Đọc cột độ trễ mà không đọc cột phạm vi phủ là tự khen một con
+   số sinh ra từ một lỗi.
 
 5. **`R 0,7457` PHẢI đi kèm mẫu số của nó.** Đó là recall trên phần bộ nhãn biểu
    diễn được, tức 54,5% lỗi VSEC. Nhân ra: `0,7457 x 0,545 = 0,406`, nên tỷ lệ
@@ -83,51 +113,57 @@ wasm và đo được 18–24ms, chậm hơn ba tới bốn lần. Đây đúng 
 
 ## VIỆC TIẾP THEO — theo thứ tự ưu tiên
 
-### 1. Gõ thử v4 trong Chrome THẬT — ĐÃ LÀM MỘT LẦN, và kết quả là "im lặng"
+### 1. Xác nhận TẦNG MODEL chạy trong Chrome thật (5 phút)
 
-Chủ repo đã cài v4 vào Chrome và gõ thật trên Facebook:
+Tầng luật **đã xác nhận chạy** (xem phần Trạng thái). Còn lại đúng một câu hỏi:
+tầng model có nạp được qua `chrome-extension://` không? Quyết định 24 đã có
+tiền lệ: tầng model chết im lặng hai tuần vì thiếu `vendor/*` trong
+`web_accessible_resources`, không phép đo offline nào chạm tới.
 
-> chúc **mựng** anh chị đã giành được phần quà **trí** giá 10 triệu **đuồng**
-
-**Extension không gạch gì cả.** Vệt gạch dưới `đuồng` trong ảnh là spellcheck
-của Chrome, không phải của sản phẩm này. Mổ ra ở quyết định 28; tóm tắt:
-
-| Chữ | Đúng phải là | Sản phẩm | Vì sao |
-|---|---|---|---|
-| `mựng` | `mừng` | bỏ sót | p = 0,802, mà đây là nhãn THANH ĐIỆU nên ngưỡng vẫn là 0,95 — quyết định 29 không giúp ca này |
-| `trí giá` | `trị giá` | bỏ sót | model không xếp nhãn nào lên đầu |
-| `đuồng` | `đồng` | **ngoài tầm vĩnh viễn** | `uô→ô`, ngoài 23 nhãn |
-| `giành được` | *(đúng)* | im lặng ✓ | |
-
-**Việc còn lại của mục này** không phải đo tầng model nữa — `dev/onnx-test.html`
-đã kiểm nó rồi. Còn lại là ba tầng mà cả `onnx-test.html` lẫn ảnh trên đều chưa
-xác nhận được: `targets.js` có chọn đúng ô nhập của Facebook không,
-`highlighter.js` vẽ gạch chân có đúng chỗ không, `replace.js` thay chuỗi có an
-toàn với React không. Muốn thấy ba tầng đó thì phải gõ một câu mà sản phẩm
-**chắc chắn bắt**:
+Cách kiểm, dùng đúng câu này:
 
 > Hơn một nửa dân số cứ trú tại vùng đồng bằng ven biển.
 
-Tầng luật **cố ý** không bắt câu này, model thì bắt `cứ→cư` ở 100% (đã đo). Nếu
-gõ câu đó mà vẫn không thấy gạch chân thì mới là lỗi cài đặt thật.
+Tầng luật **cố ý** không bắt câu này; model bắt `cứ→cư` ở **99,9%** (đã đo).
+Nên:
+
+* có gạch chân dưới `cứ` → **cả bốn tầng sống**, xong việc này
+* không có gì → tầng model không nạp được trong extension. Mở DevTools trên
+  trang đó, tìm cảnh báo `[soát] không nạp được model`.
+
+**Đợi ~10 giây sau khi mở trang rồi hãy gõ.** Model nặng 92MB, nạp mất vài giây,
+và lượt suy luận đầu tiên còn tốn thêm 55–126ms. Bốn ảnh chụp màn hình đầu tiên
+của chủ repo đều rơi vào đúng cửa sổ đó — chỉ thấy tầng luật làm việc.
 
 ```
 chrome://extensions → Developer mode → Load unpacked → chọn extension/
 ```
 
+**Nhớ Reload extension** sau mỗi lần thay file model — trình duyệt cache cả file
+`.onnx`. Kết quả giống hệt bản cũ thì nghi cache trước, đừng nghi logic.
+
 **Đừng dùng `dành được phần quà` để kiểm** — model xếp `dành→giành` ở p = 0,835,
-vẫn dưới ngưỡng phụ âm 0,90 sau quyết định 29, nên nó im lặng *đúng theo thiết
-kế*. Câu bắt được ở lớp này: *"Rao động về hình dáng từ cây bụi rậm rạp..."*
-— `Rao→Dao` ở 92,7%, im lặng dưới cấu hình cũ và báo dưới cấu hình mới.
+dưới ngưỡng phụ âm 0,90, nên nó im lặng *đúng theo thiết kế*. Câu bắt được ở lớp
+này: *"Rao động về hình dáng từ cây bụi rậm rạp..."* — `Rao→Dao` ở 92,7%.
 
-**Nhớ cache:** trình duyệt phục vụ lại cả file `.onnx`. Thay model rồi mà kết
-quả giống hệt bản cũ thì nghi cache trước, đừng nghi logic. Bấm Reload ở
-`chrome://extensions` và hard-reload trang.
+#### Bốn ảnh chụp màn hình thật đã dạy gì
 
-**Và bài học chung từ lần gõ thử này đã thành một phép đo** (quyết định 30):
-ba trong bốn chữ sai của câu đó sản phẩm không đụng tới, và đó không phải ca cá
-biệt. `sentence_eval.py` chấm theo CÂU thay vì theo lỗi: **49,0% số câu có lỗi thì
-sản phẩm im lặng hoàn toàn**, chỉ 39,2% sạch hẳn. Một nửa.
+| Câu người dùng gõ | Sản phẩm làm gì |
+|---|---|
+| `chúc mựng... trí giá... đuồng` | không ai bắt. `mựng` p=0,802 dưới ngưỡng thanh điệu 0,95; `đuồng→đồng` **ngoài tầm vĩnh viễn** (`uô→ô`) |
+| `10 triệu đông` | model bắt `đông→đồng` ở **99,6%** — nhưng chưa nạp kịp |
+| `con tró màu vàng` | không bắt. Model xếp `trỏ` (thanh điệu) 0,827 còn `chó` (TR_CH) chỉ 0,052 |
+| `chia sẽ... trãi...` | **tầng luật bắt cả hai** ✓ |
+
+Ca `tró→chó` đáng ghi: `tró` không có trong từ điển, `chó` có, TR_CH nằm sẵn trong
+tập ứng viên — model vẫn với tay sang nhãn **thanh điệu**. Đúng hiện tượng quyết
+định 27 đo được ở lớp d/gi/r (94% ca sửa sai bắn sang thanh điệu), giờ thấy ở cả
+lớp ch/tr. Hạ ngưỡng không cứu được — 0,052 thì hạ tới đâu cũng không tới.
+
+**Và một lưu ý cho mọi lần gõ thử:** vệt gạch đỏ lượn sóng của Chrome spellcheck
+**trông giống hệt** vệt của sản phẩm này. Ba trong bốn ảnh trên, vệt gạch là của
+Chrome chứ không phải của mình. Muốn phân biệt thì bấm vào từ đó: sản phẩm này
+hiện tooltip kèm đề xuất, Chrome thì phải chuột phải mới ra menu.
 
 ### 2. Xoá blob 311MB khỏi LỊCH SỬ git (CHẶN việc nộp store)
 
@@ -174,7 +210,10 @@ bước 0 là thử lại trên Chrome thật (tức việc số 1 ở trên).
 Sinh lại: `python ml/package_extension.py` và `python ml/make_screenshots.py`
 (cả hai neo đường dẫn theo vị trí file, đứng đâu chạy cũng được).
 
-### 3b. Model CẮT CỤT bài đăng dài — lỗi thật, chưa sửa (quyết định 31)
+### 4. Model CẮT CỤT bài đăng dài — lỗi thật, chưa sửa (quyết định 31)
+
+**Đây là việc đầu tiên không cần tài khoản hay quyền gì của chủ repo** — ba việc
+trên đều chặn ở người, việc này thì làm được ngay.
 
 `OnnxEngine.check()` không chia đoạn. Nó nhét cả văn bản vào `maxLen` = 96
 subword rồi cắt, từ nào vượt quá thì bị bỏ qua **lặng lẽ**:
@@ -201,7 +240,7 @@ Và nhớ: `maxLen = 96` hiện là một hằng số đi ra từ lúc train, kh
 quyết định sản phẩm có ghi lại. Nó quyết định sản phẩm bỏ qua bao nhiêu phần văn
 bản của người dùng.
 
-### 4. ĐÃ XONG — ngưỡng riêng cho lớp phụ âm (quyết định 29)
+### 5. ĐÃ XONG — ngưỡng riêng cho lớp phụ âm (quyết định 29)
 
 Giữ lại mục này vì nó trả lời sẵn hai câu hỏi hay được hỏi lại.
 
@@ -232,7 +271,7 @@ model không thiếu tự tin mà thiếu đáp án (p của nhãn đúng trung 
 lớp phụ âm thì nhãn đúng đã dẫn đầu với p trung vị 0,257. Tiêu chí nào cũng phải
 đo, đừng suy từ tiêu chí kia.
 
-### 5. Lớp d/gi/r vẫn còn hai phần ba ca bị bỏ sót
+### 6. Lớp d/gi/r vẫn còn hai phần ba ca bị bỏ sót
 
 33,9% tốt hơn 17,8% của v3 nhưng vẫn thấp. `consonant_diagnose.py` chia sẵn phần
 còn lại (596 ca, bảng dưới đo ở ngưỡng 0,95 dùng chung — trước quyết định 29):
@@ -246,7 +285,7 @@ còn lại (596 ca, bảng dưới đo ở ngưỡng 0,95 dùng chung — trư�
 
 Ô "nhãn đúng dẫn đầu" gần như không đổi về số ca nhưng p trung vị tăng 2,6 lần
 — model đã nghiêng về đáp án đúng mạnh hơn nhiều, chỉ chưa vượt ngưỡng. Đó là
-lý do việc số 4 đáng làm trước, và nó đã thu được **32 ca** trong ô đó (quyết
+lý do việc số 5 đáng làm trước, và nó đã thu được **32 ca** trong ô đó (quyết
 định 29). Phần còn lại của ô này — khoảng 212 ca dưới p = 0,90 — **phải học**,
 hạ ngưỡng thêm nữa thì trượt luật chọn.
 
@@ -258,7 +297,12 @@ quà cho em` bị gạch oan. Đây là việc của model, không phải của 
 ai. v4 đã lấy 30 ca của năm nhóm phụ âm còn lại (`l/n` 45,4%→39,6% là nặng
 nhất) để được thêm 64 ca cho d/gi/r. Lấy nữa thì các nhóm kia tụt nữa.
 
-### 6. Giảm dung lượng — đã đo, chưa làm
+### 7. Giảm dung lượng — đã đo, chưa làm, và GIỜ QUAN TRỌNG HƠN TRƯỚC
+
+Lý do mới, không phải chuyện tỷ lệ cài đặt: model 92MB nạp mất vài giây, và **bốn
+ảnh chụp màn hình đầu tiên của chủ repo đều rơi vào đúng cửa sổ đó** — người dùng
+gõ xong trước khi tầng đắt nhất kịp sẵn sàng. Giảm dung lượng không chỉ để người
+ta chịu tải, mà để tầng model **kịp chạy**.
 
 - **Cắt vocab**: chỉ 23.669/64.001 token PhoBERT thực sự xuất hiện. Giữ token
   gặp ≥20 lần phủ 99,69% số lượt, embedding 49,2M→11,9M, model về ~40MB.
@@ -276,7 +320,8 @@ nhất) để được thêm 64 ca cho d/gi/r. Lấy nữa thì các nhóm kia t
 ```
 extension/          MV3, không cần build
   src/engine/       vi.js (âm tiết + 23 nhãn), rules.js, ruleEngine.js,
-                    bpe.js (BPE tự viết), onnxEngine.js (tầng 3, ngưỡng 0,95)
+                    bpe.js (BPE tự viết), onnxEngine.js (tầng 3,
+                    thanh điệu 0,95 / phụ âm 0,90)
   src/content/      targets.js (lọc ô), highlighter.js, replace.js, tooltip.js
   models/           artifact sinh ra, KHÔNG commit
   vendor/           onnxruntime-web 14MB, tải bằng ml/fetch_vendor.sh
