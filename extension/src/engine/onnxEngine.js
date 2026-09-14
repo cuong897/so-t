@@ -32,15 +32,45 @@ const DEFAULT_THRESHOLD = 0.95;
 const DEFAULT_MARGIN = 0.25;   // phải hơn KEEP ít nhất chừng này
 const MAX_LEN = 128;
 
+// Lớp phụ âm được hạ ngưỡng riêng xuống 0.90, thanh điệu giữ 0.95 (quyết định
+// 29). Không phải chỉnh cho đẹp số: consonant_diagnose.py đo được 244 ca d/gi/r
+// mà nhãn ĐÚNG đã dẫn đầu nhưng chưa vượt 0.95 — model biết mà chưa dám nói.
+//
+// Cái giá, đo rồi chứ không đoán: precision VSEC 0.9749 -> 0.9709, báo oan trên
+// văn bản đúng 1.30%/1.00% -> 1.35%/1.05%. Đổi lại recall phụ âm 43.3% -> 48.2%
+// và riêng d/gi/r 28.5% -> 33.9%.
+//
+// Chiều NGƯỢC LẠI đã thử và đã bỏ (quyết định 26): hạ thanh điệu xuống 0.85 làm
+// báo oan lên 1.65%/1.75%. Lớp thanh điệu chiếm 91% lỗi thật nên nó nhạy hơn
+// hẳn — đừng đụng vào 0.95 ở trên mà không đo lại cả ba phép đo.
+const DEFAULT_CONSONANT_THRESHOLD = 0.90;
+const CONSONANT_TAGS = [
+  'L_N', 'N_L', 'CH_TR', 'TR_CH', 'S_X', 'X_S',
+  'D_GI', 'GI_D', 'D_R', 'R_D', 'GI_R', 'R_GI',
+  'N_NG', 'NG_N', 'C_T', 'T_C',
+];
+
+/** Bảng nhãn -> ngưỡng. Bản Python tương ứng: gate.thresholds_for(). */
+export function thresholdsFor(base = DEFAULT_THRESHOLD,
+  consonant = DEFAULT_CONSONANT_THRESHOLD) {
+  const table = {};
+  for (const t of TAG_NAMES) if (t !== 'KEEP') table[t] = base;
+  if (consonant !== null) for (const t of CONSONANT_TAGS) table[t] = consonant;
+  return table;
+}
+
 export class OnnxEngine {
   constructor(opts = {}) {
     this.threshold = opts.threshold ?? DEFAULT_THRESHOLD;
     this.margin = opts.margin ?? DEFAULT_MARGIN;
-    // Ngưỡng riêng theo nhãn, ghi đè this.threshold cho đúng những nhãn có mặt.
-    // Để trống thì mọi nhãn dùng chung một ngưỡng — tức hành vi cũ y nguyên.
-    // Bản Python tương ứng: gate.thresholds_for(). test/gate.test.mjs canh cho
-    // hai bên khớp nhau.
-    this.thresholds = opts.thresholds ?? null;
+    // Ngưỡng riêng theo nhãn. Mặc định là BẢNG ĐANG SHIP (phụ âm 0.90, thanh
+    // điệu 0.95). Truyền `thresholds: null` tường minh để quay về một ngưỡng
+    // dùng chung — cần khi dựng lại con số của cấu hình cũ.
+    // Bản Python tương ứng: gate.prod_thresholds(). test/gate.test.mjs canh cho
+    // hai bên khớp nhau từng nhãn.
+    this.thresholds = opts.thresholds === undefined
+      ? thresholdsFor(this.threshold)
+      : opts.thresholds;
     this.maxLen = opts.maxLen ?? MAX_LEN;
     this.ready = false;
     this.session = null;

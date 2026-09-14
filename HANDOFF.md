@@ -1,6 +1,6 @@
 # Bàn giao — dự án Soát
 
-Đọc file này trước, rồi `README.md` (tổng quan) và `docs/decisions.md` (28 quyết
+Đọc file này trước, rồi `README.md` (tổng quan) và `docs/decisions.md` (29 quyết
 định, kèm lý do và mọi lỗi đã mắc).
 
 ---
@@ -21,12 +21,12 @@ viết khoá luận.
 
 ## Trạng thái: CHẠY ĐƯỢC TRONG CHROME THẬT
 
-- 46 commit, cây git sạch
-- 43 test JS + 9 test Python, tất cả pass (`npm run test:all`)
+- 50 commit, cây git sạch
+- 48 test JS + 9 test Python, tất cả pass (`npm run test:all`)
 - Đã cài thật vào Chrome, gõ thật trên Facebook, cả bốn tầng đều sống —
   **nhưng lần đó là với model v3.**
 - v4 đã chạy qua trình duyệt thật ở `dev/onnx-test.html`
-  (`http://localhost:8777`): nạp 434ms, 4/6 câu mẫu, **0 báo động giả**, mọi
+  (`http://localhost:8777`): 4/6 câu mẫu, **0 báo động giả**, mọi
   bất biến pass (đề xuất trong từ điển, offset đúng, không trùng bản gốc). Đây
   là tầng model qua wasm thật, **nhưng qua `http://` chứ không qua
   `chrome-extension://`** — quyết định 24 đã dạy một lần rằng hai đường đó
@@ -35,26 +35,25 @@ viết khoá luận.
 
 ### Số liệu chốt
 
-Model đang ship: `student768_v4`, INT8 per-channel, ngưỡng sản phẩm **0,95** và
-biên 0,25 (`onnxEngine.js`).
+Model đang ship: `student768_v4`, INT8 per-channel, biên 0,25, ngưỡng **theo
+lớp nhãn**: thanh điệu **0,95**, phụ âm **0,90** (`onnxEngine.js`, quyết định 29).
 
 | Thước đo | Số | Đo bằng |
 |---|---|---|
-| VSEC giữ kín, trong tầm | P **0,9749** · R 0,7426 · F1 0,8430 | `evaluate.py --held-out --threshold 0.95 --margin 0.25` |
-| Lỗi phụ âm (1.796 ca) | recall **43,3%** | `consonant_eval.py` |
-| riêng lớp `d/gi/r` (596 ca) | recall **28,5%** | `consonant_eval.py` |
-| Báo động giả trên văn bản đúng | 1,30% / 1,00% số câu | `false_alarm.py` |
-| Độ trễ **trong trình duyệt** (wasm) | nạp 434ms · p50 **18,4ms** · p95 23,3ms | `dev/onnx-test.html` |
+| VSEC giữ kín, trong tầm | P **0,9709** · R 0,7457 · F1 0,8436 | `evaluate.py --held-out --threshold 0.95 --margin 0.25` |
+| Lỗi phụ âm (1.796 ca) | recall **48,2%** | `consonant_eval.py` |
+| riêng lớp `d/gi/r` (596 ca) | recall **33,9%** | `consonant_eval.py` |
+| Báo động giả trên văn bản đúng | 1,35% / 1,05% số câu | `false_alarm.py` |
+| Độ trễ **trong trình duyệt** (wasm) | nạp 355–585ms · p50 **18–24ms** · p95 23–30ms | `dev/onnx-test.html` |
 | Độ trễ onnxruntime Python, 1 luồng | p50 5,5ms · p95 5,7ms | `export_onnx.py` |
 | Gói cài | 95,3 MB thô → **58,6 MB nén** | `package_extension.py` |
 
 **Bản bàn giao trước ghi "trong trình duyệt · p50 5,4ms · export_onnx.py" —
 sai.** 5,4ms là số onnxruntime trên Python; trình duyệt chạy cùng file model qua
-wasm và đo được 18,4ms, chậm hơn ba lần. Con số người dùng thấy là 18,4ms. Đây
-đúng là loại lỗi mà cả dự án này lấy làm luận điểm, mắc thêm một lần nữa ngay
-trong tài liệu bàn giao.
+wasm và đo được 18–24ms, chậm hơn ba tới bốn lần. Đây đúng là loại lỗi mà cả dự
+án này lấy làm luận điểm, mắc thêm một lần nữa ngay trong tài liệu bàn giao.
 
-**Ba lưu ý khi đọc bảng này:**
+**Bốn lưu ý khi đọc bảng này:**
 
 1. `evaluate.py` **mặc định chấm bằng argmax không ngưỡng** — đó là năng lực
    thô, không phải thứ người dùng thấy. Phải truyền `--threshold 0.95
@@ -66,8 +65,11 @@ trong tài liệu bàn giao.
    **Phần đọc tay chưa làm lại cho v4** — danh sách của v4 cũng có `cứ`→`cư`,
    `vât`→`vật`, `trỗ`→`chỗ`, đều là lỗi thật.
 3. So với **v3**, v4 tốt hơn ở cả sáu thước đo. So với **v1** thì vẫn là đánh
-   đổi: recall VSEC 0,7426 so với 0,7670, đổi lấy precision 0,9749 so với
-   0,9550 và recall phụ âm 25,7% → 43,3%. Xem quyết định 26 và 27.
+   đổi: recall VSEC 0,7457 so với 0,7670, đổi lấy precision 0,9709 so với
+   0,9550 và recall phụ âm 25,7% → 48,2%. Xem quyết định 26, 27 và 29.
+
+4. Độ trễ ghi thành **khoảng** chứ không một con số: đo bốn lần trên cùng máy
+   được 18,4 / 23,1 / 23,8ms. Một con số lẻ là một lần bốc thăm.
 
 ---
 
@@ -84,7 +86,7 @@ của Chrome, không phải của sản phẩm này. Mổ ra ở quyết định
 
 | Chữ | Đúng phải là | Sản phẩm | Vì sao |
 |---|---|---|---|
-| `mựng` | `mừng` | bỏ sót | p = 0,802, dưới ngưỡng 0,95 |
+| `mựng` | `mừng` | bỏ sót | p = 0,802, mà đây là nhãn THANH ĐIỆU nên ngưỡng vẫn là 0,95 — quyết định 29 không giúp ca này |
 | `trí giá` | `trị giá` | bỏ sót | model không xếp nhãn nào lên đầu |
 | `đuồng` | `đồng` | **ngoài tầm vĩnh viễn** | `uô→ô`, ngoài 23 nhãn |
 | `giành được` | *(đúng)* | im lặng ✓ | |
@@ -105,8 +107,10 @@ gõ câu đó mà vẫn không thấy gạch chân thì mới là lỗi cài đ�
 chrome://extensions → Developer mode → Load unpacked → chọn extension/
 ```
 
-**Đừng dùng `dành được phần quà` để kiểm** — model xếp `dành→giành` ở p = 0,835
-nên ở ngưỡng 0,95 nó im lặng *đúng theo thiết kế*. Đó là việc số 4.
+**Đừng dùng `dành được phần quà` để kiểm** — model xếp `dành→giành` ở p = 0,835,
+vẫn dưới ngưỡng phụ âm 0,90 sau quyết định 29, nên nó im lặng *đúng theo thiết
+kế*. Câu bắt được ở lớp này: *"Rao động về hình dáng từ cây bụi rậm rạp..."*
+— `Rao→Dao` ở 92,7%, im lặng dưới cấu hình cũ và báo dưới cấu hình mới.
 
 **Nhớ cache:** trình duyệt phục vụ lại cả file `.onnx`. Thay model rồi mà kết
 quả giống hệt bản cũ thì nghi cache trước, đừng nghi logic. Bấm Reload ở
@@ -164,73 +168,41 @@ bước 0 là thử lại trên Chrome thật (tức việc số 1 ở trên).
 Sinh lại: `python ml/package_extension.py` và `python ml/make_screenshots.py`
 (cả hai neo đường dẫn theo vị trí file, đứng đâu chạy cũng được).
 
-### 4. Ngưỡng RIÊNG cho lớp phụ âm — hướng chưa ai thử, và bằng chứng đã có
+### 4. ĐÃ XONG — ngưỡng riêng cho lớp phụ âm (quyết định 29)
 
-Đây là việc đáng làm nhất còn lại, và nó **không cần train gì**.
+Giữ lại mục này vì nó trả lời sẵn hai câu hỏi hay được hỏi lại.
 
-Đo trong trình duyệt trên v4, ở đúng cặp câu khó nhất của lớp `d/gi/r`:
+**Đã làm:** hạ ngưỡng lớp phụ âm từ 0,95 xuống **0,90**, thanh điệu giữ 0,95.
+Quét cả ba mức 0,90 / 0,85 / 0,80; cả ba đều qua năm điều kiện đã ghi trước ở
+`544c455`, và luật chọn đã ghi trước là "thấp nhất về báo oan" nên lấy 0,90.
 
-| Câu | Model xếp | Ở ngưỡng 0,95 |
-|---|---|---|
-| Chúc mừng anh đã **dành** được phần quà. | `dành→giành` **p = 0,835** | chưa báo |
-| Chị **dành** phần quà cho em. *(đúng)* | không nhãn nào | không báo ✓ |
+Kết quả: recall phụ âm 43,3% → **48,2%**, d/gi/r 28,5% → **33,9%**, trả bằng
+precision 0,9749 → 0,9709 và báo oan 1,30%/1,00% → 1,35%/1,05%. Mọi nhóm phụ âm
+đều lên, không nhóm nào trả giá cho nhóm nào.
 
-Câu trên là **ví dụ đầu bảng của README** và v3 bỏ qua nó hoàn toàn ở cả hai
-tầng. v4 xếp nó ở p = 0,835 — tức model **đã biết**, chỉ chưa đủ tự tin. Và
-quan trọng hơn: ở câu dưới, gần như trùng chữ và trùng cụm `phần quà`, model
-**không xếp nhãn nào**. Đó là phân biệt đúng, thứ mà hướng sửa bằng cue của
-quyết định 26 làm không được (thêm cue `phần`+`quà` thì bắt câu trên nhưng gạch
-oan câu dưới).
+**Câu hỏi 1: sao không lấy 0,80 cho nhiều recall hơn?** Vì 0,80 cho F1 cao hơn
+thật (0,8462 so với 0,8436) nhưng luật chọn viết **trước khi đo** nói precision
+quan trọng hơn recall. Đổi luật sau khi nhìn số thì việc ghi luật trước chẳng
+còn nghĩa gì. Muốn đổi thì đổi luật trước, cho một đợt đo SAU.
 
-Nên phần còn lại là chuyện **ngưỡng**, không còn là chuyện model không biết.
+**Câu hỏi 2: sao `dành được phần quà` vẫn chưa bắt?** Model xếp nó ở p = 0,835,
+dưới cả 0,90. Phải xuống 0,80 mới bắt — xem câu hỏi 1. **Ví dụ đầu bảng của
+README vẫn chưa được giải quyết**, đừng kể ngược.
 
-**Vì sao hạ ngưỡng riêng cho phụ âm chưa từng được thử.** Quyết định 26 có thử
-ngưỡng theo lớp, nhưng theo **chiều ngược lại**: thanh điệu 0,85 / phụ âm 0,95.
-Nó ra 1,60%/1,75% báo oan và bị bỏ — *và kết luận của chính nó là* "báo oan
-tăng **không** do phụ âm mà do phải hạ ngưỡng thanh điệu". Chiều đúng — **giữ
-thanh điệu ở 0,95, hạ riêng phụ âm** — chưa ai đo.
+**Chiều còn lại đã thử và đã bác** (quyết định 26): hạ ngưỡng THANH ĐIỆU xuống
+0,85 làm báo oan lên 1,65%/1,75%. Lớp thanh điệu chiếm 91% lỗi thật nên nó nhạy
+hơn hẳn — đừng đụng vào 0,95 mà không đo lại cả ba phép đo.
 
-Ba lý do nó hứa hẹn hơn lúc quyết định 26 thử:
+**Và kiểu tiêu chí này đã hỏng một lần** (quyết định 28): nới cổng cho token
+**phi từ** — tiêu chí dựa vào từ điển — thua ở mọi mức ngưỡng. Khác biệt: ở đó
+model không thiếu tự tin mà thiếu đáp án (p của nhãn đúng trung vị 0,0014); ở
+lớp phụ âm thì nhãn đúng đã dẫn đầu với p trung vị 0,257. Tiêu chí nào cũng phải
+đo, đừng suy từ tiêu chí kia.
 
-1. Báo oan của v4 đang ở **1,30%/1,00%**, thấp hơn cả v3 (1,45%/1,25%) và thấp
-   hơn v1. Chỗ trống rộng hơn hẳn lúc đó.
-2. `consonant_diagnose.py` đo sẵn phần ăn được: trong 244 ca d/gi/r mà nhãn
-   đúng đã dẫn đầu, **32 ca ở p ≥ 0,90** và **56 ca ở p ≥ 0,80**.
-3. Chính kết luận của quyết định 26 nói phụ âm không phải nguồn báo oan.
+### 5. Lớp d/gi/r vẫn còn hai phần ba ca bị bỏ sót
 
-Lưu ý `dành→giành` ở p = 0,835 thì **ngưỡng 0,90 không cứu được nó** — phải
-xuống 0,80. Nên đo cả hai mức, và đo báo oan ở từng mức chứ đừng chọn mức rồi
-mới đo.
-
-Cách làm: `onnxEngine.js` hiện dùng một `DEFAULT_THRESHOLD` cho mọi nhãn. Cho
-nó nhận ngưỡng theo nhóm nhãn (`vi.js` đã có sẵn nhóm), rồi chạy
-`evaluate.py`, `false_alarm.py`, `consonant_eval.py` ở từng mức. Khoảng một
-tiếng, không train lại gì. **Và ghi ngưỡng chấp nhận trước khi đo**, như
-`77a9148` đã làm.
-
-**Một nhánh của hướng này ĐÃ THỬ VÀ ĐÃ BÁC** — đọc trước khi làm lại, quyết
-định 28. Ý tưởng: token **phi từ** (không có trong từ điển) thì KEEP là phương
-án sai chắc chắn, nên đừng bắt nó chịu ngưỡng 0,95. Đếm từ điển nói đây là món
-hời — 24,8% lỗi VSEC trong tầm rơi vào loại này. Đo thật thì cả họ giải pháp
-đều **thua** cấu hình hiện tại:
-
-| Cổng cho phi từ | F1 | báo oan |
-|---|---|---|
-| **hiện tại** | **0,8023** | **1,30%** |
-| bỏ KEEP | 0,7644 | 2,55% |
-| @0,80 / @0,85 / @0,90 | 0,7955 / 0,7982 / 0,7993 | 1,40% |
-| @0,93 | 0,8028 | 1,35% |
-
-F1 đi lên đơn điệu về phía cấu hình hiện tại khi ngưỡng tiến về 0,95 — không có
-điểm ngọt. Lý do: ở những vị trí đó cái model thiếu **không phải** "có nên sửa
-không" mà là "sửa thành cái gì", nên bỏ KEEP chỉ đổi im lặng thành lỗi sai đầy
-tự tin. Việc số 4 nhắm vào lớp **phụ âm**, là chuyện khác — nhưng nếu kết quả
-cũng ra hình dạng này thì dừng, đừng cố.
-
-### 5. Lớp d/gi/r vẫn còn ba phần tư ca bị bỏ sót
-
-28,5% tốt hơn 17,8% nhưng vẫn thấp. `consonant_diagnose.py` chia sẵn phần còn
-lại (596 ca):
+33,9% tốt hơn 17,8% của v3 nhưng vẫn thấp. `consonant_diagnose.py` chia sẵn phần
+còn lại (596 ca, bảng dưới đo ở ngưỡng 0,95 dùng chung — trước quyết định 29):
 
 | | v3 | v4 |
 |---|---|---|
@@ -241,7 +213,9 @@ lại (596 ca):
 
 Ô "nhãn đúng dẫn đầu" gần như không đổi về số ca nhưng p trung vị tăng 2,6 lần
 — model đã nghiêng về đáp án đúng mạnh hơn nhiều, chỉ chưa vượt ngưỡng. Đó là
-lý do việc số 4 đáng làm trước khi train thêm.
+lý do việc số 4 đáng làm trước, và nó đã thu được **32 ca** trong ô đó (quyết
+định 29). Phần còn lại của ô này — khoảng 212 ca dưới p = 0,90 — **phải học**,
+hạ ngưỡng thêm nữa thì trượt luật chọn.
 
 **Đã thử và loại bỏ hướng sửa bằng cue** (quyết định 26): thêm `phần`+`quà` vào
 nhóm cue của `giành` thì bắt được câu trên, nhưng câu **đúng** `chị dành phần
@@ -284,11 +258,16 @@ ml/                 vi.py (bản song song vi.js), noise.py, mine_errors.py,
   consonant_diagnose.py  vì SAO lớp phụ âm sót — thiếu tự tin, đoán sai, hay
                     bị nhãn thanh điệu ăn mất
   diagnose.py       chia phần bỏ sót trên VSEC
+  gate.py           PHÉP QUYẾT ĐỊNH — một bản duy nhất cho phía Python. Đổi
+                    ngưỡng thì sửa ở đây và ở onnxEngine.js, không chỗ nào khác
+  export_gate_cases.py  sinh fixture parity cho gate.py <-> onnxEngine.js
+  threshold_report.py   gom một đợt quét ngưỡng thành một bảng, TỰ CHẤM theo
+                    ngưỡng chấp nhận đã ghi trước
   oov_headroom.py   trần trên của hướng "nới cổng cho phi từ" (đã bác)
   oov_gate_eval.py  đo thật hướng đó — bảy luật trên cùng một lượt chạy
   package_extension.py, make_screenshots.py
 dev/                playground.html, onnx-test.html, shots.html (nguồn ảnh store)
-docs/decisions.md   28 quyết định
+docs/decisions.md   29 quyết định
 docs/blog.html      bài viết về toàn bộ quá trình và các lần sai
 docs/store/         hồ sơ nộp Chrome Web Store
 ```
@@ -354,7 +333,7 @@ python export_onnx.py --model out/student768_v4/best --out out/v4_onnx --name v4
 
 ---
 
-## Mười điều dễ vấp — đều đã mắc ít nhất một lần
+## Mười một điều dễ vấp — đều đã mắc ít nhất một lần
 
 1. **Luôn dùng `--held-out` khi chấm.** `mine_errors.py` rút phân bố lỗi từ nửa
    VSEC; chấm trên cả tập là tự lừa mình.
@@ -400,6 +379,15 @@ python export_onnx.py --model out/student768_v4/best --out out/v4_onnx --name v4
     `ml/data/` thì bị ignore ở mức thư mục nên không file nào được version. Khi
     đọc bất kỳ câu "đã làm X" trong tài liệu, **kiểm bằng artifact** —
     `git show --stat`, `git ls-files`, `md5sum` — rồi hãy tin.
+
+11. **Sai ở tầng ĐỌC số cũng nguy hiểm y như sai ở tầng ĐO.** `threshold_report.py`
+    bỏ lặng cột mốc nền vì file của nó không cùng quy ước tên, khiến cột kế tiếp
+    trượt vào vị trí mốc nền — mà cột mốc nền thì không được chấm theo ngưỡng.
+    Một cấu hình QUA cả năm điều kiện hiện ra không một dấu tích nào, trông hệt
+    như một cấu hình trượt. Và luật chọn "thấp nhất về báo oan" cài bằng `min`
+    trên `max` của hai nguồn thì ra đúng đáp án **vì tình cờ xếp thứ tự**, do cả
+    ba mức hoà nhau ở một nguồn. Công cụ đọc số phải **dừng hẳn** khi thiếu dữ
+    liệu, đừng bao giờ lặng lẽ bỏ một cột đi.
 
 ---
 

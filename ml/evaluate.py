@@ -242,7 +242,7 @@ def main() -> None:
     ap.add_argument("--margin", type=float, default=0.0,
                     help="biên phải hơn KEEP (sản phẩm: 0.25)")
     ap.add_argument("--limit", type=int, default=0, help="chỉ chấm N câu đầu")
-    ap.add_argument("--consonant-threshold", type=float, default=None,
+    ap.add_argument("--consonant-threshold", type=float, default=gate.PROD_CONSONANT,
                     help="ngưỡng RIÊNG cho nhãn phụ âm và âm cuối. Để trống "
                          "thì mọi nhãn dùng chung --threshold.")
     ap.add_argument("--result", default="out/eval.json",
@@ -255,11 +255,20 @@ def main() -> None:
 
     from noise import load_lexicon
     lexicon = load_lexicon(args.lexicon) or None
+    # MẶC ĐỊNH là bảng đang ship (phụ âm 0,90). Truyền --consonant-threshold 0.95
+    # để dựng lại cấu hình cũ mọi nhãn dùng chung một ngưỡng.
+    #
+    # NHƯƠNG chỉ khi có ngưỡng thật. Mặc định --threshold của file này là 0,
+    # tức chế độ argmax không ngưỡng — "năng lực thô". Dựng bảng ngưỡng ở đó
+    # sẽ lặng lẽ biến argmax thành một cổng có ngưỡng, và mọi con số "argmax" đã
+    # báo cáo trước đây không tái lập được nữa.
     tbl = (gate.thresholds_for(args.threshold, args.consonant_threshold)
-           if args.consonant_threshold is not None else None)
-    if tbl:
+           if args.threshold > 0 or args.margin > 0 else None)
+    if tbl and args.consonant_threshold != args.threshold:
         print(f"ngưỡng RIÊNG cho phụ âm: {args.consonant_threshold} "
               f"(thanh điệu giữ {args.threshold})")
+    elif not tbl:
+        print("chế độ ARGMAX không ngưỡng — năng lực thô, KHÔNG phải thứ người dùng thấy")
     print(f"từ điển âm tiết: {len(lexicon) if lexicon else 0:,}"
           + ("" if lexicon else "  (TRỐNG — chạy dataset.py trước để có lọc ứng viên)"))
 

@@ -172,7 +172,7 @@ def main() -> None:
     ap.add_argument("--max-len", type=int, default=128)
     ap.add_argument("--threshold", type=float, default=PROD_THRESHOLD)
     ap.add_argument("--margin", type=float, default=PROD_MARGIN)
-    ap.add_argument("--consonant-threshold", type=float, default=None,
+    ap.add_argument("--consonant-threshold", type=float, default=gate.PROD_CONSONANT,
                     help="ngưỡng RIÊNG cho nhãn phụ âm và âm cuối")
     ap.add_argument("--out", type=Path, default=Path("out/false_alarm.json"))
     ap.add_argument("--max-samples", type=int, default=500,
@@ -191,8 +191,9 @@ def main() -> None:
     sess = ort.InferenceSession(str(args.onnx), opts,
                                 providers=["CPUExecutionProvider"])
 
-    tbl = (gate.thresholds_for(args.threshold, args.consonant_threshold)
-           if args.consonant_threshold is not None else None)
+    # MẶC ĐỊNH là bảng đang ship (phụ âm 0,90). Truyền --consonant-threshold 0.95
+    # để dựng lại cấu hình cũ mọi nhãn dùng chung một ngưỡng.
+    tbl = gate.thresholds_for(args.threshold, args.consonant_threshold)
     dung_nguong = ((args.threshold, args.margin) == (PROD_THRESHOLD, PROD_MARGIN)
                    and tbl is None)
     print(f"model     : {args.onnx}  ({args.onnx.stat().st_size / 1e6:.1f} MB)")

@@ -1147,4 +1147,93 @@ nhất về recall — precision quan trọng hơn recall (quyết định 8). K
 qua thì **giữ nguyên 0,95 dùng chung**, và ghi kết quả lại y như khi nó thành
 công.
 
-**Kết quả: xem mục dưới.**
+#### Kết quả: cả ba mức đều qua, chọn 0,90 theo luật đã ghi trước
+
+| Thước đo | 0,95 dùng chung | **phụ âm @0,90** | @0,85 | @0,80 | Ngưỡng |
+|---|---|---|---|---|---|
+| precision VSEC | 0,9749 | **0,9709** | 0,9697 | 0,9672 | ≥ 0,9500 |
+| recall VSEC | 0,7426 | **0,7457** | 0,7500 | 0,7521 | — |
+| F1 VSEC | 0,8430 | **0,8436** | 0,8458 | 0,8462 | — |
+| báo oan | 1,30% / 1,00% | **1,35% / 1,05%** | 1,35% / 1,10% | 1,35% / 1,20% | ≤ 1,50% |
+| recall phụ âm | 43,32% | **48,16%** | 51,00% | 52,45% | ≥ 46,30% |
+| recall d/gi/r | 28,52% | **33,89%** | 36,58% | 37,92% | ≥ 32,50% |
+| sửa sai d/gi/r | 5,20% | **5,54%** | 6,21% | 7,05% | ≤ 8,00% |
+
+Cả ba mức qua cả năm điều kiện. Luật chọn đã ghi trước là **thấp nhất về báo
+oan**, nên chọn **0,90**: đổi **0,4 điểm precision** và **0,05 điểm báo oan**
+lấy **4,8 điểm recall phụ âm**.
+
+`@0,80` cho F1 cao hơn (0,8462 so với 0,8436) và có người sẽ chọn nó. Không
+giấu chuyện đó. Nhưng luật viết trước nói precision quan trọng hơn recall, và
+đổi luật *sau khi nhìn số* thì việc ghi luật trước chẳng còn nghĩa gì.
+
+Và mọi nhóm phụ âm đều lên, không nhóm nào trả giá cho nhóm nào — khác hẳn
+quyết định 27, nơi d/gi/r tăng bằng cách lấy của bốn nhóm kia:
+
+| Nhóm | trước | sau | |
+|---|---|---|---|
+| d/gi/r | 28,5% | 33,9% | +5,4 |
+| ch/tr | 46,7% | 52,5% | +5,8 |
+| c/t | 62,1% | 67,5% | +5,4 |
+| l/n | 39,6% | 44,6% | +5,0 |
+| n/ng | 60,8% | 64,2% | +3,3 |
+| s/x | 44,2% | 47,5% | +3,3 |
+
+Hợp lý: đây không phải cân lại dữ liệu giữa các lớp, chỉ là nới cổng cho đúng
+một lớp. Số ca sửa sai trong cả tập 1.796 ca chỉ tăng từ **56 lên 59**.
+
+Ở lớp d/gi/r, ngưỡng mới bắn thêm **34 ca: 32 đúng, 2 sai** — tỷ lệ 16:1. Ví dụ
+thật:
+
+```
+Rao động về hình dáng từ cây bụi rậm rạp...   Rao→Dao   p = 0,927   (cũ: im lặng)
+...có ngày dỗ Giỗ Đầu Giỗ Hết...              dỗ→giỗ    p = 0,932
+GIan no ura                                    GIan→Dan  p = 0,922
+```
+
+Hai ca sai cũng ghi ra: `gianh` (đáp án `ranh`) ở p = 0,911 và `rây` (đáp án
+`giây`) ở p = 0,944 — model bắn nhưng bắn nhầm nhãn.
+
+#### Ví dụ đầu bảng của README thì VẪN chưa bắt
+
+`anh đã dành được phần quà` đứng ở **p = 0,835**, dưới cả 0,90. Nó là lý do đợt
+này được khởi động, và nó **không** được đợt này giải quyết. Phải xuống 0,80 mới
+bắt, mà 0,80 thì trượt luật chọn.
+
+Ghi rõ chỗ này vì nó dễ bị kể thành "đã sửa được ví dụ đầu bảng": chưa.
+
+#### Hai lỗi trong chính công cụ đọc kết quả, suýt đọc sai
+
+Cả hai nằm ở `threshold_report.py`, tức ở tầng *đọc* số chứ không phải tầng đo.
+
+1. **File mốc nền không cùng quy ước tên** (`fa_v4_0.95.json` chứ không phải
+   `fa_v4.json`). Công cụ lặng lẽ bỏ cột mốc nền đi, khiến cột `@0,90` trượt vào
+   vị trí mốc nền — mà cột mốc nền thì **không được chấm theo ngưỡng**. Kết quả:
+   `@0,90` hiện ra không một dấu tích nào, trông như chưa được xét, trong khi nó
+   qua cả năm điều kiện. Giờ thiếu file thì script **dừng hẳn**, không bỏ cột.
+
+2. **Luật chọn đúng vì tình cờ.** Luật là "thấp nhất về báo oan", cài bằng `min`
+   trên **max** của hai nguồn — mà cả ba mức đều hoà 1,35% ở nguồn wikipedia,
+   nên `min` trả về phần tử ĐẦU DANH SÁCH chứ không phải mức tốt nhất. Đáp án
+   vẫn là 0,90 nhưng vì thứ tự xếp, không vì luật. Đổi sang cộng hai nguồn:
+   2,40% / 2,45% / 2,55%, và 0,90 thắng vì nó thật sự thấp nhất.
+
+Bài học: dự án này đã đo sai nhiều lần ở tầng *đo*. Đây là lần đầu suýt sai ở
+tầng *đọc*, và nó cũng nguy hiểm y như vậy — một cấu hình QUA bị báo là không
+có dấu tích nào thì cũng bị bỏ đi như một cấu hình trượt.
+
+#### Kiểm chứng mặc định của sản phẩm KHỚP với cấu hình đã đo
+
+Không đủ khi chỉ đo `@0,90` rồi sửa hằng số và tin là xong — đó đúng là khoảng
+cách mà cả dự án này lấy làm luận điểm. Nên sau khi đổi mặc định, chạy lại ba
+phép đo **không truyền một cờ ngưỡng nào**:
+
+```
+VSEC   @0,90 tường minh : P 0,9709  R 0,7457  F1 0,8436   tp 701  fp 21
+VSEC   mặc định         : P 0,9709  R 0,7457  F1 0,8436   tp 701  fp 21
+phụ âm @0,90 / mặc định : 0,481626 / 0,481626
+báo oan @0,90 / mặc định: 1,35%/1,05% / 1,35%/1,05%
+```
+
+Trùng từng con số. Và kiểm trong trình duyệt thật qua wasm: `Rao→Dao` ở 92,7%
+im lặng dưới cấu hình cũ, báo dưới cấu hình mới.

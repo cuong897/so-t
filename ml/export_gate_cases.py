@@ -65,12 +65,14 @@ def main() -> None:
     rng.shuffle(pool)
     print(f"từ điển {len(lexicon):,} âm tiết -> {len(pool):,} âm tiết có ứng viên")
 
-    # Ba bảng ngưỡng: dùng chung, hạ riêng phụ âm, và một bảng lởm chởm để
-    # chắc chắn phía JS thật sự TRA bảng chứ không dùng nhầm một hằng số.
+    # Ba bảng ngưỡng, và KHÔNG bảng nào là None: bên JS mặc định dùng bảng đang
+    # ship, nên để None thì hai bên lệch nhau vì lý do cấu hình chứ không phải
+    # vì logic, và test sẽ báo lệch ở chỗ không có lỗi nào. Luôn truyền bảng
+    # tường minh, kể cả bảng "mọi nhãn bằng nhau".
     tables = [
-        None,
-        gate.thresholds_for(0.95, consonant=0.85),
-        {t: round(rng.uniform(0.5, 0.99), 3) for t in non_keep},
+        gate.prod_thresholds(),                          # bản đang ship
+        gate.thresholds_for(0.95, consonant=None),       # mọi nhãn dùng chung
+        {t: round(rng.uniform(0.5, 0.99), 3) for t in non_keep},   # lởm chởm
     ]
 
     cases = []

@@ -18,9 +18,10 @@ Luật, viết đúng thứ tự:
   2. lấy nhãn mạnh nhất trong đám KHÁC KEEP.
   3. nhãn đó phải vượt ngưỡng CỦA CHÍNH NÓ, và phải hơn KEEP một biên.
 
-Bước 3 là chỗ duy nhất khác bản cũ: ngưỡng tra theo nhãn thay vì một số dùng
-chung. Mặc định mọi nhãn vẫn là 0,95 nên hành vi không đổi cho tới khi có ai
-truyền bảng ngưỡng riêng vào.
+Bước 3 tra ngưỡng theo NHÃN thay vì dùng một số chung. Bản đang ship:
+thanh điệu 0,95, phụ âm 0,90 (quyết định 29) — xem `prod_thresholds()`.
+Truyền `thresholds=None` thì quay về một ngưỡng chung cho mọi nhãn, dùng khi
+cần dựng lại con số của cấu hình cũ.
 
 **Vì sao ngưỡng tra SAU bước 2, không phải trước.** Cách khác là xét từng nhãn
 với ngưỡng riêng của nó rồi chọn nhãn tốt nhất trong đám vượt được — nhưng như
@@ -43,8 +44,15 @@ CONSONANT_TAGS = frozenset({
     "N_NG", "NG_N", "C_T", "T_C",
 })
 
-PROD_THRESHOLD = 0.95      # phải khớp DEFAULT_THRESHOLD trong onnxEngine.js
-PROD_MARGIN = 0.25         # phải khớp DEFAULT_MARGIN
+PROD_THRESHOLD = 0.95        # phải khớp DEFAULT_THRESHOLD trong onnxEngine.js
+PROD_MARGIN = 0.25           # phải khớp DEFAULT_MARGIN
+PROD_CONSONANT = 0.90        # phải khớp DEFAULT_CONSONANT_THRESHOLD (quyết định 29)
+
+
+def prod_thresholds() -> dict[str, float]:
+    """Bảng ngưỡng ĐANG SHIP. Phải khớp onnxEngine.js từng nhãn một —
+    `test/gate.test.mjs` canh chỗ này."""
+    return thresholds_for(PROD_THRESHOLD, PROD_CONSONANT)
 
 
 def thresholds_for(default: float = PROD_THRESHOLD,

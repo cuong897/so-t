@@ -33,7 +33,7 @@ Và đây là mức làm được thật, đo trong trình duyệt trên bản �
 cặp câu khó nhất của lớp `d/gi/r` — hai câu gần như trùng nhau, một câu sai một
 câu đúng:
 
-| Câu | Model xếp | Ở ngưỡng 0,95 |
+| Câu | Model xếp | Ở ngưỡng phụ âm 0,90 |
 |---|---|---|
 | Chúc mừng anh đã **dành** được phần quà. | `dành→giành` **p = 0,835** | chưa báo |
 | Chị **dành** phần quà cho em. *(đúng)* | không nhãn nào | không báo ✓ |
@@ -41,8 +41,11 @@ câu đúng:
 Đó là **phân biệt đúng** — cùng chữ `dành`, cùng cụm `phần quà`, hai kết luận
 khác nhau. Tầng luật không làm được: thêm cue `phần`+`quà` cho `giành` thì bắt
 được câu trên nhưng gạch oan câu dưới (quyết định 26). Model làm được, chỉ chưa
-đủ tự tin để vượt ngưỡng 0,95 — nên hiện tại nó **im lặng ở cả hai câu**, và
-việc còn lại là chuyện ngưỡng, không còn là chuyện model không biết.
+đủ tự tin để vượt ngưỡng — nên hiện tại nó **im lặng ở cả hai câu**.
+
+Quyết định 29 đã hạ ngưỡng lớp phụ âm từ 0,95 xuống **0,90** vì chính lý do đó, và
+nó ăn thêm 4,8 điểm recall phụ âm. Nhưng **ca này vẫn chưa bắt được**: 0,835 vẫn
+dưới 0,90. Phải xuống 0,80 mới bắt, mà mức đó trượt luật chọn đã ghi trước.
 
 ---
 
@@ -50,7 +53,7 @@ việc còn lại là chuyện ngưỡng, không còn là chuyện model không 
 
 ```
 văn bản  ─►  ① tra từ điển   ─►  ② sinh ứng viên  ─►  ③ chấm ngữ cảnh  ─►  ④ lọc & ngưỡng  ─►  gạch chân
-              <1ms, JS            <1ms, tập đóng      ~18ms, ONNX INT8      <1ms
+              <1ms, JS            <1ms, tập đóng      ~20ms, ONNX INT8      <1ms
 ```
 
 **① + ②  Tầng luật** (`extension/src/engine/`) — 137 luật cụm sai tuyệt đối và
@@ -80,7 +83,7 @@ nhầm một lần là người dùng gỡ cài; bỏ sót thì họ không bi�
 ## Chạy thử
 
 ```bash
-npm run test:all  # 39 test JS + 9 test Python
+npm run test:all  # 48 test JS + 9 test Python
 npm run dev       # rồi mở hai trang dưới đây
 ```
 
@@ -200,18 +203,22 @@ l/n/ch/tr/s/x mới có lỗi phụ âm.
 
 ### Bản đang ship — đo ở ĐÚNG ngưỡng sản phẩm
 
-`student768_v4`, INT8 per-channel, ngưỡng **0,95** và biên **0,25** — đúng cặp
-số trong `onnxEngine.js`. Đây là những con số người dùng thật sự gặp:
+`student768_v4`, INT8 per-channel, biên **0,25**, và ngưỡng **theo lớp nhãn**:
+thanh điệu **0,95**, phụ âm **0,90** (quyết định 29). Đây là những con số người
+dùng thật sự gặp:
 
 | Thước đo | Số | Đo bằng |
 |---|---|---|
-| VSEC giữ kín, trong tầm | P **0,9749** · R 0,7426 · F1 **0,8430** | `evaluate.py --held-out --threshold 0.95 --margin 0.25` |
-| Lỗi phụ âm (1.796 ca) | recall **43,3%** | `consonant_eval.py` |
-| riêng lớp `d/gi/r` (596 ca) | recall **28,5%** | `consonant_eval.py` |
-| Báo động giả trên văn bản đúng | **1,30%** / **1,00%** số câu | `false_alarm.py --limit 2000` |
-| Độ trễ **trong trình duyệt** (wasm) | nạp 434ms · p50 **18,4ms** · p95 **23,3ms** | `dev/onnx-test.html` |
+| VSEC giữ kín, trong tầm | P **0,9709** · R 0,7457 · F1 **0,8436** | `evaluate.py --held-out --threshold 0.95 --margin 0.25` |
+| Lỗi phụ âm (1.796 ca) | recall **48,2%** | `consonant_eval.py` |
+| riêng lớp `d/gi/r` (596 ca) | recall **33,9%** | `consonant_eval.py` |
+| Báo động giả trên văn bản đúng | **1,35%** / **1,05%** số câu | `false_alarm.py --limit 2000` |
+| Độ trễ **trong trình duyệt** (wasm) | nạp 355–585ms · p50 **18–24ms** · p95 23–30ms | `dev/onnx-test.html` |
 | Độ trễ onnxruntime Python, 1 luồng | p50 5,5ms · p95 5,7ms | `export_onnx.py` |
 | Gói cài | 95,3 MB thô → **58,6 MB nén** | `package_extension.py` |
+
+Độ trễ ghi thành **khoảng** chứ không một con số: đo lại bốn lần trên cùng máy
+được 18,4 / 23,1 / 23,8ms. Một con số lẻ là một lần bốc thăm.
 
 **Hai dòng độ trễ chênh nhau hơn ba lần, và đó là chỗ dễ báo cáo sai.**
 `export_onnx.py` đo bằng onnxruntime trên Python; trình duyệt chạy cùng file
@@ -250,9 +257,9 @@ precision 0,9126/0,8330, v4 nghiêng recall 0,8883/0,8543), và cái ngưỡng 0
 của sản phẩm đối xử với hai kiểu lệch đó rất khác nhau.
 
 Ở ngưỡng sản phẩm, v4 hơn **v3** ở cả sáu thước đo (quyết định 27). So với
-**v1** thì vẫn là một đánh đổi chứ không phải thắng sạch: precision 0,9749 so
-với 0,9550, nhưng recall 0,7426 so với 0,7670 — đổi 2,4 điểm recall lấy 2,0
-điểm precision, cộng với recall phụ âm 25,7% → 43,3%.
+**v1** thì vẫn là một đánh đổi chứ không phải thắng sạch: precision 0,9709 so
+với 0,9550, nhưng recall 0,7457 so với 0,7670 — đổi 2,1 điểm recall lấy 1,6
+điểm precision, cộng với recall phụ âm 25,7% → **48,2%**.
 
 Còn thiếu — và là nhóm khó bịa nhất: **tỷ lệ chấp nhận gợi ý**, retention
 D1/D7/D30, tỷ lệ gỡ cài. Extension đã đếm sẵn, chỉ chờ người dùng thật.
@@ -262,29 +269,29 @@ D1/D7/D30, tỷ lệ gỡ cài. Extension đã đếm sẵn, chỉ chờ ngườ
 Bảng so sánh kiến trúc ở trên đo trên câu **có sẵn lỗi**, bằng **argmax không
 ngưỡng**. Người dùng thì sống với câu hỏi ngược lại: *tôi viết đúng, bao lâu một
 lần thì nó gạch chân oan?* `false_alarm.py` dựng lại đúng phép quyết định của
-`onnxEngine.js` (p ≥ 0,95 và hơn KEEP ≥ 0,25) rồi chạy trên 2.000 câu **không
-có lỗi**, hai nguồn khác miền:
+`onnxEngine.js` (thanh điệu p ≥ 0,95, phụ âm p ≥ 0,90, và hơn KEEP ≥ 0,25) rồi
+chạy trên 2.000 câu **không có lỗi**, hai nguồn khác miền:
 
-| Nguồn | Máy đếm (v4 đang ship) | v3 | v1 |
-|---|---|---|---|
-| Wikipedia sạch (chưa từng train) | **1,30%** số câu | 1,45% | 1,25% |
-| VSEC nửa giữ kín, câu đã sửa đúng | **1,00%** số câu | 1,25% | 1,30% |
+| Nguồn | Đang ship | v4 @0,95 chung | v3 | v1 |
+|---|---|---|---|---|
+| Wikipedia sạch (chưa từng train) | **1,35%** số câu | 1,30% | 1,45% | 1,25% |
+| VSEC nửa giữ kín, câu đã sửa đúng | **1,05%** số câu | 1,00% | 1,25% | 1,30% |
 
-Khoảng **một câu trong 77–100**. Nhưng con số máy đếm là **chặn trên**, không
+Khoảng **một câu trong 74–95**. Nhưng con số máy đếm là **chặn trên**, không
 phải sự thật: đọc tay 54 lần gạch chân của bản trước thì **26% số "báo động
 giả" hoá ra là model bắt đúng lỗi thật trong văn bản được coi là sạch**
 (`cứ trú`→`cư trú`, `nỗi danh`→`nổi danh`) — tỷ lệ oan thật khoảng **0,75%**.
 Cả 54 ca để nguyên ngữ cảnh trong
 [docs/false_alarm_review.md](docs/false_alarm_review.md).
 
-Danh sách của v4 cũng vậy: trong 26 lần gạch ở Wikipedia có `cứ`→`cư`,
-`vât`→`vật`, `trỗ`→`chỗ`, `dộng`→`rộng` — đều là lỗi thật trong văn bản "sạch".
+Danh sách của bản đang ship cũng vậy: ở Wikipedia có `cứ`→`cư`, `vât`→`vật`,
+`trỗ`→`chỗ`, `dộng`→`rộng` — đều là lỗi thật trong văn bản "sạch".
 **Phần đọc tay chưa làm lại cho v4**, nên 0,75% là số của bản trước, không phải
 số của bản này.
 
-**Ngưỡng mua được gì:** với chính model đang ship, ngưỡng sản phẩm (0,95 / biên
-0,25) đổi argmax P 0,8883 · R 0,8543 thành P **0,9749** · R **0,7426**. Trả 11
-điểm recall để lấy 8,7 điểm precision — và cặp sau mới là cặp người dùng thấy.
+**Ngưỡng mua được gì:** với chính model đang ship, ngưỡng sản phẩm đổi argmax
+P 0,8883 · R 0,8543 thành P **0,9709** · R **0,7457**. Trả 10,9 điểm recall để
+lấy 8,3 điểm precision — và cặp sau mới là cặp người dùng thấy.
 `evaluate.py` **mặc định chấm bằng argmax không ngưỡng**; quên hai cờ
 `--threshold/--margin` là đo một đường mà sản phẩm không đi qua.
 

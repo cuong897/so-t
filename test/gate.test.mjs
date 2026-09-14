@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { OnnxEngine } from '../extension/src/engine/onnxEngine.js';
+import { OnnxEngine, thresholdsFor } from '../extension/src/engine/onnxEngine.js';
 import { TAG_NAMES } from '../extension/src/engine/vi.js';
 
 // Fixture do ml/export_gate_cases.py sinh ra, kèm sẵn đáp án của gate.py.
@@ -36,7 +36,7 @@ test('onnxEngine._decode quyết định GIỐNG HỆT gate.py bên Python',
       const engine = new OnnxEngine({
         threshold: c.threshold,
         margin: c.margin,
-        thresholds: c.thresholds ?? null,
+        thresholds: c.thresholds,
       });
       const got = decodeOne(engine, c);
       const gotTag = got ? got.tag : 'KEEP';
@@ -84,15 +84,27 @@ test('ngưỡng tra theo nhãn THẮNG, nên bảng ngưỡng không đổi Đ�
     'nhãn yếu được hạ ngưỡng không được trở thành đề xuất');
 });
 
-test('không truyền thresholds thì hành vi y hệt bản trước khi có tính năng này',
-  { skip: !hasFixture }, () => {
-    const cases = JSON.parse(fs.readFileSync(casesPath, 'utf8'))
-      .filter((c) => !c.thresholds);
-    assert.ok(cases.length > 100, 'cần đủ ca không dùng bảng ngưỡng');
-    for (const c of cases) {
-      const engine = new OnnxEngine({ threshold: c.threshold, margin: c.margin });
-      const got = decodeOne(engine, c);
-      assert.equal(got ? got.tag : 'KEEP', c.expected,
-        `token "${c.token}" lệch khi KHÔNG có bảng ngưỡng`);
-    }
-  });
+test('mặc định là BẢNG ĐANG SHIP: phụ âm 0,90, thanh điệu 0,95', () => {
+  const tbl = thresholdsFor();
+  assert.equal(tbl.TONE_NGA, 0.95, 'thanh điệu phải giữ 0,95');
+  assert.equal(tbl.D_GI, 0.90, 'phụ âm phải là 0,90');
+  assert.equal(tbl.N_NG, 0.90, 'âm cuối tính là phụ âm');
+  // Dựng engine không truyền gì -> phải lấy đúng bảng đó.
+  assert.deepEqual(new OnnxEngine().thresholds, tbl);
+  // Truyền null TƯỜNG MINH -> quay về một ngưỡng dùng chung.
+  assert.equal(new OnnxEngine({ thresholds: null }).thresholds, null);
+});
+
+test('mặc định: p = 0,92 thì nhãn phụ âm BÁO còn nhãn thanh điệu IM', () => {
+  // Cùng một cặp logit, chỉ khác nhãn nào đang tranh với KEEP.
+  const fire = (tag) => {
+    const allowed = ['KEEP', tag];
+    const logits = [0.0, 2.45];            // p(tag) ~ 0,921
+    const e = new OnnxEngine();            // không truyền gì: bảng đang ship
+    const row = new Float32Array(TAG_NAMES.length).fill(-Infinity);
+    allowed.forEach((t, i) => { row[TAG_NAMES.indexOf(t)] = logits[i]; });
+    return e._decode(row, 0, TAG_NAMES.length, 'da', allowed) !== null;
+  };
+  assert.equal(fire('D_GI'), true, 'phụ âm ở 0,92 phải vượt ngưỡng 0,90');
+  assert.equal(fire('TONE_NGA'), false, 'thanh điệu ở 0,92 chưa tới 0,95');
+});

@@ -177,8 +177,9 @@ def score(args) -> None:
     o.intra_op_num_threads = 1
     sess = ort.InferenceSession(str(args.onnx), o, providers=["CPUExecutionProvider"])
 
-    tbl = (gate.thresholds_for(args.threshold, args.consonant_threshold)
-           if args.consonant_threshold is not None else None)
+    # MẶC ĐỊNH là bảng đang ship (phụ âm 0,90). Truyền --consonant-threshold 0.95
+    # để dựng lại cấu hình cũ mọi nhãn dùng chung một ngưỡng.
+    tbl = gate.thresholds_for(args.threshold, args.consonant_threshold)
     cases = [json.loads(l) for l in args.out.read_text(encoding="utf-8").splitlines()]
     if args.limit:
         cases = cases[: args.limit]
@@ -256,7 +257,7 @@ def main() -> None:
     ap.add_argument("--lexicon", type=Path, default=Path("data/lexicon.tsv"))
     ap.add_argument("--test-data", type=Path, default=Path("data/test.jsonl"))
     ap.add_argument("--out", type=Path, default=Path("data/consonant_eval.jsonl"))
-    ap.add_argument("--consonant-threshold", type=float, default=None,
+    ap.add_argument("--consonant-threshold", type=float, default=gate.PROD_CONSONANT,
                     help="ngưỡng RIÊNG cho nhãn phụ âm và âm cuối")
     ap.add_argument("--result", default="out/consonant_eval.json")
     ap.add_argument("--scan", type=int, default=20000)
