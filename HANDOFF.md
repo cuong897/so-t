@@ -1,6 +1,6 @@
 # Bàn giao — dự án Soát
 
-Đọc file này trước, rồi `README.md` (tổng quan) và `docs/decisions.md` (27 quyết
+Đọc file này trước, rồi `README.md` (tổng quan) và `docs/decisions.md` (28 quyết
 định, kèm lý do và mọi lỗi đã mắc).
 
 ---
@@ -73,36 +73,51 @@ trong tài liệu bàn giao.
 
 ## VIỆC TIẾP THEO — theo thứ tự ưu tiên
 
-### 1. Gõ thử v4 trong Chrome THẬT (chưa làm, và đây là bước rẻ nhất)
+### 1. Gõ thử v4 trong Chrome THẬT — ĐÃ LÀM MỘT LẦN, và kết quả là "im lặng"
 
-Ba lỗi nặng nhất của dự án này đều lộ ra trong ba mươi phút đầu dùng sản phẩm
-như một người dùng, sau khi **không phép đo offline nào chạm tới chúng suốt hai
-tuần** (quyết định 24: tầng model chưa từng chạy một lần nào vì thiếu `vendor/*`
-trong `web_accessible_resources`). v4 đã qua đủ sáu phép đo offline nhưng chưa
-ai gõ thử.
+Chủ repo đã cài v4 vào Chrome và gõ thật trên Facebook:
+
+> chúc **mựng** anh chị đã giành được phần quà **trí** giá 10 triệu **đuồng**
+
+**Extension không gạch gì cả.** Vệt gạch dưới `đuồng` trong ảnh là spellcheck
+của Chrome, không phải của sản phẩm này. Mổ ra ở quyết định 28; tóm tắt:
+
+| Chữ | Đúng phải là | Sản phẩm | Vì sao |
+|---|---|---|---|
+| `mựng` | `mừng` | bỏ sót | p = 0,802, dưới ngưỡng 0,95 |
+| `trí giá` | `trị giá` | bỏ sót | model không xếp nhãn nào lên đầu |
+| `đuồng` | `đồng` | **ngoài tầm vĩnh viễn** | `uô→ô`, ngoài 23 nhãn |
+| `giành được` | *(đúng)* | im lặng ✓ | |
+
+**Việc còn lại của mục này** không phải đo tầng model nữa — `dev/onnx-test.html`
+đã kiểm nó rồi. Còn lại là ba tầng mà cả `onnx-test.html` lẫn ảnh trên đều chưa
+xác nhận được: `targets.js` có chọn đúng ô nhập của Facebook không,
+`highlighter.js` vẽ gạch chân có đúng chỗ không, `replace.js` thay chuỗi có an
+toàn với React không. Muốn thấy ba tầng đó thì phải gõ một câu mà sản phẩm
+**chắc chắn bắt**:
+
+> Hơn một nửa dân số cứ trú tại vùng đồng bằng ven biển.
+
+Tầng luật **cố ý** không bắt câu này, model thì bắt `cứ→cư` ở 100% (đã đo). Nếu
+gõ câu đó mà vẫn không thấy gạch chân thì mới là lỗi cài đặt thật.
 
 ```
 chrome://extensions → Developer mode → Load unpacked → chọn extension/
 ```
 
-Rồi gõ câu này — tầng luật **cố ý** không bắt được, nên nó kiểm tra đúng tầng
-model:
-
-> Hơn một nửa dân số cứ trú tại vùng đồng bằng ven biển.
-
-Model phải bắt `cứ→cư`. Đã kiểm qua `dev/onnx-test.html` với v4: bắt được ở
-100%. Còn lại cần Chrome thật để xác nhận là chuyện `chrome-extension://` nạp
-được `vendor/*` và `models/*`, cộng với việc gõ trong ô thật của Facebook —
-tức `targets.js`, `highlighter.js`, `replace.js`, ba tầng mà `onnx-test.html`
-không chạm tới.
-
-**Đừng dùng `dành được phần quà` để kiểm ở bước này** — đã đo rồi, model xếp
-`dành→giành` ở p = 0,835 nên ở ngưỡng 0,95 nó im lặng *đúng theo thiết kế*. Đó
-là việc số 4, không phải lỗi cài đặt.
+**Đừng dùng `dành được phần quà` để kiểm** — model xếp `dành→giành` ở p = 0,835
+nên ở ngưỡng 0,95 nó im lặng *đúng theo thiết kế*. Đó là việc số 4.
 
 **Nhớ cache:** trình duyệt phục vụ lại cả file `.onnx`. Thay model rồi mà kết
 quả giống hệt bản cũ thì nghi cache trước, đừng nghi logic. Bấm Reload ở
 `chrome://extensions` và hard-reload trang.
+
+**Và bài học chung từ lần gõ thử này:** ba trong bốn chữ sai của câu đó sản phẩm
+không đụng tới. Người dùng thật gõ sai theo kiểu **trộn nhiều lớp lỗi trong một
+câu**, trong đó có cả lớp nằm ngoài bộ nhãn. Mọi phép đo của dự án đều chấm từng
+lỗi một, không cái nào đo "một câu người thật gõ thì bao nhiêu phần được sửa".
+Đó là khoảng trống đo lường còn lại, và không phép đo offline hiện có nào lấp
+được nó.
 
 ### 2. Xoá blob 311MB khỏi LỊCH SỬ git (CHẶN việc nộp store)
 
@@ -193,6 +208,25 @@ nó nhận ngưỡng theo nhóm nhãn (`vi.js` đã có sẵn nhóm), rồi ch�
 tiếng, không train lại gì. **Và ghi ngưỡng chấp nhận trước khi đo**, như
 `77a9148` đã làm.
 
+**Một nhánh của hướng này ĐÃ THỬ VÀ ĐÃ BÁC** — đọc trước khi làm lại, quyết
+định 28. Ý tưởng: token **phi từ** (không có trong từ điển) thì KEEP là phương
+án sai chắc chắn, nên đừng bắt nó chịu ngưỡng 0,95. Đếm từ điển nói đây là món
+hời — 24,8% lỗi VSEC trong tầm rơi vào loại này. Đo thật thì cả họ giải pháp
+đều **thua** cấu hình hiện tại:
+
+| Cổng cho phi từ | F1 | báo oan |
+|---|---|---|
+| **hiện tại** | **0,8023** | **1,30%** |
+| bỏ KEEP | 0,7644 | 2,55% |
+| @0,80 / @0,85 / @0,90 | 0,7955 / 0,7982 / 0,7993 | 1,40% |
+| @0,93 | 0,8028 | 1,35% |
+
+F1 đi lên đơn điệu về phía cấu hình hiện tại khi ngưỡng tiến về 0,95 — không có
+điểm ngọt. Lý do: ở những vị trí đó cái model thiếu **không phải** "có nên sửa
+không" mà là "sửa thành cái gì", nên bỏ KEEP chỉ đổi im lặng thành lỗi sai đầy
+tự tin. Việc số 4 nhắm vào lớp **phụ âm**, là chuyện khác — nhưng nếu kết quả
+cũng ra hình dạng này thì dừng, đừng cố.
+
 ### 5. Lớp d/gi/r vẫn còn ba phần tư ca bị bỏ sót
 
 28,5% tốt hơn 17,8% nhưng vẫn thấp. `consonant_diagnose.py` chia sẵn phần còn
@@ -250,9 +284,11 @@ ml/                 vi.py (bản song song vi.js), noise.py, mine_errors.py,
   consonant_diagnose.py  vì SAO lớp phụ âm sót — thiếu tự tin, đoán sai, hay
                     bị nhãn thanh điệu ăn mất
   diagnose.py       chia phần bỏ sót trên VSEC
+  oov_headroom.py   trần trên của hướng "nới cổng cho phi từ" (đã bác)
+  oov_gate_eval.py  đo thật hướng đó — bảy luật trên cùng một lượt chạy
   package_extension.py, make_screenshots.py
 dev/                playground.html, onnx-test.html, shots.html (nguồn ảnh store)
-docs/decisions.md   27 quyết định
+docs/decisions.md   28 quyết định
 docs/blog.html      bài viết về toàn bộ quá trình và các lần sai
 docs/store/         hồ sơ nộp Chrome Web Store
 ```
