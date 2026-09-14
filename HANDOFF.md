@@ -1,6 +1,6 @@
 # Bàn giao — dự án Soát
 
-Đọc file này trước, rồi `README.md` (tổng quan) và `docs/decisions.md` (30 quyết
+Đọc file này trước, rồi `README.md` (tổng quan) và `docs/decisions.md` (31 quyết
 định, kèm lý do và mọi lỗi đã mắc).
 
 ---
@@ -21,7 +21,7 @@ viết khoá luận.
 
 ## Trạng thái: CHẠY ĐƯỢC TRONG CHROME THẬT
 
-- 52 commit, cây git sạch
+- 54 commit, cây git sạch
 - 48 test JS + 9 test Python, tất cả pass (`npm run test:all`)
 - Đã cài thật vào Chrome, gõ thật trên Facebook, cả bốn tầng đều sống —
   **nhưng lần đó là với model v3.**
@@ -44,7 +44,7 @@ lớp nhãn**: thanh điệu **0,95**, phụ âm **0,90** (`onnxEngine.js`, quy�
 | Lỗi phụ âm (1.796 ca) | recall **48,2%** | `consonant_eval.py` |
 | riêng lớp `d/gi/r` (596 ca) | recall **33,9%** | `consonant_eval.py` |
 | Báo động giả trên văn bản đúng | 1,35% / 1,05% số câu | `false_alarm.py` |
-| Độ trễ **trong trình duyệt** (wasm) | nạp 355–585ms · p50 **18–24ms** · p95 23–30ms | `dev/onnx-test.html` |
+| Độ trễ **trong trình duyệt** (wasm) | nạp 355–585ms · một câu **20–22ms** · một bài đăng **51–58ms** | `dev/bench-model.html` |
 | Độ trễ onnxruntime Python, 1 luồng | p50 5,5ms · p95 5,7ms | `export_onnx.py` |
 | Gói cài | 95,3 MB thô → **58,6 MB nén** | `package_extension.py` |
 | **Theo CÂU** — câu sạch hẳn | **39,2%** | `sentence_eval.py` + `dev/sentence-eval.html` |
@@ -174,6 +174,33 @@ bước 0 là thử lại trên Chrome thật (tức việc số 1 ở trên).
 Sinh lại: `python ml/package_extension.py` và `python ml/make_screenshots.py`
 (cả hai neo đường dẫn theo vị trí file, đứng đâu chạy cũng được).
 
+### 3b. Model CẮT CỤT bài đăng dài — lỗi thật, chưa sửa (quyết định 31)
+
+`OnnxEngine.check()` không chia đoạn. Nó nhét cả văn bản vào `maxLen` = 96
+subword rồi cắt, từ nào vượt quá thì bị bỏ qua **lặng lẽ**:
+
+| Độ dài | Tổng từ | Model xét | Bỏ qua | Phủ |
+|---|---|---|---|---|
+| 280 ký tự | 62 | 62 | 0 | 100% |
+| 700 ký tự | 156 | 91 | 65 | **58%** |
+| 2.000 ký tự | 448 | 91 | 357 | **20%** |
+| 6.000 ký tự | 1.342 | 92 | 1.250 | **7%** |
+
+Cái giá của việc sửa, đã đo: chia đoạn thì 700 ký tự tốn 124ms (thay vì 73ms),
+2.000 ký tự tốn 354ms, 6.000 ký tự tốn 1,13 giây. Bài đăng ≤300 ký tự **không đổi
+gì** — đã phủ 100%.
+
+Dễ chịu hơn vẻ ngoài vì tầng model chạy async sau tầng luật và `run()` đã debounce
+400ms. Trường hợp xấu thật là dán 6.000 ký tự rồi sửa liên tục — muốn ship thì nên
+kèm: chỉ chạy lại đoạn có thay đổi, hoặc ưu tiên đoạn chứa con trỏ.
+
+**Ghi ngưỡng chấp nhận TRƯỚC khi đo**, như `544c455` đã làm — đây là đổi hành vi
+sản phẩm kèm một cái giá độ trễ, không phải sửa lỗi thuần.
+
+Và nhớ: `maxLen = 96` hiện là một hằng số đi ra từ lúc train, không phải một
+quyết định sản phẩm có ghi lại. Nó quyết định sản phẩm bỏ qua bao nhiêu phần văn
+bản của người dùng.
+
 ### 4. ĐÃ XONG — ngưỡng riêng cho lớp phụ âm (quyết định 29)
 
 Giữ lại mục này vì nó trả lời sẵn hai câu hỏi hay được hỏi lại.
@@ -275,7 +302,10 @@ ml/                 vi.py (bản song song vi.js), noise.py, mine_errors.py,
   oov_gate_eval.py  đo thật hướng đó — bảy luật trên cùng một lượt chạy
   package_extension.py, make_screenshots.py
 dev/                playground.html, onnx-test.html, shots.html (nguồn ảnh store)
-docs/decisions.md   30 quyết định
+  sentence-eval.html  chấm theo CÂU với cả hai tầng
+  bench-rules.html    độ trễ tầng luật (bấm giờ theo lô)
+  bench-model.html    độ trễ tầng model + PHẠM VI PHỦ
+docs/decisions.md   31 quyết định
 docs/blog.html      bài viết về toàn bộ quá trình và các lần sai
 docs/store/         hồ sơ nộp Chrome Web Store
 ```

@@ -236,12 +236,31 @@ dùng thật sự gặp:
 | Lỗi phụ âm (1.796 ca) | recall **48,2%** | `consonant_eval.py` |
 | riêng lớp `d/gi/r` (596 ca) | recall **33,9%** | `consonant_eval.py` |
 | Báo động giả trên văn bản đúng | **1,35%** / **1,05%** số câu | `false_alarm.py --limit 2000` |
-| Độ trễ **trong trình duyệt** (wasm) | nạp 355–585ms · p50 **18–24ms** · p95 23–30ms | `dev/onnx-test.html` |
+| Độ trễ **trong trình duyệt** (wasm) | nạp 355–585ms · một câu **20–22ms** · một bài đăng **51–58ms** | `dev/bench-model.html` |
 | Độ trễ onnxruntime Python, 1 luồng | p50 5,5ms · p95 5,7ms | `export_onnx.py` |
 | Gói cài | 95,3 MB thô → **58,6 MB nén** | `package_extension.py` |
 
 Độ trễ ghi thành **khoảng** chứ không một con số: đo lại bốn lần trên cùng máy
 được 18,4 / 23,1 / 23,8ms. Một con số lẻ là một lần bốc thăm.
+
+**Con số độ trễ của tầng model phụ thuộc ĐỘ DÀI văn bản** — và chỉ phụ thuộc cho
+tới khi chạm trần 96 subword:
+
+| Độ dài | p50 | subword | **model xét bao nhiêu phần** |
+|---|---|---|---|
+| 80 ký tự — một câu | 20–22ms | 21 | 100% |
+| 280 ký tự — bài đăng ngắn | 51–58ms | 68 | 100% |
+| 700 ký tự — bài đăng dài | 73–77ms | **96** | **58%** |
+| 2.000 ký tự | 71–80ms | **96** | **20%** |
+| 6.000 ký tự — dán cả bài | 71–79ms | **96** | **7%** |
+
+Độ trễ đứng yên từ 700 ký tự trở lên **không phải vì model co giãn tốt**, mà vì
+`check()` cắt văn bản xuống 96 subword rồi bỏ qua phần còn lại (quyết định 31).
+Đọc cột p50 mà không đọc cột cuối là tự khen một con số đẹp sinh ra từ một lỗi.
+
+Phân rã một lượt `check()`: `session.run` chiếm **98,8%**, `bpe.js` 0,2%, giải mã
+1,0%. Không có gì để tối ưu ngoài chính model. Lượt suy luận **đầu tiên 55–126ms**,
+rơi đúng lúc người dùng gõ câu đầu.
 
 ### Và con số người dùng thật sự sống cùng: chấm theo CÂU
 

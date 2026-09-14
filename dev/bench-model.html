@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Soát — đo độ trễ tầng model</title>
+<style>
+  body { font: 400 15px/1.6 -apple-system, "Segoe UI", Roboto, sans-serif;
+         max-width: 980px; margin: 32px auto; padding: 0 20px; }
+  h1 { font-size: 19px; font-weight: 600; }
+  .muted { color: #666; font-size: 13px; }
+  pre { background: #f6f8fa; padding: 14px; border-radius: 8px; white-space: pre-wrap;
+        font: 12px/1.55 ui-monospace, Menlo, Consolas, monospace; }
+  .bad { color: #cf222e; font-weight: 600; }
+</style>
+</head>
+<body>
+  <h1>Độ trễ tầng model — và phần văn bản nó KHÔNG hề nhìn tới</h1>
+  <p class="muted">
+  <code>dev/onnx-test.html</code> báo p50 bằng 30 lượt trên đúng một câu 65 ký
+  tự. Trang này đo kỹ hơn: nhiều cỡ văn bản, nhiều lượt, tách riêng ba khâu
+  (<code>bpe.js</code> mã hoá → <code>session.run</code> → giải mã + lọc), và
+  đo thêm một thứ mà phép đo độ trễ che mất hoàn toàn.
+  <br><br>
+  <strong>Thứ đó là PHẠM VI PHỦ.</strong> <code>OnnxEngine.check()</code> không
+  chia đoạn: nó nhét cả văn bản vào <code>maxLen</code> subword rồi cắt cụt, từ
+  nào vượt quá thì bị bỏ qua lặng lẽ. Nên với bài đăng dài, độ trễ trông vẫn
+  đẹp <em>chính vì</em> model không xét phần lớn văn bản. Đo độ trễ mà không đo
+  phạm vi phủ là tự khen một con số vô nghĩa.
+  <br><br>
+  Văn bản lấy từ <code>_sentence_cases.json</code> — câu VSEC người thật gõ.
+  </p>
+  <pre id="log">đang nạp model…</pre>
+
+<script type="module">
+const v = `?v=${Date.now()}`;
+const { OnnxEngine } = await import(`../extension/src/engine/onnxEngine.js${v}`);
+const { tokenize, isWordLike, applicableTags } = await import(`../extension/src/engine/vi.js${v}`);
+
+const lines = [];
+const say = (s, cls) => {
+  lines.push(cls ? `<span class="${cls}">${s}</span>` : s);
+  document.getElementById('log').innerHTML = lines.join('\n');
+};
+function stats(xs) {
+  const a = [...xs].sort((p, q) => p - q);
+  const at = (q) => a[Math.min(a.length - 1, Math.floor(a.length * q))];
+  return { p50: at(0.5), p95: at(0.95), p99: at(0.99), max: a[a.length - 1] };
+}
+const ms = (x) => (x < 1 ? x.toFixed(3) : x.toFixed(2));
+
+// --- nạp model, đo luôn thời gian nạp ---------------------------------------
+const cfg = {
+  ort: '../extension/vendor/ort.wasm.bundle.min.mjs',
+  wasmDir: '../extension/vendor/',
+  model: `../extension/models/soat.int8.onnx${v}`,
+  tokenizer: `../extension/models/tokenizer.json${v}`,
+  lexicon: `../extension/models/lexicon.json${v}`,
+  meta: `../extension/models/soat.meta.json${v}`,
+};
+const tLoad0 = performance.now();
+const engine = new OnnxEngine();
+const ok = await engine.load(cfg);
+const tLoad = performance.now() - tLoad0;
+say(`${ok ? '✓' : '✗'} nạp model: ${Math.round(tLoad)}ms  (78MB int8 + 14MB wasm)`);
+say(`  maxLen = ${engine.maxLen} subword — ĐÂY là chỗ văn bản bị cắt`);
+
+let corpus;
+try {
+  const cases = await (await fetch(`../extension/models/_sentence_cases.json${v}`)).json();
+  corpus = cases.map((c) => c.wrong.join(' '));
+} catch {
+  say('✗ thiếu _sentence_cases.json — chạy: python ml/sentence_eval.py --export-cases', 'bad');
+  throw new Error('thiếu fixture');
+}
+say(`✓ ${corpus.length.toLocaleString()} câu VSEC người thật\n`);
+
+function textOf(targetLen) {
+  const out = [];
+  let n = 0;
+  let i = Math.floor(Math.random() * corpus.length);
+  while (n < targetLen) { const s = corpus[i % corpus.length]; out.push(s); n += s.length + 1; i++; }
+  return out.join(' ').slice(0, targetLen);
+}
+
+const SIZES = [
+  [80, 'một câu ngắn'],
+  [280, 'một bài đăng ngắn'],
+  [700, 'một bài đăng dài'],
+  [2000, 'một ghi chú dài'],
+  [6000, 'dán cả một bài viết'],
+];
+
+// --- A. lần gọi ĐẦU TIÊN, riêng ra ------------------------------------------
+// Lượt đầu luôn chậm hơn hẳn: wasm còn phải biên dịch, bộ nhớ còn phải cấp.
+// Gộp nó vào p50 là giấu mất thứ người dùng gặp đúng lúc họ gõ câu đầu tiên.
+const tFirst0 = performance.now();
+await engine.check(textOf(280));
+const tFirst = performance.now() - tFirst0;
+say(`lượt suy luận ĐẦU TIÊN: ${ms(tFirst)}ms  — chỉ xảy ra một lần, nhưng đúng`);
+say(`vào lúc người dùng gõ câu đầu.\n`);
+
+// --- B. độ trễ theo cỡ văn bản ----------------------------------------------
+say('=== A. ĐỘ TRỄ theo cỡ văn bản ===\n');
+say(`${'cỡ văn bản'.padEnd(26)}${'p50'.padStart(9)}${'p95'.padStart(9)}`
+  + `${'p99'.padStart(9)}${'max'.padStart(9)}${'subword'.padStart(10)}`);
+say('-'.repeat(72));
+
+const kq = {};
+for (const [len, nhan] of SIZES) {
+  const texts = Array.from({ length: 12 }, () => textOf(len));
+  for (const t of texts.slice(0, 4)) await engine.check(t);        // chạy nóng
+  const per = [];
+  let nSub = 0;
+  for (let i = 0; i < 40; i++) {
+    const t = texts[i % texts.length];
+    const t0 = performance.now();
+    await engine.check(t);
+    per.push(performance.now() - t0);
+  }
+  for (const t of texts) {
+    const words = tokenize(t).filter(isWordLike).map((s) => s.text);
+    nSub += engine.tokenizer.encodeWords(words, engine.maxLen).ids.length;
+  }
+  const st = stats(per);
+  kq[len] = st;
+  say(`${`${len} ký tự — ${nhan}`.padEnd(26)}${ms(st.p50).padStart(9)}`
+    + `${ms(st.p95).padStart(9)}${ms(st.p99).padStart(9)}${ms(st.max).padStart(9)}`
+    + `${Math.round(nSub / texts.length).toString().padStart(10)}`);
+}
+say(`\n6.000 ký tự chỉ chậm hơn 80 ký tự ${(kq[6000].p50 / kq[80].p50).toFixed(2)}x —`);
+say('gần như KHÔNG đổi. Không phải vì model nhanh, mà vì mọi văn bản đều bị ép');
+say(`xuống cùng ${engine.maxLen} subword. Xem bảng dưới.`);
+
+// --- C. PHẠM VI PHỦ — phần model không hề nhìn tới ---------------------------
+say('\n=== B. PHẠM VI PHỦ — model xét bao nhiêu phần văn bản? ===\n');
+say(`${'cỡ văn bản'.padEnd(26)}${'tổng từ'.padStart(10)}${'được xét'.padStart(11)}`
+  + `${'BỎ QUA'.padStart(10)}${'phủ'.padStart(9)}`);
+say('-'.repeat(66));
+for (const [len, nhan] of SIZES) {
+  let tot = 0; let seen = 0;
+  for (let i = 0; i < 12; i++) {
+    const t = textOf(len);
+    const words = tokenize(t).filter(isWordLike).map((s) => s.text);
+    const { ids, wordIds } = engine.tokenizer.encodeWords(words, engine.maxLen);
+    const first = engine.tokenizer.firstSubwordIndex(wordIds, words.length);
+    tot += words.length;
+    for (let w = 0; w < words.length; w++) if (first[w] >= 0) seen++;
+  }
+  const tyle = seen / tot;
+  say(`${`${len} ký tự — ${nhan}`.padEnd(26)}${Math.round(tot / 12).toString().padStart(10)}`
+    + `${Math.round(seen / 12).toString().padStart(11)}`
+    + `${Math.round((tot - seen) / 12).toString().padStart(10)}`
+    + `${(tyle * 100).toFixed(0).padStart(8)}%`, tyle < 0.9 ? 'bad' : null);
+}
+
+// --- D. ba khâu tốn bao nhiêu -----------------------------------------------
+say('\n=== C. BA KHÂU trong một lần check() ===\n');
+say(`${'khâu'.padEnd(26)}${'p50 (ms)'.padStart(10)}${'% tổng'.padStart(10)}`);
+say('-'.repeat(46));
+{
+  const texts = Array.from({ length: 12 }, () => textOf(280));
+  for (const t of texts.slice(0, 4)) await engine.check(t);
+  const tEnc = []; const tRun = []; const tDec = [];
+  for (let i = 0; i < 40; i++) {
+    const text = texts[i % texts.length];
+    const spans = tokenize(text).filter(isWordLike);
+    const words = spans.map((s) => s.text);
+
+    let t0 = performance.now();
+    const { ids, wordIds } = engine.tokenizer.encodeWords(words, engine.maxLen);
+    const first = engine.tokenizer.firstSubwordIndex(wordIds, words.length);
+    tEnc.push(performance.now() - t0);
+
+    const n = ids.length;
+    t0 = performance.now();
+    const out = await engine.session.run({
+      input_ids: new engine.ort.Tensor('int64', BigInt64Array.from(ids, BigInt), [1, n]),
+      attention_mask: new engine.ort.Tensor('int64', new BigInt64Array(n).fill(1n), [1, n]),
+    });
+    tRun.push(performance.now() - t0);
+
+    const logits = out.logits ?? out[Object.keys(out)[0]];
+    t0 = performance.now();
+    for (let w = 0; w < words.length; w++) {
+      if (first[w] < 0) continue;
+      const allowed = applicableTags(words[w], engine.lexicon);
+      if (allowed.length <= 1) continue;
+      engine._decode(logits.data, first[w] * engine.tagNames.length,
+        engine.tagNames.length, words[w], allowed);
+    }
+    tDec.push(performance.now() - t0);
+  }
+  const e = stats(tEnc).p50; const r = stats(tRun).p50; const d = stats(tDec).p50;
+  const tong = e + r + d;
+  const line = (n, x) => say(`${n.padEnd(26)}${ms(x).padStart(10)}`
+    + `${(x / tong * 100).toFixed(1).padStart(9)}%`);
+  line('bpe.js mã hoá', e);
+  line('session.run (wasm)', r);
+  line('giải mã + lọc ứng viên', d);
+  say('-'.repeat(46));
+  say(`${'TỔNG'.padEnd(26)}${ms(tong).padStart(10)}`);
+}
+
+// --- D2. CÁI GIÁ CỦA VIỆC SỬA -----------------------------------------------
+// Nếu chia đoạn để phủ hết văn bản thì tốn bao nhiêu? Đo thật, đừng ước.
+say('\n=== D. NẾU CHIA ĐOẠN ĐỂ PHỦ HẾT ===\n');
+say(`${'cỡ văn bản'.padEnd(26)}${'số đoạn'.padStart(9)}${'tổng p50'.padStart(11)}`
+  + `${'hiện nay'.padStart(11)}`);
+say('-'.repeat(57));
+for (const [len, nhan] of SIZES) {
+  const text = textOf(len);
+  const spans = tokenize(text).filter(isWordLike);
+  const words = spans.map((s) => s.text);
+  // Chia theo TỪ, mỗi đoạn <= maxLen subword. Ước lượng thô: 90 từ một đoạn.
+  const per = 90;
+  const chunks = [];
+  for (let i = 0; i < words.length; i += per) chunks.push(words.slice(i, i + per).join(' '));
+  for (const c of chunks.slice(0, 2)) await engine.check(c);       // chạy nóng
+  const lot = [];
+  for (let k = 0; k < 8; k++) {
+    const t0 = performance.now();
+    for (const c of chunks) await engine.check(c);
+    lot.push(performance.now() - t0);
+  }
+  const st = stats(lot);
+  say(`${`${len} ký tự — ${nhan}`.padEnd(26)}${String(chunks.length).padStart(9)}`
+    + `${ms(st.p50).padStart(11)}${ms(kq[len].p50).padStart(11)}`,
+    st.p50 > 500 ? 'bad' : null);
+}
+say('\nPhủ hết thì phải trả bằng thời gian, và trả tuyến tính theo độ dài. Đây là');
+say('một đánh đổi thật, không phải bỏ quên — nhưng hiện tại nó đang được quyết định');
+say('bằng một hằng số maxLen, không bằng một quyết định có ghi lại.');
+
+// --- E. đối chiếu -----------------------------------------------------------
+say('\n=== E. ĐỐI CHIẾU ===\n');
+say(`tầng luật, bài đăng 280 ký tự : 0,048ms   (dev/bench-rules.html)`);
+say(`tầng model, cùng cỡ           : ${ms(kq[280].p50)}ms`);
+say(`tỷ lệ                         : model chậm hơn ~${Math.round(kq[280].p50 / 0.048)}x`);
+say('');
+say('Ngân sách một khung hình 60fps là 16,7ms. Tầng model VƯỢT ngân sách đó,');
+say('nhưng nó chạy async sau tầng luật nên không chặn lúc gõ — người dùng thấy');
+say('gạch chân của tầng luật trước, gạch chân của model đến sau.');
+</script>
+</body>
+</html>

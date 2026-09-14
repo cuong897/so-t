@@ -1338,3 +1338,99 @@ số nguy hiểm y như sai ở tầng đo.
 Từ đây mọi chỗ báo recall phải kèm mẫu số. "Recall 0,7457 trên phần bộ nhãn biểu
 diễn được (54,5% lỗi VSEC), tức 40,8% tổng số lỗi" — dài hơn, và đúng. Và con số
 theo câu nên đứng cạnh nó, vì nó mới là thứ người dùng gặp.
+
+---
+
+### 31. Model cắt cụt văn bản dài — và phép đo độ trễ che mất chuyện đó
+
+Yêu cầu ban đầu chỉ là "đo chính xác độ trễ tầng model". Con số cũ trong tài
+liệu — p50 18–24ms — đo bằng 30 lượt trên **đúng một câu 65 ký tự** ở
+`dev/onnx-test.html`. Đo lại trên nhiều cỡ văn bản thì ra chuyện khác.
+
+#### Độ trễ theo cỡ văn bản
+
+| Độ dài | p50 | p95 | subword |
+|---|---|---|---|
+| 80 ký tự — một câu | 20–22ms | 26–30ms | 21 |
+| 280 ký tự — bài đăng ngắn | **51–58ms** | 63–87ms | 68 |
+| 700 ký tự — bài đăng dài | 73–77ms | 82–112ms | **96** |
+| 2.000 ký tự | 71–80ms | 73–87ms | **96** |
+| 6.000 ký tự | 71–79ms | 83–88ms | **96** |
+
+Con số 18–24ms đang được ghi khắp tài liệu là số của **một câu**, không phải
+của một bài đăng. Bài đăng thật tốn gấp ba.
+
+Lượt suy luận **đầu tiên: 55–126ms**, và nó rơi đúng vào lúc người dùng gõ câu
+đầu tiên. Gộp nó vào p50 là giấu mất đúng khoảnh khắc người dùng gặp.
+
+Phân rã một lượt: `session.run` **98,8%**, `bpe.js` mã hoá 0,2%, giải mã và lọc
+ứng viên 1,0%. Không có gì để tối ưu ngoài chính model.
+
+#### Cột `subword` đứng yên ở 96 — và đó là một lỗi, không phải một thành tích
+
+Nhìn bảng trên thì dễ kết luận "6.000 ký tự vẫn 71ms, model co giãn tốt". Sai.
+`OnnxEngine.check()` **không chia đoạn**: nó nhét cả văn bản vào `maxLen` = 96
+subword rồi cắt cụt, từ nào vượt quá thì `firstSubwordIndex` trả `-1` và vòng
+lặp `continue` — không lỗi, không cảnh báo, không đếm.
+
+| Độ dài | Tổng từ | Model xét | **Bỏ qua** | Phủ |
+|---|---|---|---|---|
+| 80 ký tự | 18 | 18 | 0 | 100% |
+| 280 ký tự | 62 | 62 | 0 | 100% |
+| **700 ký tự** | 156 | 91 | **65** | **58%** |
+| **2.000 ký tự** | 448 | 91 | **357** | **20%** |
+| **6.000 ký tự** | 1.342 | 92 | **1.250** | **7%** |
+
+Với một bài đăng Facebook cỡ trung bình, **model chỉ soát nửa đầu**. Độ trễ
+trông đẹp *chính vì* nó bỏ qua phần còn lại.
+
+Đây lại đúng luận điểm của cả dự án, lần này suýt mắc ngay trong phép đo vừa
+được yêu cầu: **đo một con số hoàn toàn đúng — của một đường dẫn mà sản phẩm
+không đi hết.** Đo độ trễ mà không đo phạm vi phủ là tự khen một con số sinh ra
+từ một lỗi.
+
+#### Việc này sửa lại cách đọc quyết định 30
+
+Quyết định 30 đo "49% số câu có lỗi thì sản phẩm im lặng" trên **từng câu lẻ**
+của VSEC — đều ngắn, đều dưới 96 subword, nên **chưa bao giờ chạm tới chỗ cắt**.
+Người dùng thật không gõ từng câu lẻ; họ gõ bài đăng nhiều câu. Với bài đăng
+700 ký tự, con số thật phải tệ hơn 49%, và không phép đo nào hiện có nói được
+tệ hơn bao nhiêu.
+
+#### Cái giá của việc sửa, đo thật chứ không ước
+
+Chia văn bản thành nhiều đoạn ≤96 subword rồi chạy từng đoạn:
+
+| Độ dài | Số đoạn | Chia đoạn | Hiện nay |
+|---|---|---|---|
+| 80 ký tự | 1 | 19,8ms | 19,7ms |
+| 280 ký tự | 1 | 48,7ms | 57,7ms |
+| 700 ký tự | 2 | **123,9ms** | 72,9ms |
+| 2.000 ký tự | 5 | **353,8ms** | 70,5ms |
+| 6.000 ký tự | 15 | **1.127,9ms** | 71,4ms |
+
+Phủ hết thì trả tuyến tính theo độ dài. Nhưng ba điều làm cái giá này dễ chịu
+hơn vẻ ngoài của nó:
+
+1. Tầng model chạy **async**, sau tầng luật. Người dùng thấy gạch chân của tầng
+   luật trong 0,05ms; gạch chân của model đến sau, và đến chậm hơn thì cũng
+   không chặn việc gõ.
+2. `run()` đã bị **debounce 400ms**, nên nó không chạy mỗi phím gõ.
+3. Bài đăng ≤300 ký tự **không đổi gì cả** — đã phủ 100% rồi. Cái giá chỉ phát
+   sinh đúng ở chỗ hiện đang hỏng.
+
+Trường hợp xấu thật sự là dán 6.000 ký tự rồi sửa liên tục: 1,1 giây CPU cho
+mỗi lần debounce nhả. Muốn ship thì nên kèm một trong hai: chỉ chạy lại đoạn
+có thay đổi, hoặc chạy đoạn chứa con trỏ trước rồi mới tới các đoạn khác.
+
+#### Chưa sửa, và vì sao ghi lại thay vì sửa ngay
+
+Đổi từ cắt cụt sang chia đoạn là **đổi hành vi sản phẩm kèm một cái giá độ
+trễ**, đúng loại thay đổi mà dự án này đòi ghi ngưỡng chấp nhận trước rồi mới
+đo (quyết định 27 và 29). Nên mục này ghi lại phát hiện và cái giá; việc sửa để
+một đợt riêng, có ngưỡng chấp nhận viết trước.
+
+Điều phải nói ngay: **`maxLen = 96` hiện đang là một hằng số đi ra từ lúc train,
+chứ không phải một quyết định sản phẩm có ghi lại.** Nó quyết định sản phẩm bỏ
+qua bao nhiêu phần văn bản của người dùng, và cho tới mục này thì không ai từng
+đo con số đó.
