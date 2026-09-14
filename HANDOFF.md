@@ -7,7 +7,7 @@
 
 ## Phiên vừa rồi làm gì (14–15/09/2026)
 
-Mười lăm commit, `cfffea2..4bbd91b`. Ba nhóm việc:
+Mười sáu commit, `cfffea2..ae8079b`. Ba nhóm việc:
 
 **Sửa lỗi tài liệu khai không đúng sự thật.** Blob 311MB vẫn nằm trong HEAD dù
 commit trước khai đã bỏ theo dõi (nó chỉ sửa `.gitignore`). README báo số của v1
@@ -45,7 +45,7 @@ viết khoá luận.
 
 ## Trạng thái: CHẠY ĐƯỢC TRONG CHROME THẬT
 
-- 56 commit, cây git sạch
+- 57 commit, cây git sạch
 - 48 test JS + 9 test Python, tất cả pass (`npm run test:all`)
 - **ĐÃ XÁC NHẬN CHẠY TRONG CHROME THẬT với bản đang ship.** Chủ repo gõ trên
   Facebook câu *"mình xin chia sẽ một vãi trãi nghiệm cho mọi ngươi"* và thấy
