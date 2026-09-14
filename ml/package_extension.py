@@ -2,9 +2,12 @@
 
 Không dùng `zip -r extension/` thẳng tay, vì hai lý do đã suýt mắc:
 
-  1. `models/_parity_cases.json` là fixture của test parity BPE, nặng 100KB và
-     chẳng có việc gì trong máy người dùng. `soat.report.json` cũng vậy — nó là
-     báo cáo của export_onnx.py, còn lúc chạy thì index.js chỉ đọc soat.meta.json.
+  1. `models/_parity_cases.json` (fixture parity BPE, 100KB) và
+     `models/_gate_cases.json` (fixture parity phép quyết định, 500KB) chẳng có
+     việc gì trong máy người dùng. `soat.report.json` cũng vậy — nó là báo cáo
+     của export_onnx.py, còn lúc chạy thì index.js chỉ đọc soat.meta.json.
+     Mọi fixture đều tên `_*`, nên luật loại bắt theo tiền tố chứ không liệt kê
+     tay — liệt kê tay là cách `data_dgir/` và một blob 311MB đã lọt lưới.
   2. Thiếu `vendor/` hoặc `models/` thì extension vẫn cài được và vẫn chạy —
      chỉ là tầng model im lặng biến mất, tầng luật gánh hết. Không có lỗi nào
      bật ra. Nên phải kiểm TRƯỚC KHI đóng gói, không phải sau khi người dùng cài.
@@ -22,7 +25,8 @@ import zipfile
 from pathlib import Path
 
 # Thừa trong bản gửi người dùng — chỉ phục vụ test hoặc báo cáo lúc build.
-EXCLUDE_NAMES = {"_parity_cases.json", "soat.report.json", ".DS_Store", "Thumbs.db"}
+EXCLUDE_NAMES = {"soat.report.json", ".DS_Store", "Thumbs.db"}
+EXCLUDE_PREFIX = ("_",)   # mọi fixture parity: _parity_cases.json, _gate_cases.json
 # .data là file trọng số ngoài của bản ONNX fp32 — 311 MB mà lúc chạy không ai
 # đụng tới, vì extension chỉ nạp bản int8. export_onnx.py để nó lại trong
 # extension/models/ sau mỗi lần xuất, nên không loại ở đây thì gói gửi người
@@ -55,6 +59,7 @@ REQUIRED = [
 
 def keep(p: Path) -> bool:
     return (p.name not in EXCLUDE_NAMES
+            and not p.name.startswith(EXCLUDE_PREFIX)
             and p.suffix not in EXCLUDE_SUFFIX
             and not any(x in p.name for x in EXCLUDE_CONTAINS))
 

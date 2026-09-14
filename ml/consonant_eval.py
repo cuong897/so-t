@@ -45,6 +45,7 @@ from pathlib import Path
 
 import numpy as np
 
+import gate
 import vi
 from encoding import encode_words, first_subword_index
 from noise import load_lexicon
@@ -144,7 +145,8 @@ def build(args) -> None:
     print("  theo nhãn : " + ", ".join(f"{k} {v}" for k, v in by_tag.most_common()))
 
 
-def decide(sess, tok, words, idx, lexicon, max_len, threshold, margin):
+def decide(sess, tok, words, idx, lexicon, max_len, threshold, margin,
+           thresholds=None):
     """Model đề xuất gì tại ĐÚNG vị trí idx? -> (nhãn, p) hoặc (None, p_tốt_nhất)."""
     ids, word_ids = encode_words(tok, words, max_len)
     first = first_subword_index(word_ids, len(words))
@@ -161,16 +163,8 @@ def decide(sess, tok, words, idx, lexicon, max_len, threshold, margin):
     if len(allowed) <= 1:
         return None, 0.0
     z = logits[pos, [vi.TAG_INDEX[t] for t in allowed]].astype(np.float64)
-    e = np.exp(z - z.max())
-    p = e / e.sum()
-    keep_p = float(p[allowed.index("KEEP")]) if "KEEP" in allowed else 0.0
-    best, best_p = None, 0.0
-    for j, t in enumerate(allowed):
-        if t != "KEEP" and p[j] > best_p:
-            best, best_p = t, float(p[j])
-    if best is None or best_p < threshold or best_p - keep_p < margin:
-        return None, best_p
-    return best, best_p
+    tag, best_p = gate.decide(z, allowed, threshold, margin, thresholds)
+    return (None if tag == "KEEP" else tag), best_p
 
 
 def score(args) -> None:

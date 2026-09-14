@@ -37,6 +37,7 @@ from pathlib import Path
 
 import numpy as np
 
+import gate
 import vi
 from encoding import encode_words, first_subword_index
 from noise import load_lexicon
@@ -70,11 +71,13 @@ def clean_sentences_from_vsec(path: Path, limit: int) -> list[list[str]]:
 
 
 def alarms(sess, tok, words: list[str], lexicon, max_len: int,
-           threshold: float, margin: float) -> list[tuple[str, str, float]]:
+           threshold: float, margin: float,
+           thresholds: dict[str, float] | None = None
+           ) -> list[tuple[str, str, float]]:
     """Những chỗ sản phẩm sẽ GẠCH CHÂN trên câu này.
 
-    Dựng lại _decode() của onnxEngine.js từng bước: softmax CHỈ trên tập nhãn
-    hợp lệ, so với KEEP, rồi mới áp ngưỡng và biên.
+    Phép quyết định lấy từ `gate.decide` — cùng một bản với evaluate.py và
+    consonant_eval.py, và `test/gate.test.mjs` canh cho nó khớp onnxEngine.js.
     """
     ids, word_ids = encode_words(tok, words, max_len)
     first_idx = first_subword_index(word_ids, len(words))
@@ -95,18 +98,11 @@ def alarms(sess, tok, words: list[str], lexicon, max_len: int,
 
         idxs = [vi.TAG_INDEX[t] for t in allowed]
         z = logits[pos, idxs].astype(np.float64)
-        e = np.exp(z - z.max())
-        p = e / e.sum()
 
-        keep_p = float(p[allowed.index("KEEP")]) if "KEEP" in allowed else 0.0
-        best_j, best_p = -1, 0.0
-        for j, t in enumerate(allowed):
-            if t == "KEEP":
-                continue
-            if p[j] > best_p:
-                best_j, best_p = j, float(p[j])
+        tag, best_p = gate.decide(z, allowed, threshold, margin, thresholds)
+        best_j = allowed.index(tag) if tag != "KEEP" else -1
 
-        if best_j < 0 or best_p < threshold or best_p - keep_p < margin:
+        if best_j < 0:
             continue
         sugg = vi.TAGS[allowed[best_j]](token)
         if sugg == token:
@@ -117,7 +113,8 @@ def alarms(sess, tok, words: list[str], lexicon, max_len: int,
 
 def run(name: str, sentences: list[list[str]], sess, tok, lexicon,
         max_len: int, threshold: float, margin: float,
-        max_samples: int = 500) -> dict:
+        max_samples: int = 500,
+        thresholds: dict[str, float] | None = None) -> dict:
     n_sent = n_words = n_candidate = 0
     hit_sent = 0
     pairs = Counter()
@@ -130,7 +127,8 @@ def run(name: str, sentences: list[list[str]], sess, tok, lexicon,
         n_words += len(words)
         n_candidate += sum(1 for w in words
                            if len(vi.applicable_tags(w, lexicon)) > 1)
-        found = alarms(sess, tok, words, lexicon, max_len, threshold, margin)
+        found = alarms(sess, tok, words, lexicon, max_len, threshold,
+                       margin, thresholds)
         if found:
             hit_sent += 1
             for a, b, p in found:

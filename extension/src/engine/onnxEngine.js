@@ -36,6 +36,11 @@ export class OnnxEngine {
   constructor(opts = {}) {
     this.threshold = opts.threshold ?? DEFAULT_THRESHOLD;
     this.margin = opts.margin ?? DEFAULT_MARGIN;
+    // Ngưỡng riêng theo nhãn, ghi đè this.threshold cho đúng những nhãn có mặt.
+    // Để trống thì mọi nhãn dùng chung một ngưỡng — tức hành vi cũ y nguyên.
+    // Bản Python tương ứng: gate.thresholds_for(). test/gate.test.mjs canh cho
+    // hai bên khớp nhau.
+    this.thresholds = opts.thresholds ?? null;
     this.maxLen = opts.maxLen ?? MAX_LEN;
     this.ready = false;
     this.session = null;
@@ -190,10 +195,18 @@ export class OnnxEngine {
     }
 
     if (bestIdx < 0) return null;
-    if (bestProb < this.threshold) return null;
+    const tag = this.tagNames[bestIdx];
+    // Ngưỡng tra SAU khi đã chọn nhãn mạnh nhất, không phải trước. Cách kia —
+    // xét từng nhãn với ngưỡng riêng rồi lấy nhãn tốt nhất trong đám vượt được
+    // — làm việc hạ ngưỡng một lớp có thể đổi cả ĐỀ XUẤT, chứ không chỉ đổi
+    // chuyện có báo hay không. Giữ thế này thì đề xuất luôn là lựa chọn số một
+    // của model, và bảng ngưỡng chỉ quyết định có dám nói ra hay không.
+    const bar = (this.thresholds && this.thresholds[tag] !== undefined)
+      ? this.thresholds[tag]
+      : this.threshold;
+    if (bestProb < bar) return null;
     if (bestProb - keepProb < this.margin) return null;
 
-    const tag = this.tagNames[bestIdx];
     const suggestion = TAGS[tag].apply(token);
     if (suggestion === token) return null;
 

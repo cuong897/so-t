@@ -27,6 +27,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+import gate
 import vi
 from encoding import encode_words, first_subword_index
 
@@ -103,34 +104,16 @@ def scope_report(rows: list[dict], lexicon: set[str] | None) -> dict:
 # --- B/C. chấm model ----------------------------------------------------------
 
 def _gate(logit_row, allowed: list[str], token: str,
-          threshold: float, margin: float) -> str:
+          threshold: float, margin: float,
+          thresholds: dict[str, float] | None = None) -> str:
     """Chọn nhãn theo ĐÚNG phép quyết định của onnxEngine.js.
 
-    threshold = margin = 0 thì thoái về argmax — tức nếp cũ của file này, và là
-    mặc định, để mọi con số đã báo cáo trước đây vẫn tái lập được y nguyên.
-
-    Khác 0 thì đây là thứ NGƯỜI DÙNG thật sự thấy: softmax chỉ trên tập nhãn
-    hợp lệ, phải vượt ngưỡng VÀ hơn KEEP một biên mới dám báo.
+    Chỉ còn là lớp mỏng bọc `gate.decide` — luật thật nằm ở `gate.py`, một bản
+    duy nhất cho cả phía Python, và `test/gate.test.mjs` canh cho nó khớp với
+    onnxEngine.js. Trước đây luật này có ba bản chép tay trong ml/.
     """
-    import numpy as np
-
-    z = np.asarray(logit_row, dtype=np.float64)
-    if threshold <= 0 and margin <= 0:
-        return allowed[int(z.argmax())]
-
-    e = np.exp(z - z.max())
-    p = e / e.sum()
-    keep_p = float(p[allowed.index("KEEP")]) if "KEEP" in allowed else 0.0
-
-    best_j, best_p = -1, 0.0
-    for j, t in enumerate(allowed):
-        if t == "KEEP":
-            continue
-        if p[j] > best_p:
-            best_j, best_p = j, float(p[j])
-    if best_j < 0 or best_p < threshold or best_p - keep_p < margin:
-        return "KEEP"
-    return allowed[best_j]
+    tag, _ = gate.decide(logit_row, allowed, threshold, margin, thresholds)
+    return tag
 
 
 def predict(model, tok, device, words: list[str], lexicon, max_len: int,
