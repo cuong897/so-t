@@ -53,8 +53,29 @@ dưới 0,90. Phải xuống 0,80 mới bắt, mà mức đó trượt luật ch
 
 ```
 văn bản  ─►  ① tra từ điển   ─►  ② sinh ứng viên  ─►  ③ chấm ngữ cảnh  ─►  ④ lọc & ngưỡng  ─►  gạch chân
-              <1ms, JS            <1ms, tập đóng      ~20ms, ONNX INT8      <1ms
+              0,05ms, JS          <0,01ms            ~20ms, ONNX INT8     <0,01ms
 ```
+
+Con số ở ①+② đo bằng `dev/bench-rules.html` trên một bài đăng 280 ký tự, văn bản
+người thật lấy từ VSEC. **Tầng luật nhanh hơn tầng model khoảng 400 lần**, và
+tăng tuyến tính theo độ dài văn bản chứ không theo số lỗi:
+
+| Độ dài | `checkText` p50 | cả cụm đồng bộ p50 |
+|---|---|---|
+| 80 ký tự — một câu | 0,014ms | 0,025ms |
+| 280 ký tự — bài đăng ngắn | **0,048ms** | 0,087ms |
+| 700 ký tự — bài đăng dài | 0,124ms | 0,130ms |
+| 2.000 ký tự | 0,359ms | 0,367ms |
+| 6.000 ký tự — dán cả bài | 1,09ms | 1,12ms |
+
+"Cả cụm" là `collectTextNodes + checkText + paint` — đúng ba thứ `run()` chạy
+**đồng bộ trên luồng chính**. `paint` tốn ~0,5µs mỗi lỗi, nên 180 lỗi cùng lúc cũng
+chỉ 0,09ms. Ngân sách một khung hình 60fps là 16,7ms — tầng luật dùng hết 0,5%
+của nó ở cỡ bài đăng bình thường.
+
+*(Một lưu ý về cách đo: `performance.now()` trong trình duyệt bị làm tròn tới
+~0,1ms để chống Spectre. Bấm giờ từng lần gọi cho ra toàn `0.000` và `0.100` — sàn
+đồng hồ, không phải số thật. Bảng trên bấm giờ theo LÔ rồi chia.)*
 
 **① + ②  Tầng luật** (`extension/src/engine/`) — 137 luật cụm sai tuyệt đối và
 20 cặp đồng âm quyết định bằng **cue có hướng**. Chạy được ngay, không cần model.
@@ -91,6 +112,7 @@ npm run dev       # rồi mở hai trang dưới đây
 |---|---|
 | `dev/playground.html` | Tầng DOM — gạch chân và thay chuỗi trong trình duyệt thật, không cần cài extension |
 | `dev/onnx-test.html` | Đường ONNX — nạp runtime, mã hoá BPE, suy luận, chặn theo tập ứng viên |
+| `dev/bench-rules.html` | Độ trễ tầng luật — bấm giờ theo lô, văn bản người thật |
 | `dev/sentence-eval.html` | Chấm theo CÂU với **cả hai tầng** — phần mà `sentence_eval.py` không chạy được vì tầng luật là JS |
 
 Trước khi dùng `onnx-test.html` phải có runtime và model:

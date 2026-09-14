@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Soát — đo độ trễ tầng luật</title>
+<style>
+  body { font: 400 15px/1.6 -apple-system, "Segoe UI", Roboto, sans-serif;
+         max-width: 980px; margin: 32px auto; padding: 0 20px; }
+  h1 { font-size: 19px; font-weight: 600; }
+  .muted { color: #666; font-size: 13px; }
+  pre { background: #f6f8fa; padding: 14px; border-radius: 8px; white-space: pre-wrap;
+        font: 12px/1.55 ui-monospace, Menlo, Consolas, monospace; }
+  .editor { border: 1px solid #d0d7de; border-radius: 8px; padding: 10px;
+            min-height: 60px; margin: 8px 0; }
+</style>
+</head>
+<body>
+  <h1>Độ trễ tầng luật — đo trên luồng chính, văn bản người thật</h1>
+  <p class="muted">
+  README ghi tầng ①+② là <code>&lt;1ms</code>. Trang này kiểm con số đó, và đo
+  thêm hai thứ mà con số đó bỏ qua: <code>collectTextNodes</code> (đi bộ DOM để
+  lấy text của ô <code>contenteditable</code>) và <code>paint</code> (vẽ gạch
+  chân). Cả ba chạy <strong>đồng bộ trên luồng chính</strong> trong cùng một
+  lần <code>run()</code>, nên thứ người dùng cảm nhận là TỔNG, không phải
+  <code>checkText</code> đơn lẻ.
+  <br><br>
+  Văn bản lấy từ <code>_sentence_cases.json</code> — câu VSEC người thật gõ,
+  không phải chuỗi tự chế. Mỗi cỡ đo sau khi đã chạy nóng, báo phân bố chứ
+  không báo một con số: một con số lẻ là một lần bốc thăm.
+  <br><br>
+  <strong>Đo theo LÔ rồi chia.</strong> <code>performance.now()</code> trong
+  trình duyệt bị làm tròn tới ~0,1ms để chống Spectre, mà tầng luật chạy nhanh
+  hơn thế nhiều. Bấm giờ từng lần gọi thì ra toàn <code>0.000</code> và
+  <code>0.100</code> — đó là <em>sàn đồng hồ</em>, không phải số thật. Bản đầu
+  của trang này đã mắc đúng lỗi đó. Bấm giờ một lô N lần rồi chia cho N thì
+  khoảng đo vượt xa sai số làm tròn.
+  </p>
+  <div id="ce" class="editor" contenteditable="true"></div>
+  <pre id="log">đang chạy…</pre>
+
+<script type="module">
+const v = `?v=${Date.now()}`;
+const rules = await import(`../extension/src/engine/ruleEngine.js${v}`);
+const hl = await import(`../extension/src/content/highlighter.js${v}`);
+const vi = await import(`../extension/src/engine/vi.js${v}`);
+
+const lines = [];
+const say = (s) => { lines.push(s); document.getElementById('log').textContent = lines.join('\n'); };
+
+function stats(xs) {
+  const a = [...xs].sort((p, q) => p - q);
+  const at = (q) => a[Math.min(a.length - 1, Math.floor(a.length * q))];
+  return { p50: at(0.5), p95: at(0.95), p99: at(0.99), min: a[0], max: a[a.length - 1] };
+}
+const ms = (x) => (x < 1 ? x.toFixed(3) : x.toFixed(2));
+const row = (nhan, s) =>
+  `${nhan.padEnd(26)}${ms(s.p50).padStart(9)}${ms(s.p95).padStart(9)}`
+  + `${ms(s.p99).padStart(9)}${ms(s.max).padStart(10)}`;
+
+// --- văn bản thật ------------------------------------------------------------
+let corpus;
+try {
+  const cases = await (await fetch(`../extension/models/_sentence_cases.json${v}`)).json();
+  corpus = cases.map((c) => c.wrong.join(' '));
+} catch {
+  say('✗ thiếu _sentence_cases.json — chạy: python ml/sentence_eval.py --export-cases');
+  throw new Error('thiếu fixture');
+}
+say(`bộ luật: ${rules.RULE_STATS.phrases} cụm, ${rules.RULE_STATS.contextPairs} cặp ngữ cảnh`);
+say(`nguồn văn bản: ${corpus.length.toLocaleString()} câu VSEC người thật\n`);
+
+function textOf(targetLen) {
+  const out = [];
+  let n = 0;
+  let i = Math.floor(Math.random() * corpus.length);
+  while (n < targetLen) {
+    const s = corpus[i % corpus.length];
+    out.push(s);
+    n += s.length + 1;
+    i++;
+  }
+  return out.join(' ').slice(0, targetLen);
+}
+
+const SIZES = [
+  [80, 'một câu ngắn'],
+  [280, 'một bài đăng ngắn'],
+  [700, 'một bài đăng dài'],
+  [2000, 'một ghi chú dài'],
+  [6000, 'dán cả một bài viết'],
+];
+const LOTS = 60;          // số lô, mỗi lô cho một mẫu thời gian
+
+/** Bấm giờ một lô `batch` lần gọi rồi chia — vượt sai số làm tròn 0,1ms. */
+function benchBatched(fn, texts, batch) {
+  const per = [];
+  for (let k = 0; k < LOTS; k++) {
+    const t0 = performance.now();
+    for (let i = 0; i < batch; i++) fn(texts[(k * batch + i) % texts.length]);
+    per.push((performance.now() - t0) / batch);
+  }
+  return stats(per);
+}
+
+// --- A. checkText đơn lẻ -----------------------------------------------------
+say('=== A. ruleEngine.checkText() — CHỈ tầng luật ===\n');
+say(`${'cỡ văn bản'.padEnd(26)}${'p50'.padStart(9)}${'p95'.padStart(9)}`
+  + `${'p99'.padStart(9)}${'max'.padStart(10)}   (ms)`);
+say('-'.repeat(65));
+
+const kq = {};
+for (const [len, nhan] of SIZES) {
+  const texts = Array.from({ length: 40 }, () => textOf(len));
+  // Lô to cho văn bản ngắn, nhỏ cho văn bản dài — mục tiêu: mỗi lô tốn vài ms.
+  const batch = len <= 300 ? 2000 : len <= 1000 ? 800 : len <= 2500 ? 300 : 100;
+  for (let i = 0; i < 200; i++) rules.checkText(texts[i % texts.length]);   // chạy nóng
+  let nIssues = 0;
+  for (const t of texts) nIssues += rules.checkText(t).length;
+  const st = benchBatched((t) => rules.checkText(t), texts, batch);
+  kq[len] = st;
+  say(row(`${len} ký tự — ${nhan}`, st)
+    + `   ${(nIssues / texts.length).toFixed(1)} lỗi/lần, lô ${batch}`);
+}
+
+// --- B. tuyến tính theo độ dài? ----------------------------------------------
+const a = kq[280].p50, b = kq[6000].p50;
+say(`\ntăng ${(6000 / 280).toFixed(1)}x độ dài -> p50 tăng ${(b / a).toFixed(1)}x`
+  + `  (tuyến tính thì hai số này bằng nhau)`);
+
+// --- C. cả cụm đồng bộ mà run() thật sự làm ----------------------------------
+say('\n=== B. CẢ CỤM run() làm đồng bộ trên contenteditable ===');
+say('    collectTextNodes -> checkText -> paint. Đây mới là thứ chặn luồng chính.\n');
+say(`${'cỡ văn bản'.padEnd(26)}${'p50'.padStart(9)}${'p95'.padStart(9)}`
+  + `${'p99'.padStart(9)}${'max'.padStart(10)}   (ms)`);
+say('-'.repeat(65));
+
+const ce = document.getElementById('ce');
+for (const [len, nhan] of SIZES) {
+  const texts = Array.from({ length: 20 }, () => textOf(len));
+  const tAll = []; const tCollect = []; const tPaint = [];
+  for (let i = 0; i < 20; i++) {                      // chạy nóng
+    ce.textContent = texts[i % texts.length];
+    const m = hl.collectTextNodes(ce);
+    hl.paint(ce, 'contenteditable', rules.checkText(m.text), m);
+  }
+  // Cụm này có đụng DOM nên không lặp được hàng nghìn lần như phần A. Vẫn phải
+  // đo theo LÔ, chỉ là lô nhỏ hơn, đủ để mỗi lần bấm giờ vượt sai số làm tròn.
+  const batch = len <= 700 ? 40 : len <= 2500 ? 15 : 6;
+  for (let k = 0; k < 30; k++) {
+    // Ba lô riêng, mỗi lô chỉ chạy MỘT khâu: chia nhỏ trong vòng lặp thì mỗi
+    // khâu lại rơi xuống dưới sàn đồng hồ và ta quay về đúng lỗi cũ.
+    let t0 = performance.now();
+    for (let i = 0; i < batch; i++) {
+      ce.textContent = texts[(k * batch + i) % texts.length];
+      hl.collectTextNodes(ce);
+    }
+    tCollect.push((performance.now() - t0) / batch);
+
+    const maps = texts.map((t) => { ce.textContent = t; return hl.collectTextNodes(ce); });
+    t0 = performance.now();
+    for (let i = 0; i < batch; i++) rules.checkText(maps[i % maps.length].text);
+    const tCheck = (performance.now() - t0) / batch;
+
+    ce.textContent = texts[k % texts.length];
+    const map = hl.collectTextNodes(ce);
+    const issues = rules.checkText(map.text);
+    t0 = performance.now();
+    for (let i = 0; i < batch; i++) hl.paint(ce, 'contenteditable', issues, map);
+    tPaint.push((performance.now() - t0) / batch);
+
+    tAll.push(tCollect[tCollect.length - 1] + tCheck + tPaint[tPaint.length - 1]);
+  }
+  say(row(`${len} ký tự — ${nhan}`, stats(tAll)));
+  if (len === 700 || len === 6000) {
+    say(`${'   trong đó collect'.padEnd(26)}${ms(stats(tCollect).p50).padStart(9)}`);
+    say(`${'   trong đó paint'.padEnd(26)}${ms(stats(tPaint).p50).padStart(9)}`);
+  }
+}
+hl.clear(ce, 'contenteditable');
+ce.textContent = '';
+
+// --- C2. Văn bản DÀY LỖI — vì sao bảng trên cho paint ≈ 0 --------------------
+// Văn bản thật chỉ có ~0,1 lỗi mỗi lượt, nên phần lớn lượt `paint` không có gì
+// để vẽ và con số 0,000 ở trên là thật nhưng VÔ NGHĨA cho trường hợp xấu. Đo
+// riêng bằng văn bản cố tình dày lỗi.
+say('\n=== C. VĂN BẢN DÀY LỖI — paint tốn bao nhiêu khi CÓ việc ===\n');
+say(`${'ký tự / số lỗi'.padEnd(26)}${'checkText'.padStart(12)}${'paint'.padStart(12)}   (ms, p50)`);
+say('-'.repeat(52));
+const bad = 'Mình xin chia sẽ một vài trãi nghiệm và nổ lực của cả nhóm. ';
+for (const n of [1, 5, 20, 60]) {
+  const text = bad.repeat(n);
+  ce.textContent = text;
+  const map = hl.collectTextNodes(ce);
+  const issues = rules.checkText(map.text);
+  for (let i = 0; i < 20; i++) hl.paint(ce, 'contenteditable', issues, map);
+  const bp = n <= 5 ? 200 : n <= 20 ? 60 : 20;
+  const bc = n <= 5 ? 2000 : n <= 20 ? 500 : 200;
+  const pp = []; const pc = [];
+  for (let k = 0; k < 30; k++) {
+    let t0 = performance.now();
+    for (let i = 0; i < bp; i++) hl.paint(ce, 'contenteditable', issues, map);
+    pp.push((performance.now() - t0) / bp);
+    t0 = performance.now();
+    for (let i = 0; i < bc; i++) rules.checkText(text);
+    pc.push((performance.now() - t0) / bc);
+  }
+  say(`${`${text.length} ký tự / ${issues.length} lỗi`.padEnd(26)}`
+    + `${ms(stats(pc).p50).padStart(12)}${ms(stats(pp).p50).padStart(12)}`);
+}
+hl.clear(ce, 'contenteditable');
+ce.textContent = '';
+say('\npaint tốn ~0,5µs mỗi lỗi — không đáng kể ngay cả khi 180 lỗi cùng lúc.');
+say('checkText tăng theo ĐỘ DÀI văn bản, không theo số lỗi.');
+
+// --- D. đối chiếu ------------------------------------------------------------
+say('\n=== D. ĐỐI CHIẾU ===\n');
+say(`tầng luật, bài đăng 280 ký tự : p50 ${ms(kq[280].p50)}ms`);
+say('tầng model, cùng máy          : p50 18–24ms  (dev/onnx-test.html)');
+say(`tỷ lệ                         : model chậm hơn ~${Math.round(21 / kq[280].p50)}x`);
+say('');
+say('run() bị debounce 400ms, nên tầng luật KHÔNG chạy mỗi phím gõ mà chạy');
+say('400ms sau khi ngừng gõ. Ngân sách một khung hình 60fps là 16,7ms.');
+</script>
+</body>
+</html>
