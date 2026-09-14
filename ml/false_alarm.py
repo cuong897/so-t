@@ -172,6 +172,8 @@ def main() -> None:
     ap.add_argument("--max-len", type=int, default=128)
     ap.add_argument("--threshold", type=float, default=PROD_THRESHOLD)
     ap.add_argument("--margin", type=float, default=PROD_MARGIN)
+    ap.add_argument("--consonant-threshold", type=float, default=None,
+                    help="ngưỡng RIÊNG cho nhãn phụ âm và âm cuối")
     ap.add_argument("--out", type=Path, default=Path("out/false_alarm.json"))
     ap.add_argument("--max-samples", type=int, default=500,
                     help="giữ lại tối đa bao nhiêu câu bị báo oan, KÈM NGUYÊN "
@@ -189,7 +191,10 @@ def main() -> None:
     sess = ort.InferenceSession(str(args.onnx), opts,
                                 providers=["CPUExecutionProvider"])
 
-    dung_nguong = (args.threshold, args.margin) == (PROD_THRESHOLD, PROD_MARGIN)
+    tbl = (gate.thresholds_for(args.threshold, args.consonant_threshold)
+           if args.consonant_threshold is not None else None)
+    dung_nguong = ((args.threshold, args.margin) == (PROD_THRESHOLD, PROD_MARGIN)
+                   and tbl is None)
     print(f"model     : {args.onnx}  ({args.onnx.stat().st_size / 1e6:.1f} MB)")
     print(f"nguong    : p >= {args.threshold}  va  p - KEEP >= {args.margin}"
           + ("   <-- DUNG nguong san pham" if dung_nguong
@@ -202,13 +207,13 @@ def main() -> None:
         print(f"A. Wikipedia sach (test, model chua tung thay): {len(s):,} cau")
         results.append(run("wikipedia_test", s, sess, tok, lexicon,
                            args.max_len, args.threshold, args.margin,
-                           args.max_samples))
+                           args.max_samples, tbl))
     if args.source in ("vsec", "both"):
         s = clean_sentences_from_vsec(args.vsec, args.limit)
         print(f"B. VSEC nua giu kin, cau da sua dung (van nguoi that): {len(s):,} cau")
         results.append(run("vsec_heldout_dung", s, sess, tok, lexicon,
                            args.max_len, args.threshold, args.margin,
-                           args.max_samples))
+                           args.max_samples, tbl))
 
     print("\n=== BAO DONG GIA TREN VAN BAN DUNG ===")
     for r in results:
@@ -229,6 +234,7 @@ def main() -> None:
             "tokenizer": str(args.tokenizer),
             "threshold": args.threshold,
             "margin": args.margin,
+            "consonant_threshold": args.consonant_threshold,
             "dung_nguong_san_pham": dung_nguong,
             "lenh": " ".join(sys.argv),
             "ghi_chu": "Chi do tang model. Tang luat do rieng bang "

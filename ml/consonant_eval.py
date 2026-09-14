@@ -177,6 +177,8 @@ def score(args) -> None:
     o.intra_op_num_threads = 1
     sess = ort.InferenceSession(str(args.onnx), o, providers=["CPUExecutionProvider"])
 
+    tbl = (gate.thresholds_for(args.threshold, args.consonant_threshold)
+           if args.consonant_threshold is not None else None)
     cases = [json.loads(l) for l in args.out.read_text(encoding="utf-8").splitlines()]
     if args.limit:
         cases = cases[: args.limit]
@@ -193,7 +195,7 @@ def score(args) -> None:
         # A. câu ĐÃ hỏng — model có sửa lại đúng không
         words[i] = c["wrong"]
         tag, _ = decide(sess, tok, words, i, lexicon, args.max_len,
-                        args.threshold, args.margin)
+                        args.threshold, args.margin, tbl)
         if tag is None:
             stat[g]["bo_sot"] += 1
         elif vi.TAGS[tag](c["wrong"]) == c["right"]:
@@ -204,7 +206,7 @@ def score(args) -> None:
         # B. ĐÚNG câu gốc — model có gạch oan chính từ đó không
         words[i] = c["right"]
         tag2, _ = decide(sess, tok, words, i, lexicon, args.max_len,
-                         args.threshold, args.margin)
+                         args.threshold, args.margin, tbl)
         if tag2 is not None:
             stat[g]["bao_oan"] += 1
 
@@ -234,7 +236,8 @@ def score(args) -> None:
     res.parent.mkdir(parents=True, exist_ok=True)
     res.write_text(json.dumps({
         "_meta": {"model": str(args.onnx), "threshold": args.threshold,
-                  "margin": args.margin, "ca": n_all, "tap": str(args.out)},
+                  "margin": args.margin, "ca": n_all, "tap": str(args.out),
+                  "consonant_threshold": args.consonant_threshold},
         "theo_nhom": {g: dict(stat[g]) for g in stat},
         "cong": dict(tot),
         "recall": tot["sua_dung"] / n_all if n_all else 0.0,
@@ -253,6 +256,8 @@ def main() -> None:
     ap.add_argument("--lexicon", type=Path, default=Path("data/lexicon.tsv"))
     ap.add_argument("--test-data", type=Path, default=Path("data/test.jsonl"))
     ap.add_argument("--out", type=Path, default=Path("data/consonant_eval.jsonl"))
+    ap.add_argument("--consonant-threshold", type=float, default=None,
+                    help="ngưỡng RIÊNG cho nhãn phụ âm và âm cuối")
     ap.add_argument("--result", default="out/consonant_eval.json")
     ap.add_argument("--scan", type=int, default=20000)
     ap.add_argument("--per-tag", type=int, default=120)

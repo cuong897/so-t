@@ -117,7 +117,8 @@ def _gate(logit_row, allowed: list[str], token: str,
 
 
 def predict(model, tok, device, words: list[str], lexicon, max_len: int,
-            threshold: float = 0.0, margin: float = 0.0) -> list[str]:
+            threshold: float = 0.0, margin: float = 0.0,
+            thresholds: dict[str, float] | None = None) -> list[str]:
     """Dự đoán nhãn cho từng từ, CHẶN trong applicable_tags như lúc chạy thật.
 
     Dùng encode_words chứ không dùng word_ids() của HuggingFace: PhoBERT không
@@ -146,12 +147,13 @@ def predict(model, tok, device, words: list[str], lexicon, max_len: int,
             continue
         idxs = [vi.TAG_INDEX[t] for t in allowed]
         tags[w] = _gate(logits[pos, idxs].cpu().numpy(), allowed, token,
-                        threshold, margin)
+                        threshold, margin, thresholds)
     return tags
 
 
 def predict_onnx(sess, tok, words: list[str], lexicon, max_len: int,
-                 threshold: float = 0.0, margin: float = 0.0) -> list[str]:
+                 threshold: float = 0.0, margin: float = 0.0,
+                 thresholds: dict[str, float] | None = None) -> list[str]:
     """Bản ONNX của predict().
 
     Cần thiết để trả lời câu hỏi mà export_onnx.py không tự trả lời được:
@@ -180,7 +182,8 @@ def predict_onnx(sess, tok, words: list[str], lexicon, max_len: int,
         if len(allowed) <= 1:
             continue
         idxs = [vi.TAG_INDEX[t] for t in allowed]
-        tags[w] = _gate(logits[pos, idxs], allowed, token, threshold, margin)
+        tags[w] = _gate(logits[pos, idxs], allowed, token, threshold, margin,
+                        thresholds)
     return tags
 
 
@@ -239,6 +242,9 @@ def main() -> None:
     ap.add_argument("--margin", type=float, default=0.0,
                     help="biên phải hơn KEEP (sản phẩm: 0.25)")
     ap.add_argument("--limit", type=int, default=0, help="chỉ chấm N câu đầu")
+    ap.add_argument("--consonant-threshold", type=float, default=None,
+                    help="ngưỡng RIÊNG cho nhãn phụ âm và âm cuối. Để trống "
+                         "thì mọi nhãn dùng chung --threshold.")
     ap.add_argument("--result", default="out/eval.json",
                     help="nơi lưu JSON. Mặc định out/eval.json bị GHI ĐÈ mỗi "
                          "lần chạy — truyền tên riêng khi đối chiếu nhiều bản model.")
@@ -249,6 +255,11 @@ def main() -> None:
 
     from noise import load_lexicon
     lexicon = load_lexicon(args.lexicon) or None
+    tbl = (gate.thresholds_for(args.threshold, args.consonant_threshold)
+           if args.consonant_threshold is not None else None)
+    if tbl:
+        print(f"ngưỡng RIÊNG cho phụ âm: {args.consonant_threshold} "
+              f"(thanh điệu giữ {args.threshold})")
     print(f"từ điển âm tiết: {len(lexicon) if lexicon else 0:,}"
           + ("" if lexicon else "  (TRỐNG — chạy dataset.py trước để có lọc ứng viên)"))
 
@@ -295,7 +306,7 @@ def main() -> None:
         print(f"\nmodel: {args.onnx}  "
               f"{args.onnx.stat().st_size / 1e6:.1f} MB  (onnxruntime, 1 luồng CPU)")
         fn = lambda words: predict_onnx(sess, tok, words, lexicon, args.max_len,
-                                        args.threshold, args.margin)
+                                        args.threshold, args.margin, tbl)
     else:
         import torch
         from transformers import AutoModelForTokenClassification
@@ -306,7 +317,7 @@ def main() -> None:
         n_params = sum(p.numel() for p in model.parameters())
         print(f"\nmodel: {args.model}  {n_params / 1e6:.1f}M tham số  ({device})")
         fn = lambda words: predict(model, tok, device, words, lexicon, args.max_len,
-                                   args.threshold, args.margin)
+                                   args.threshold, args.margin, tbl)
 
     print("\n=== B. TRONG TẦM (so sánh công bằng) ===")
     b = score(rows, fn, scoped=True, lexicon=lexicon)
@@ -327,7 +338,8 @@ def main() -> None:
         {"scope": {k: v for k, v in sc.items() if k != "by_tag"},
          "in_scope": b, "full": c, "model": str(args.onnx or args.model),
          "threshold": args.threshold, "margin": args.margin,
-         "held_out": bool(args.held_out), "limit": args.limit},
+         "held_out": bool(args.held_out), "limit": args.limit,
+         "consonant_threshold": args.consonant_threshold},
         ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     print(f"\nđã lưu -> {res}")
 

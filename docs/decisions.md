@@ -1073,3 +1073,78 @@ bản thứ năm. Đổi cổng mà quên một bản là phép đo và sản ph
 thầm — đúng hạng mục lỗi mà test parity `vi.js`/`vi.py` được dựng ra để chặn.
 Chưa gộp, vì đợt này kết luận là **không đổi cổng**; nhưng lần sau ai định đụng
 vào ngưỡng thì gộp trước, đo sau.
+
+---
+
+### 29. Ngưỡng riêng cho lớp phụ âm — ngưỡng chấp nhận ghi TRƯỚC khi đo
+
+Việc số 4 của bàn giao. Ý tưởng và bằng chứng đã có từ quyết định 27:
+
+* `consonant_diagnose.py` đo được **244 ca** d/gi/r mà nhãn đúng **đã dẫn đầu**
+  nhưng chưa vượt ngưỡng, trong đó **32 ca ở p ≥ 0,90** và **56 ca ở p ≥ 0,80**.
+* Ví dụ đầu bảng của README — `anh đã dành được phần quà` — model xếp
+  `dành→giành` ở **p = 0,835**, tức nó đã biết, chỉ chưa dám nói.
+* Báo oan của v4 đang ở **1,30% / 1,00%**, thấp hơn cả v3 lẫn v1, nên chỗ trống
+  rộng hơn lúc quyết định 26 thử hướng này.
+
+#### Vì sao đây KHÔNG phải việc quyết định 26 đã làm rồi
+
+Quyết định 26 có thử ngưỡng theo lớp, nhưng theo **chiều ngược lại**: thanh điệu
+0,85 / phụ âm 0,95. Nó ra 1,60%/1,75% báo oan và bị bỏ — *và kết luận của chính
+nó* là "báo oan tăng **không** do phụ âm mà do phải hạ ngưỡng thanh điệu".
+
+Chiều đúng là **giữ thanh điệu ở 0,95, hạ riêng phụ âm**. Chưa ai đo.
+
+#### Và vì sao nó cũng KHÔNG phải hướng quyết định 28 vừa bác
+
+Quyết định 28 bác việc nới cổng cho **token phi từ** — một tiêu chí dựa vào *từ
+điển*. Cái đó hỏng vì ở những vị trí ấy model không thiếu tự tin, nó thiếu đáp
+án: p của nhãn đúng có trung vị 0,0014.
+
+Lần này tiêu chí dựa vào **lớp nhãn**, và số liệu ngược hẳn: ở lớp d/gi/r, nhãn
+đúng **đã dẫn đầu** trong 244 ca với p trung vị 0,257, và 32 ca đã ở trên 0,90.
+Đây là chỗ model *biết mà chưa dám*, không phải chỗ nó *không biết*. Hai tình
+huống khác nhau, nên kết quả của 28 không định đoạt được kết quả của 29.
+
+Nếu kết quả vẫn ra hình dạng của 28 — recall được tí chút, precision trả nhiều
+— thì dừng, và ghi lại là lớp nhãn cũng không phải tiêu chí đúng.
+
+#### Việc phải làm trước: gộp cổng về một bản
+
+Đã làm ở `331654c`. Luật quyết định từng có **bốn** bản chép tay; đổi ngưỡng
+trên bốn bản là cách chắc chắn nhất để phép đo và sản phẩm tách nhau ra. Giờ
+phía Python có `gate.py`, phía JS có `onnxEngine.js`, và `test/gate.test.mjs`
+canh hai bên bằng 1.200 ca — đã kiểm là test **thật sự đổ** khi cố tình làm lệch
+ngưỡng JS đi 0,02.
+
+#### Một tính chất của phép đo này, phải nói trước
+
+Hạ ngưỡng cho một lớp chỉ **thêm** chỗ báo, không bao giờ bớt. Nên:
+
+* recall chỉ có thể **tăng hoặc đứng yên**
+* precision chỉ có thể **giảm hoặc đứng yên**
+* báo oan chỉ có thể **tăng hoặc đứng yên**
+
+Tức "recall tăng" ở đây **không** là bằng chứng của gì cả — nó là điều hiển
+nhiên về mặt toán học. Câu hỏi duy nhất là phần recall thêm được có đáng cái giá
+precision hay không. Đừng báo cáo phần tăng mà quên phần trả.
+
+#### Ngưỡng chấp nhận
+
+Mốc nền là v4 đang ship, đo ở ngưỡng dùng chung 0,95. Quét ngưỡng phụ âm ở
+**0,90 / 0,85 / 0,80**, thanh điệu giữ nguyên 0,95.
+
+| Thước đo | v4 hiện tại | Điều kiện để đổi | Vì sao mốc đó |
+|---|---|---|---|
+| precision VSEC trong tầm | 0,9749 | **≥ 0,9500** | ranh giới cứng từ quyết định 25 và 27. Đây là thứ không được phá |
+| báo oan văn bản đúng | 1,30% / 1,00% | **≤ 1,50%** cả hai nguồn | v3 đã ship ở 1,45%/1,25%; quyết định 26 bác một cấu hình ở 1,65%/1,75%. 1,50% giữ ta không tệ hơn bản đã ship |
+| recall phụ âm (n=1796) | 43,3% | **≥ 46,3%** (+3 điểm) | σ = 1,2 điểm, +3 là ~2,5σ |
+| recall d/gi/r (n=596) | 28,5% | **≥ 32,5%** (+4 điểm) | σ = 1,9 điểm, +4 là ~2σ |
+| sửa sai d/gi/r | 5,2% | **≤ 8,0%** | mức của v3, tức không được lùi về chỗ cũ |
+
+Trong số mức nào qua hết, chọn mức **thấp nhất về báo oan**, không phải mức cao
+nhất về recall — precision quan trọng hơn recall (quyết định 8). Không mức nào
+qua thì **giữ nguyên 0,95 dùng chung**, và ghi kết quả lại y như khi nó thành
+công.
+
+**Kết quả: xem mục dưới.**
