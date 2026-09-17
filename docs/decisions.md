@@ -2516,3 +2516,42 @@ A, mỗi tab 2–3 lượt model thật. Hàng đợi chạy đúng dưới tran
 
 **Không đo:** Facebook (C của bàn giao), máy yếu, Chrome vừa khởi động lại máy, và tình
 huống người dùng mở hàng chục tab rồi gõ ở nhiều tab cùng lúc.
+
+#### Thử trên Lexical THẬT — `dev/lexical-check.mjs`
+
+Trang đo của quyết định 38 là một `contenteditable` trần do chính mình viết. Facebook thì
+dùng Lexical, thứ đã giết tầng model một lần (quyết định 36). Gần nhất mà không cần tài
+khoản: `playground.lexical.dev`, gói store thật, Chrome headless, dán bằng sự kiện `paste`
+mang `clipboardData` để chính Lexical chèn nội dung.
+
+Bản offscreen, ô đã có sẵn ~900 ký tự văn bản mẫu của trang:
+
+```
+dán 494 ký tự → 0 sự kiện input · DOM đổi 2 đợt · #3 ĐÃ VẼ · model 169–182 ms, 8 lượt
+gạch: "chia sẽ" (w 72) · "trãi" (w 35) · "cứ" (w 25) — TỔNG từ input đầu 579–587 ms
+đọc lại sau 2 giây, khi Lexical đã dựng lại DOM: y nguyên
+```
+
+Đúng chỗ cần đúng: **dán không bắn `input`** mà vẫn soát, và vệt gạch **sống qua lần
+Lexical dựng lại DOM**.
+
+**Bẫy mất bốn lượt chạy mới thấy, và nó suýt thành một kết luận sai.** Bốn lượt đầu cho
+"dán vào không gạch gì" — trông hệt như quyết định 36 tái phát. Thật ra: **trong headless,
+click chuột không bắn `focusin`**. Content script chỉ gắn `MutationObserver` khi có
+`focusin`, nên không lượt soát nào chạy. Đặt một đầu dò đếm `focusin` ở ngữ cảnh trang mới
+thấy: `focusin: []`. Ép `blur()` rồi `focus()` bằng tay là mọi thứ đúng ngay.
+
+Ba điều rút ra, và điều thứ ba mới là điều đắt:
+
+1. Cùng họ với ghi chú sẵn có của `dev/harness-content.html` ("tab ẩn thì `focus()` không
+   bắn `focusin`, phải bắn tay") — bẫy đã biết, ở một chỗ mới, vẫn vấp.
+2. Lượt chạy hỏng còn để lại một triệu chứng phụ đánh lạc hướng: các vệt gạch **cũ** tụt
+   thành `Range` rỗng, bề rộng 0, sau khi Lexical dựng lại DOM. Nhìn thì tưởng lỗi vẽ; thật
+   ra chỉ là không có lượt soát mới nào để vẽ lại.
+3. **Đo "không có gì xảy ra" thì phải đo cả việc kích hoạt có xảy ra không.** Bốn lượt đầu
+   tôi đọc gạch chân và log — hai thứ ở *cuối* chuỗi. Thứ hỏng nằm ở *đầu* chuỗi, và không
+   có dấu vết nào của nó trong hai thứ đó.
+
+**`dev/lexical-check.mjs` không thay được việc thử trên Facebook thật**: trang nhẹ, không
+React của Facebook, không bộ gõ tiếng Việt, và extension nạp qua CDP chứ không cài như
+người dùng.

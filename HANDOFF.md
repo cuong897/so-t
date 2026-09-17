@@ -139,6 +139,12 @@ rồi **dán** đoạn thử ở dưới vào ô "Tạo bài viết" của Faceb
 
 Chế độ đo vẫn tắt mặc định — bật như hướng dẫn ở việc số 2 nếu cần số.
 
+Đã thử được tới đâu mà không cần tài khoản: `node dev/lexical-check.mjs` chạy gói store
+thật trên `playground.lexical.dev` (cùng Lexical Facebook dùng) — dán 494 ký tự, 0 sự kiện
+`input`, gạch đúng `cứ` sau 579 ms và vệt gạch sống qua lần Lexical dựng lại DOM. Còn thiếu
+đúng những thứ chỉ Facebook mới có: trang nặng, React của họ, bộ gõ tiếng Việt, và extension
+cài như người dùng chứ không nạp qua CDP.
+
 Nếu hỏng thì triệu chứng gần như chắc chắn là **im lặng** (tầng luật vẫn gạch, tầng model
 biến mất). Chỗ đọc đầu tiên: `chrome://extensions` → Soát → "service worker" → Console, và
 `soatLog` trên trang.
@@ -270,6 +276,8 @@ ml/                 vi.py, noise.py, mine_errors.py, build_corpus.py, dataset.py
 dev/                playground.html, onnx-test.html, shots.html (ảnh store)
   measure-chrome.mjs    quyết định 37 — lái chrome.exe thật (headless) qua CDP pipe,
                     nạp gói store, đo nạp/đứng hình/RAM mỗi tab/dán, tự chấm
+  lexical-check.mjs     quyết định 38 — gói store thật trên playground.lexical.dev:
+                    dán kiểu Lexical, kiểm gạch `cứ` sống qua lần dựng lại DOM
   harness-content.html  nạp NGUYÊN content/index.js với chrome.* giả lập — kiểm
                     đường dán; tab ẩn thì phải bắn focusin bằng tay
   bench-accept.html     quyết định 33 — chất lượng qua check(), phủ, đứng hình
