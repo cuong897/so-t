@@ -2396,7 +2396,7 @@ Chrome tắt lúc rảnh. Hiệu S8 − S4 là giá của 4 tab mở thêm khi m
 
 | # | điều kiện | cần |
 |---|---|---|
-| 1 | **đúng**: O gạch đúng một chỗ dưới `cứ`, không chỗ nào khác, ở mọi lần dán đoạn thử (bước 2, 5, 6) | **12 / 12** |
+| 1 | **đúng**: O gạch đúng một chỗ dưới `cứ`, không chỗ nào khác, ở mọi lần dán đoạn thử (bước 2, 5, 6 — năm lần mỗi lượt) | **15 / 15** |
 | 2 | **bộ nhớ mỗi tab**: [(S8 − S4) của O − (S8 − S4) của tắt] / 4, trung vị, sau GC | ≤ **30 MB** |
 | 3 | **bộ nhớ một lần**: (S4 O − S4 tắt) − 4 × số ở điều kiện 2, trung vị, sau GC | ≤ **350 MB** |
 | 4 | **đứng hình lúc mở trang**: long task dài nhất trong 10 s của t1–t4, trung vị, O | ≤ **50 ms** |
