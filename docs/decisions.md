@@ -2127,3 +2127,115 @@ nạp model của trang đó, `soatLog` ghi 8 lượt chấm gần nhất tách 
   Người dùng thật **dán** — và trình soạn thảo thật tự quản DOM.
 * **Chuyện nạp model mỗi trang vẫn là thật**, chỉ không phải thủ phạm lần này. Chưa
   đo trong Chrome thật; giờ đo được bằng `soatModel`.
+
+---
+
+### 37. Mỗi trang tự nạp model — đo trong Chrome thật, luật chọn ghi TRƯỚC
+
+Việc số 1 của bàn giao. `manifest.json` chèn content script vào `<all_urls>`, và
+content script gọi `model.load()` ngay khi trang mở: **mỗi trang** nạp 78MB model +
+14MB wasm và tạo một phiên onnxruntime riêng — kể cả trang không có ô nhập liệu nào.
+Hai hướng sửa đã nghĩ tới, nạp lười và offscreen document, đều có giá. Quyết định 36
+dạy rằng đề xuất kiến trúc trước khi có số là cách sửa nhầm, nên mục này ghi **cách
+đo và luật chọn** trước lần đo đầu tiên.
+
+#### Công cụ: `dev/measure-chrome.mjs`
+
+Bàn giao định đo tay (chế độ đo + Shift+Esc): một mẫu cho mỗi ô, không đối chứng.
+Thay bằng một script Node lái **Chrome đã cài trên máy** (152) qua CDP bằng pipe,
+profile tạm, nạp **gói store giải nén** (`dist/soat-1.0.0.zip`) bằng
+`Extensions.loadUnpacked` — cùng đường `chrome-extension://`, cùng content script
+người dùng nhận.
+
+Trang thử do script tự phục vụ ở 127.0.0.1; mỗi tab một **site khác nhau**
+(`t1.test`…`t8.test`, trỏ về 127.0.0.1) để mỗi tab một renderer riêng như các trang
+khác tên miền ngoài đời. Trang có một `textarea`, một ô `contenteditable` và vài đoạn
+văn — không script nào khác.
+
+Mỗi lần mở Chrome là một **lượt**, theo thứ tự:
+
+1. **Tuần tự:** mở t1…t4, mỗi tab ở tiền cảnh 10 giây rồi mới mở tab sau.
+2. **Bộ nhớ S4:** đợi 5 giây, đọc; rồi ép GC từng tab (`HeapProfiler.collectGarbage`)
+   và đọc lần nữa. Đọc = cộng **private bytes** (`PrivateUsage`, thứ cột "Memory
+   footprint" của Task Manager Chrome hiện trên Windows) của mọi renderer, **trừ tiến
+   trình của chính extension** (`--extension-process`) — đó là chi phí một lần, không
+   theo tab.
+3. **Đồng thời:** mở t5…t8 cùng lúc (như khôi phục phiên khi mở Chrome), đợi 20 giây,
+   đọc **S8** như bước 2.
+4. **Dán, chỉ lượt bật:** ở t1, focus ô `contenteditable` rồi thay nội dung bằng thao
+   tác DOM — không bắn `input`, như Lexical khi dán — bằng đoạn thử 494 ký tự của bàn
+   giao: có dấu câu, rồi không dấu câu, rồi có dấu câu lần nữa (cache ấm). Ghi
+   `soatLog`, kiểm gạch nằm đúng dưới `cứ`.
+
+Sáu lượt xen kẽ: tắt, bật, tắt, bật, tắt, bật — **tắt** là không nạp extension. Mỗi
+tab ghi ở ngữ cảnh chính của trang (`PerformanceObserver`, cài trước mọi script):
+mọi long task trong thời gian đứng của tab, và lúc `soatModel` đổi. Lượt bật đặt
+`soatDebug` qua service worker trước khi mở tab đầu.
+
+#### Đại lượng
+
+| | là gì | lấy từ |
+|---|---|---|
+| **T** | nạp model ở tab mở tuần tự | `soatModel` t2–t4, trung vị 9 mẫu |
+| **L** | long task dài nhất một trang phải chịu khi nạp | "long task dài nhất trong 10 giây" của t1–t4, trung vị 12 mẫu |
+| **M** | bộ nhớ thêm mỗi tab | (trung vị S4 bật − trung vị S4 tắt) / 4, **sau** ép GC |
+| T₁ | nạp model ở tab đầu tiên sau khi mở Chrome | `soatModel` t1, 3 mẫu |
+| T∥ | nạp model khi 4 tab mở cùng lúc | `soatModel` t5–t8, 12 mẫu |
+| M8, M trước GC | như M | S8 / 8; S4 không ép GC |
+| tổng đứng hình | Σ (long task − 50 ms) trong thời gian đứng | t1–t4 |
+
+Chỉ **T, L, M** vào luật. Phần còn lại ghi để hiểu, không để chọn.
+
+#### Đối chứng và điều kiện hợp lệ
+
+* **A/A bộ nhớ:** ba lượt tắt, (max − min của S4 sau GC) / 4 ≤ **10 MB**. Trượt → chạy
+  lại cả bộ một lần; lại trượt thì M không đo được và dừng.
+* **Trang thử sạch:** trung vị "long task dài nhất" của t1–t4 ở lượt tắt ≤ **50 ms**.
+  Trượt → L vô hiệu.
+* **Đủ thời gian:** tab nào ở lượt bật chưa `san-sang` khi hết thời gian đứng → nâng
+  thời gian đứng lên 30 giây / 60 giây cho **mọi** lượt, cả bật lẫn tắt, và chạy lại
+  cả bộ.
+
+#### Luật chọn
+
+| kết quả | điều kiện | làm gì |
+|---|---|---|
+| **giữ nguyên** | M ≤ 30 MB **và** L ≤ 100 ms **và** T ≤ 1,5 s | không đổi kiến trúc, sang việc số 2 |
+| **nạp lười** | không giữ nguyên được, nhưng M ≤ 100 MB **và** L ≤ 200 ms **và** T ≤ 2 s | nạp model khi focus ô đủ điều kiện lần đầu trên trang |
+| **offscreen** | còn lại | offscreen document; ghi điều kiện chấp nhận của nó trước khi viết code |
+
+Vì sao những con số này — viết trước khi có số:
+
+* **L ≤ 100 ms để giữ nguyên:** nạp ở mọi trang nghĩa là mỗi lần mở trang, trang đứng
+  một lần trong lúc người dùng cuộn hay bấm. 100 ms là ngân sách phản hồi của RAIL.
+* **L ≤ 200 ms để nạp lười:** nạp lười dời đúng lần đứng ấy tới **lúc người dùng bắt
+  đầu gõ** — nó rơi thẳng vào một tương tác, nên phải nằm trong mức "tốt" của INP.
+* **M ≤ 30 MB để giữ nguyên:** trả cho mọi tab, kể cả tab không bao giờ gõ. 10 tab là
+  300 MB.
+* **M ≤ 100 MB để nạp lười:** chỉ trả cho tab đã gõ. Người dùng mục tiêu mở sẵn
+  Facebook, Messenger, Gmail — 3–5 tab, tức ≤ 500 MB.
+* **T ≤ 2 s để nạp lười:** lần dán đầu tiên mỗi trang đợi T + 400 ms debounce mới có
+  gạch của model.
+
+Offscreen trả nạp và bộ nhớ **một lần cho cả trình duyệt** và không đứng trang nào,
+nên nó là nhánh "còn lại" chứ không cần ngưỡng. Giá của nó — quyền mới, văn bản đi
+qua message nội bộ, đúng loại thay đổi từng giết tầng model hai tuần (quyết định 24)
+— đo riêng khi làm.
+
+#### Ghi trước để không tự lừa mình
+
+* **Dự đoán: giữ nguyên gần như chắc trượt.** Trọng số 78MB nằm trong heap wasm của
+  từng tab, M khó dưới 80 MB. Câu hỏi thật là **L**: `InferenceSession.create` tối ưu
+  đồ thị bên trong wasm, trên luồng chính — tôi đoán một long task vài trăm ms, tức
+  offscreen. Viết ra để nếu số nói khác thì thấy mình đoán sai, không phải để số chiều
+  theo.
+* **M đọc sau ép GC là chặn dưới:** bộ đệm 78MB vừa tải có thể còn nằm chờ GC trên máy
+  người dùng. Nếu M trước và sau GC nằm hai phía một ngưỡng, ghi rõ — người dùng thấy
+  số trước GC.
+* **Không đo được ở đây:** đĩa lạnh thật (T₁ là tab đầu *sau khi mở Chrome*, file đã
+  nằm trong cache hệ điều hành từ lượt trước), máy yếu hơn (máy đo 8 nhân / 16 luồng,
+  15,3 GB), và **Facebook** (C của bàn giao — cần đăng nhập; chủ repo đo bằng chế độ
+  đo). Người dùng mục tiêu hay dùng laptop yếu hơn, nên T và L ở đây là **chặn dưới**.
+* **Cờ Chrome khác người dùng:** `--remote-debugging-pipe`,
+  `--enable-unsafe-extension-debugging`, profile trắng, không extension nào khác. Không
+  cờ nào đổi cách nạp wasm hay chạy content script.
