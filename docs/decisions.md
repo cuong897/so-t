@@ -1610,3 +1610,78 @@ chỉ canh phần đuôi trả `-1`, không canh từ cuối cùng có trọn v�
    sẽ không đi.
 3. **Bộ nhớ đệm theo câu.** Sửa một câu trong bài 6.000 ký tự thì chỉ nên chạy
    lại một câu (~27ms) thay vì 48 câu (~1.168ms).
+
+---
+
+### 33. Chấm theo CÂU thay cho cắt cụt — ngưỡng chấp nhận ghi TRƯỚC khi viết code
+
+Lần thứ ba theo nếp của `77a9148` và `544c455`. Nhưng lần này phải nói thẳng một
+chỗ khác hai lần trước: **phép đo thăm dò đã chạy rồi** (quyết định 32), và chính
+nó chọn ra hướng chấm theo câu. Nên ngưỡng dưới đây không che được việc chọn
+hướng sau khi nhìn số. Thứ nó che được là bước tiếp theo: **bản cài đặt thật**,
+đi qua đúng `OnnxEngine.check()` mà extension gọi, chưa ai đo.
+
+Các ngưỡng đặt quanh mốc A của quyết định 32 (câu đứng một mình), vì A là đường
+mà bản sửa định đi theo. Sai số chuẩn tính trên đúng cỡ mẫu đó: recall trên 940
+lỗi SE ≈ 0,0143; precision trên ~723 chỗ báo SE ≈ 0,0068.
+
+#### Thiết kế đem ra đo — cố định từ bây giờ
+
+1. `check(text)` tách `spans` của cả văn bản như cũ, rồi chia **mảng spans** (không
+   chia chuỗi) thành câu ở dấu `.` `!` `?` `…` và xuống dòng. Offset gạch chân
+   lấy thẳng từ `spans` gốc.
+2. Mỗi câu một lượt `session.run`. **Nhả luồng** giữa hai lượt.
+3. Bộ nhớ đệm theo **nội dung câu** (chuỗi các từ), kích thước giới hạn. Kết quả
+   lưu theo chỉ số từ trong câu, cộng offset lúc trả ra.
+4. Có thể huỷ giữa chừng: `check()` nhận tín hiệu huỷ và dừng sau lượt đang chạy
+   — `run()` đã có `s.seq`, nhưng hôm nay nó chỉ vứt kết quả **sau khi** đã đốt
+   xong CPU.
+5. **`encodeWords` không bao giờ cắt giữa một từ.** Từ không vừa trọn thì bỏ cả
+   từ. Sửa cả `bpe.js` lẫn `ml/encoding.py`, và thêm test cho đúng trường hợp
+   `nguyễn` ở quyết định 32.
+6. **Đường lui** cho một "câu" dài hơn cửa sổ (văn bản không dấu câu): đo đúng
+   hai ứng viên, không thêm:
+   * **F1** — cắt cứng ở ranh giới từ, mỗi mảnh ≤ 40 subword.
+   * **F2** — cửa sổ trượt 64 subword, bước 32; mỗi từ lấy kết quả từ cửa sổ mà
+     nó nằm **gần giữa nhất**.
+
+   Luật chọn: trong số ứng viên qua điều kiện 4 dưới đây, lấy ứng viên **ít báo
+   oan hơn**; hoà thì lấy F1 vì rẻ hơn. Không ứng viên nào qua thì văn bản không
+   dấu câu **giữ nguyên hành vi hiện nay** (chỉ chấm cửa sổ đầu) và ghi lại.
+
+#### Tám điều kiện
+
+Đo bằng một trang mới chạy thẳng `check()` trên bài đăng dựng từ câu VSEC giữ kín:
+câu có lỗi xen giữa câu đã sửa đúng, chấm bằng nhãn vàng.
+
+| # | điều kiện | mốc | phải đạt |
+|---|---|---|---|
+| 1 | phủ, bài có dấu câu, 280/700/2.000/6.000 ký tự | 100/58/20/7% | **100%** mọi cỡ |
+| 2 | precision, bài có dấu câu | A = 0,9654 | **≥ 0,9550** (A − 1,5 SE) |
+| 3 | recall trong tầm, bài có dấu câu | A = 0,7426 | **≥ 0,7140** (A − 2 SE) |
+| 4 | precision, bài KHÔNG dấu câu | — | **≥ 0,9500** (ranh giới cứng, quyết định 25) |
+| 5 | câu sạch bị gạch oan, bài toàn câu đúng | `false_alarm.py` 1,05% | **≤ 1,50%** |
+| 6 | đứng hình lâu nhất, mọi cỡ, có và không dấu câu | hôm nay 70,8ms | **≤ 100ms** |
+| 7 | sửa MỘT câu trong bài 6.000 ký tự đã chấm xong | chấm lại cả bài | lượt chạy lại **≤ 100ms tổng** |
+| 8 | văn bản chỉ có một câu ngắn | bản đang ship | kết quả **giống hệt từng issue** |
+
+Cộng thêm, không tính là điều kiện vì không có chỗ thương lượng: `npm run test:all`
+pass, và test parity `gate.test.mjs` không đổi — bản sửa không đụng vào phép quyết
+định, chỉ đổi thứ được đưa vào nó.
+
+**Luật ship:** qua cả tám thì ship. Trượt 2, 3 hoặc 5 thì **không ship** gì cả,
+giữ cắt cụt, ghi lại. Trượt đúng 4 thì ship phần có dấu câu, văn bản không dấu
+câu giữ hành vi cũ — luật đã ghi ở mục 6 phía trên. Trượt 1, 6, 7 hoặc 8 là lỗi
+cài đặt, sửa rồi đo lại **toàn bộ**, không đo lại riêng điều kiện đã trượt.
+
+#### Ghi trước ba điều để sau không tự lừa mình
+
+* **Điều kiện 3 qua là chuyện dễ đoán**, vì mỗi câu đi đúng đường của mốc A. Nó
+  có mặt để bắt lỗi cài đặt (offset lệch, cache trả nhầm câu), không phải để
+  chứng minh hướng này đúng. Điều kiện khó thật là 4 và 6.
+* **So với bản đang ship thì recall trên bài dài chắc chắn tăng**, vì bản đang ship
+  bỏ qua 80–93% văn bản. "Recall tăng gấp mấy lần" không phải kết quả, nó hiển
+  nhiên. Đừng đưa nó lên README như một thành tích.
+* **Mọi con số hiệu năng đang ghi trong README và bàn giao là số của câu đứng một
+  mình.** Nếu bản này ship, chúng lần đầu tiên đúng với sản phẩm. Nếu không ship,
+  chúng phải được ghi chú lại theo quyết định 32 — việc đó làm bất kể kết quả.
