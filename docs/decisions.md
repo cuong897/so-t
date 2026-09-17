@@ -2056,3 +2056,74 @@ lập luận thiết kế thì không.
 * **Code cache cửa sổ nằm sẵn trong `onnxEngine.js`, tắt.** Đợt sau chỉ cần thêm kế
   hoạch cửa sổ cắt theo nội dung (một ứng viên đường lui mới, `F2c`) rồi đo lại **cả
   chất lượng** — cửa sổ khác thì issue khác, không còn điều kiện "giống hệt" để dựa.
+
+---
+
+### 36. "Model chậm" hoá ra là "dán vào không soát" — và suýt sửa nhầm bằng cả một kiến trúc
+
+Chủ repo thử trên Facebook thật (việc số 1): tầng model **có** gạch `cứ→cư`, nhưng
+"mất một lúc mới hiện". Chuỗi giả thuyết của phiên này, theo đúng thứ tự, vì thứ
+tự đó là bài học:
+
+1. **"Mỗi trang tự nạp lại model 78MB."** Đúng là code làm vậy (xem dưới), và tôi
+   đã đề xuất cả một kiến trúc offscreen document để sửa. Chủ repo bác: *chậm cả khi
+   không F5.*
+2. **"Phần chấm chạy chậm trên Facebook."** Thêm công cụ đo vào content script. Log
+   Console không hiện gì — Console lọc theo ngữ cảnh, content script ở ngữ cảnh
+   riêng. Chuyển sang ghi dấu lên DOM.
+3. Trước khi có số, chủ repo tự nhận ra: **dán xong thì không hiện, phải gõ thêm.**
+   Không phải chậm — là **không được gọi**.
+
+#### Nguyên nhân, đo trên Lexical thật
+
+Ô "Tạo bài viết" của Facebook là Lexical. Trên `playground.lexical.dev`:
+
+| thao tác | sự kiện `input` | thay đổi DOM |
+|---|---|---|
+| dán 53 ký tự | **0** — Lexical chặn `paste` mặc định (`defaultPrevented = true`) rồi tự chèn | 1 đợt |
+| gõ " nhé" | **0** — chỉ có `beforeinput(insertText)` | có |
+
+Content script chỉ nghe `input` và `focusin`. Dán xong không có gì báo văn bản đã
+đổi, nên cả tầng luật lẫn tầng model đều không chạy, cho tới khi một phím gõ nào đó
+tình cờ sinh ra `input`. Lỗi này nằm **trước** model: dán `chia sẽ` vào cũng không
+có gạch.
+
+#### Sửa
+
+Khi một ô `contenteditable` được focus, gắn `MutationObserver` lên chính nó
+(`characterData`, `childList`, `subtree`) và gọi `schedule()` khi **chữ** đổi —
+so `textContent` với lần trước, vì trang có thể dựng lại node mà nội dung y nguyên,
+và mỗi lần như thế tooltip sẽ bị đóng. Không tự kích hoạt vòng lặp: gạch chân trong
+`contenteditable` dùng CSS Highlight API, không chèn node nào vào ô; lớp phủ của
+textarea nằm ngoài ô. `input` vẫn giữ cho textarea/input, nơi đổi `value` không sinh
+mutation.
+
+#### Kiểm
+
+* **Facebook thật, chủ repo:** "ổn rồi" — dán là có gạch, không phải gõ thêm. (Kiểm
+  trên bản có công cụ đo **chưa** bị chặn bởi cờ; phần chặn cờ kiểm ở dòng dưới.)
+* **`dev/harness-content.html`**: nạp nguyên `content/index.js` với `chrome.*` giả
+  lập, thay nội dung ô bằng thao tác DOM trực tiếp — 0 sự kiện `input` — gạch `cứ`
+  sau **607ms** = 405ms debounce + 2ms tầng luật + 200ms model (3 lượt). Cờ đo tắt:
+  **0** thuộc tính `data-soat-*` trên trang. Giới hạn của trang thử: tab ẩn thì
+  `focus()` không bắn `focusin`, phải bắn tay.
+
+#### Công cụ đo giữ lại, TẮT MẶC ĐỊNH
+
+Nó ghi `data-soat-*` lên thẻ `<html>` — trang nào cũng đọc được, tức phát hiện được
+người dùng cài Soát và thấy độ dài văn bản họ gõ. Nên nó chỉ bật khi
+`chrome.storage.local` có `soatDebug: true`, và **phải gỡ hẳn trước khi nộp store**.
+Giữ vì nó là cách duy nhất có số đo thật trong Chrome thật: `soatModel` ghi thời gian
+nạp model của trang đó, `soatLog` ghi 8 lượt chấm gần nhất tách theo từng khâu.
+
+#### Bài học
+
+* **"Chậm" do người dùng báo là một triệu chứng, không phải một số đo.** Hai giả
+  thuyết đầu đều hợp lý, đều có code chứng minh là *có thể* đúng, và cái đầu tiên đã
+  kéo theo một đề xuất kiến trúc. Cả hai sai. Đo trước khi sửa — kể cả khi mình tin
+  đã biết nguyên nhân.
+* **Họ lỗi quen thuộc, lần này ở tầng DOM:** mọi trang thử (`dev/playground.html`,
+  localhost) đưa văn bản vào bằng cách gõ hoặc gán `value`, tức luôn có `input`.
+  Người dùng thật **dán** — và trình soạn thảo thật tự quản DOM.
+* **Chuyện nạp model mỗi trang vẫn là thật**, chỉ không phải thủ phạm lần này. Chưa
+  đo trong Chrome thật; giờ đo được bằng `soatModel`.

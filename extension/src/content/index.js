@@ -12,6 +12,31 @@
   if (window.__soatLoaded) return;
   window.__soatLoaded = true;
 
+  // -------------------------------------------------------------------------
+  // CHẾ ĐỘ ĐO — TẮT MẶC ĐỊNH. Chỉ bật khi chrome.storage.local có soatDebug: true.
+  //
+  // Nó ghi data-soat-* lên thẻ <html> của trang: trang nào cũng đọc được, tức
+  // phát hiện được người dùng cài Soát và thấy độ dài văn bản họ gõ. Trái lời
+  // hứa riêng tư — nên KHÔNG BAO GIỜ được bật cho người dùng thật, và phải gỡ
+  // hẳn trước khi nộp store. Giữ lại vì đây là công cụ duy nhất đo được thời
+  // gian thật trong Chrome thật: Console của content script bị lọc theo ngữ
+  // cảnh (đã mất một lượt thử vì thế), còn DOM thì mọi ngữ cảnh đều đọc được.
+  //
+  // Bật: chrome://extensions -> Soát -> "service worker" -> Console:
+  //        chrome.storage.local.set({ soatDebug: true })
+  //      rồi F5 trang cần đo. Đọc: Console của trang, ngữ cảnh top:
+  //        ({ ...document.documentElement.dataset })
+  // -------------------------------------------------------------------------
+  let debug = false;
+  let debugKnown = false;     // đã đọc xong cờ từ storage chưa
+  const pendingMarks = [];
+  const mark = (k, v) => {
+    if (!debug) { if (!debugKnown) pendingMarks.push([k, v]); return; }
+    try { document.documentElement.dataset[k] = v; } catch {}
+  };
+  mark('soatBuild', 'do-3');
+  mark('soatModel', 'dang-nap');
+
   const base = chrome.runtime.getURL('');
   const [engine, targets, hl, replacer, tip, onnx] = await Promise.all([
     import(base + 'src/engine/ruleEngine.js'),
@@ -43,7 +68,9 @@
   // dùng gõ thêm một ký tự nữa — không lỗi, không crash, chỉ là mất tầng đắt
   // nhất. Bắt được đúng cách: thử trên Facebook thật bằng một câu mà tầng luật
   // cố ý không bắt.
+  const tLoad0 = performance.now();   // ĐO TẠM THỜI
   modelReady.then((ok) => {
+    mark('soatModel', `${ok ? 'san-sang' : 'LOI'} sau ${Math.round(performance.now() - tLoad0)}ms`);
     if (ok && active && active.isConnected) run(active);
   });
 
@@ -94,13 +121,19 @@
 
   let settings = {};
   try {
-    settings = await chrome.storage.local.get(['enabled', 'ignored', 'disabledHosts']);
+    settings = await chrome.storage.local.get(['enabled', 'ignored', 'disabledHosts', 'soatDebug']);
   } catch {
     // Context chết trước cả khi khởi tạo xong. Dừng hẳn và im lặng — tab này
     // giữ bản cũ, lần tải lại trang sẽ nhận bản mới.
     return;
   }
   enabled = settings.enabled !== false;
+  // CHẾ ĐỘ ĐO: chỉ bật khi đặt cờ tay. Dấu ghi trước lúc đọc được settings thì
+  // xả ra bây giờ; không bật thì vứt, không để lại gì trên trang.
+  debug = settings.soatDebug === true;
+  debugKnown = true;
+  if (debug) for (const [k, v] of pendingMarks.splice(0)) mark(k, v);
+  else pendingMarks.length = 0;
   ignored = new Set(settings.ignored || []);
   if ((settings.disabledHosts || []).includes(location.hostname)) enabled = false;
 
@@ -144,6 +177,7 @@
   function run(el) {
     if (!enabled || !targets.isEligible(el)) return;
     const s = sessionFor(el);
+    const tRun = performance.now();   // ĐO TẠM THỜI
 
     let text, map = null;
     if (s.kind === 'contenteditable') {
@@ -176,25 +210,69 @@
     // so `token` chỉ nằm ở dưới, tức lượt cũ vẫn đốt hết CPU rồi mới bị vứt —
     // với bài dài chấm theo câu, đó là cả giây giữ luồng cho một kết quả bỏ đi.
     const signal = { get aborted() { return token !== s.seq || !el.isConnected; } };
+    // --- ĐO TẠM THỜI, GỠ TRƯỚC KHI NỘP STORE ----------------------------------
+    const d = timing.start(s, text, tRun);
+    // ---------------------------------------------------------------------------
     model.check(text, { signal }).then((modelIssues) => {
-      if (token !== s.seq || !el.isConnected) return;   // văn bản đã đổi
-      if (modelIssues.length === 0) return;
+      if (token !== s.seq || !el.isConnected) { timing.end(d, 'BỎ — văn bản đã đổi', modelIssues.length); return; }
+      if (modelIssues.length === 0) { timing.end(d, 'model không đề xuất gì', 0); return; }
 
       const merged = engine.dedupe([...ruleIssues, ...modelIssues])
         .filter((i) => !ignored.has(i.original.toLowerCase()));
-      if (merged.length === ruleIssues.length) return;
+      if (merged.length === ruleIssues.length) { timing.end(d, 'trùng tầng luật', modelIssues.length); return; }
 
       s.issues = merged;
       s.placed = hl.paint(el, s.kind, merged, map);
       bump('shown');
-    }).catch(() => { /* model hỏng thì im lặng, tầng luật vẫn còn */ });
+      timing.end(d, 'ĐÃ VẼ', modelIssues.length);
+    }).catch((err) => { timing.end(d, `LỖI ${err?.message}`, 0); /* model hỏng thì im lặng, tầng luật vẫn còn */ });
   }
 
   function schedule(el) {
     const s = sessionFor(el);
+    timing.input(s);
     clearTimeout(s.timer);
     s.timer = setTimeout(() => run(el), DEBOUNCE_MS);
   }
+
+  // -------------------------------------------------------------------------
+  // ĐO TẠM THỜI — chủ repo thấy đề xuất của model "mất một lúc mới hiện" trên
+  // Facebook, kể cả khi model đã nạp xong, trong khi localhost chấm cùng đoạn
+  // mất ~300ms. Mỗi lượt model in MỘT dòng vào Console của trang, lọc "soát:đo".
+  // GỠ TOÀN BỘ khối này và các dòng timing.* trước khi nộp store.
+  // -------------------------------------------------------------------------
+  const timing = {
+    inFlight: 0,
+    input(s) {
+      const now = performance.now();
+      if (!s.burst) s.burst = { first: now, inputs: 0 };
+      s.burst.inputs++;
+      s.burst.last = now;
+    },
+    start(s, text, tRun) {
+      const b = s.burst || { first: tRun, last: tRun, inputs: 0 };
+      s.burst = null;
+      this.inFlight++;
+      return { b, tRun, tModel: performance.now(), len: text.length, runs0: model.stats.runs,
+        hits0: model.stats.cacheHits, overlap: this.inFlight - 1, seq: s.seq };
+    },
+    end(d, outcome, n) {
+      this.inFlight--;
+      const now = performance.now();
+      const f = (x) => `${Math.round(x)}ms`;
+      const line = `#${d.seq} ${outcome} · ${d.len} ký tự · ${d.b.inputs} sự kiện input`
+        + ` · input đầu→chấm ${f(d.tRun - d.b.first)} (input cuối→chấm ${f(d.tRun - d.b.last)})`
+        + ` · tầng luật ${f(d.tModel - d.tRun)} · model ${f(now - d.tModel)}`
+        + ` · ${model.stats.runs - d.runs0} lượt model, ${model.stats.cacheHits - d.hits0} câu trúng cache`
+        + ` · ${n} đề xuất · TỔNG từ input đầu ${f(now - d.b.first)}`
+        + (d.overlap ? ` · CHỒNG ${d.overlap} lượt đang chạy` : '');
+      if (!debug) return;
+      console.info(`[soát:đo] ${line}`);
+      // 8 dòng gần nhất, nối bằng " || " — đọc bằng dataset.soatLog từ ngữ cảnh top
+      this.log = [...(this.log || []), line].slice(-8);
+      mark('soatLog', this.log.join(' || '));
+    },
+  };
 
   // -------------------------------------------------------------------------
   // Tìm lỗi nằm dưới con trỏ chuột
@@ -257,8 +335,47 @@
     const el = e.target;
     if (!targets.isEligible(el)) return;
     active = el;
+    watchEdits(el);
     schedule(el);
   }, true);
+
+  // -------------------------------------------------------------------------
+  // Không tin sự kiện `input` với trình soạn thảo tự quản DOM.
+  //
+  // Lexical — ô soạn bài của Facebook — chặn hành vi dán mặc định rồi tự chèn
+  // nội dung, và khi hành vi mặc định bị chặn thì trình duyệt KHÔNG bắn `input`.
+  // Đo trên playground.lexical.dev: dán 53 ký tự -> 0 sự kiện input, 1 đợt thay
+  // đổi DOM. Hậu quả thấy được trên Facebook thật: dán đoạn văn vào thì không
+  // soát gì cả, phải gõ thêm một phím mới có gạch chân — và chủ repo đã đọc nó
+  // thành "model chậm" (quyết định 36).
+  //
+  // Nên quan sát chính DOM của ô đang focus. An toàn vì gạch chân trong
+  // contenteditable dùng CSS Highlight API, không chèn node nào vào ô, và lớp phủ
+  // của textarea nằm ngoài ô — việc vẽ của mình không tự kích hoạt lại chính nó.
+  // textarea/input không sinh mutation khi đổi value; với chúng `input` vẫn bắn.
+  // -------------------------------------------------------------------------
+  let editObserver = null;
+  let observed = null;
+  function watchEdits(el) {
+    if (observed === el) return;
+    if (editObserver) editObserver.disconnect();
+    observed = el;
+    if (targets.kindOf(el) !== 'contenteditable') { editObserver = null; return; }
+    // Chỉ phản ứng khi CHỮ đổi. Trang có thể dựng lại node mà nội dung y nguyên
+    // (Facebook render lại khá thường) — đóng tooltip mỗi lần như thế là người
+    // dùng đang rê chuột đọc đề xuất thì nó biến mất.
+    let lastText = el.textContent;
+    editObserver = new MutationObserver(() => {
+      if (!el.isConnected || !targets.isEligible(el)) return;
+      const now = el.textContent;
+      if (now === lastText) return;
+      lastText = now;
+      tip.hide();
+      hovered = null;
+      schedule(el);
+    });
+    editObserver.observe(el, { characterData: true, childList: true, subtree: true });
+  }
 
   document.addEventListener('focusout', (e) => {
     const el = e.target;
