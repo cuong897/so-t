@@ -1851,7 +1851,18 @@ bản cũ tới 25% ở cái người dùng cảm thấy, không hơn.
 coi cả file là nhị phân và chỉ in "Binary file matches" — người sau tìm trong
 file sẽ không thấy gì. Đã thay bằng chuỗi thoát; khoá cache vẫn y hệt.
 
-Và nó lặp lại ngay lúc viết đoạn này: chuỗi ` ` trong chính đoạn trên và
+Và nó lặp lại ngay lúc viết đoạn này: chuỗi `\u0000` trong chính đoạn trên và
 trong commit message cũng bị ghi thành byte NUL. Git từ chối commit ("a NUL byte
 in commit log message not allowed") — chỉ nhờ thế mà lộ. Trước khi commit
 bất cứ thứ gì có chuỗi thoát, đếm byte NUL trong file.
+
+Nguyên nhân thật tìm ra sau hai lần sửa hụt: chuỗi thoát bị giải mã thành NUL
+**ngay trong tham số của lệnh gọi công cụ**, trước cả khi shell hay Python nhìn
+thấy nó — nên sửa bằng một script có chứa chuỗi thoát cũng lại đẻ ra NUL. Cách
+an toàn là dựng dấu gạch ngược bằng `chr(92)`.
+
+Quét toàn bộ file văn bản được theo dõi thì lòi thêm một chỗ **có từ commit đầu
+tiên** (`5cf20f0`): `bpe.js` dùng byte NUL thật làm dấu ngăn trong khoá bảng
+merge, ở cả chỗ ghi lẫn chỗ đọc. Chạy đúng từ đầu tới giờ, nhưng đó chính là lý
+do `grep` luôn báo "Binary file ./extension/src/engine/bpe.js matches" thay vì
+in dòng khớp. Đã thay; test parity `bpe.js` ↔ PhoBERT Python vẫn xanh.
