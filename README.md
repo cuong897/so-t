@@ -104,7 +104,7 @@ nhầm một lần là người dùng gỡ cài; bỏ sót thì họ không bi�
 ## Chạy thử
 
 ```bash
-npm run test:all  # 59 test JS + 10 kiểm tra Python
+npm run test:all  # 60 test JS + 10 kiểm tra Python
 npm run dev       # rồi mở hai trang dưới đây
 ```
 
@@ -115,6 +115,7 @@ npm run dev       # rồi mở hai trang dưới đây
 | `dev/bench-rules.html` | Độ trễ tầng luật — bấm giờ theo lô, văn bản người thật |
 | `dev/sentence-eval.html` | Chấm theo CÂU với **cả hai tầng** — phần mà `sentence_eval.py` không chạy được vì tầng luật là JS |
 | `dev/bench-accept.html` | Tám điều kiện của quyết định 33, đo qua đúng `check()` — chất lượng trên bài đăng, phủ, đứng hình, cache |
+| `dev/bench-fallback.html` | Quyết định 34 — đường lui cho văn bản không dấu câu, đứng hình so bản cũ cùng lượt, kèm đối chứng A/A |
 | `dev/bench-blocking.html` | Tầng model có giữ luồng chính không — nhịp đập MessageChannel, không dùng rAF |
 | `dev/bench-context.html` | Cùng một câu, đứng một mình và nằm trong cửa sổ — nhãn vàng, so có cặp |
 
@@ -239,8 +240,8 @@ dùng thật sự gặp — **với một điều kiện phải đọc trước 
 > khi câu nằm cuối cửa sổ (quyết định 32). Giờ sản phẩm chấm theo câu, nên trên
 > **văn bản có dấu câu** các con số này là thật — đo lại qua đúng `check()` trên
 > bài đăng dựng sẵn ra recall 0,7457, trùng tới số lẻ thứ tư (quyết định 33).
-> **Văn bản không có dấu câu vẫn bị cắt cụt** ở 96 subword như trước — chưa đường
-> lui nào qua đủ ngưỡng.
+> **Văn bản không có dấu câu** đi đường lui F2 — cửa sổ trượt 64 subword — và
+> kém hơn một chút: recall 0,7202, precision 0,9671 (quyết định 34).
 
 | Thước đo | Số | Đo bằng |
 |---|---|---|
@@ -271,13 +272,20 @@ dùng cảm thấy là cột "đứng hình", không phải cột tổng:
 hai lượt. Sửa một câu trong bài 6.000 ký tự đã chấm xong chỉ chạy lại câu đó:
 32–36ms.
 
-Hai giới hạn phải nói cạnh bảng này:
+**Văn bản không dấu câu** (quyết định 34) cũng được đọc hết, bằng cửa sổ trượt
+64 subword bước 32. So với bản cắt cụt đo **cùng lượt, cùng 40 văn bản mỗi cỡ**,
+đứng hình p90 ra x0,75–1,09 — không tệ hơn, và từ 700 ký tự trở lên thì ít hơn,
+vì mỗi lượt chạy ngắn hơn. Nhưng sửa một chữ ở đó là chấm lại cả bài: cả bài là
+một "câu" nên cache theo câu không trúng.
 
-* **Văn bản không dấu câu vẫn bị cắt cụt** — cột "bản cắt cụt" vẫn là hiện trạng
-  của nó. Hai đường lui đã đo đều trượt ngưỡng ghi trước (quyết định 33).
+Hai giới hạn phải nói cạnh các con số này:
+
 * **Một lượt `session.run` dao động gấp đôi trên cùng một văn bản** (48–94ms), nên
-  đỉnh đứng hình là một khoảng, không phải một con số. Bản cắt cụt cũ đo cùng lượt
-  đứng tới 125–130ms.
+  đỉnh đứng hình là một khoảng, không phải một con số. "Lâu nhất" của chính bản
+  cắt cụt cũ ra 101–156ms. So hai cấu hình thì so p50/p90 **đo cùng lượt**, và đối
+  chứng A/A cho thấy chênh dưới ~25% ở p50 là không phân biệt được.
+* Model **vẫn giữ luồng chính**. Nhả luồng giữa các lượt chỉ chia nhỏ việc chặn,
+  không bỏ được nó.
 
 Phân rã một lượt `check()`: `session.run` chiếm **98,8%**, `bpe.js` 0,2%, giải mã
 1,0%. Không có gì để tối ưu ngoài chính model. Lượt suy luận **đầu tiên 55–126ms**,

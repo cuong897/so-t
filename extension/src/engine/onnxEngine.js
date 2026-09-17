@@ -38,13 +38,16 @@ import { loadTokenizer } from './bpe.js';
 const DEFAULT_THRESHOLD = 0.95;
 const DEFAULT_MARGIN = 0.25;   // phải hơn KEEP ít nhất chừng này
 const MAX_LEN = 128;
-// 'none' — văn bản không dấu câu vẫn bị cắt cụt như trước. KHÔNG phải vì thích:
-// quyết định 33 ghi trước luật chọn, và không ứng viên nào qua đủ điều kiện:
-//   F1 (cắt cứng 40)      precision 0,9465 — trượt ranh giới 0,95
-//   F2 (trượt 64 bước 32) precision 0,9671 nhưng đứng hình 110ms — trượt 100ms
-// Luật nói: không ứng viên nào qua thì giữ hành vi cũ. Đổi mặc định này là mở
-// một đợt đo MỚI, có ngưỡng ghi trước — đừng đổi vì F2 "trông tốt hơn".
-const DEFAULT_FALLBACK = 'none';
+// 'F2' — cửa sổ trượt 64 subword, bước 32, cho câu dài quá cửa sổ (thường là văn
+// bản không chấm câu). Chọn bằng luật ghi trước ở quyết định 34 (35fbf45), trên
+// 216 bài không dấu câu và 40 văn bản mỗi cỡ, so bản cũ đo cùng lượt:
+//   F2   precision 0,9671 · câu sạch bị gạch 0,87% · đứng hình p90 x0,75–1,09
+//   F2s  precision 0,9586 · câu sạch bị gạch 1,16% · đứng hình p90 x0,63–1,04
+//   none precision 0,9419 · recall 0,1553 (cắt cụt — bản đang ship trước đây)
+// Cả F2 và F2s đều qua; luật chọn ít câu sạch bị gạch oan nhất. F2s đứng hình ít
+// hơn — nếu muốn đổi sang nó thì đổi LUẬT trước, cho một đợt đo sau.
+// Quyết định 33 từng giữ 'none' vì một điều kiện đứng hình đặt sai; xem 34.
+const DEFAULT_FALLBACK = 'F2';
 
 // Các ứng viên đường lui, mỗi cái cố định TRƯỚC đợt đo của nó — đừng chỉnh các
 // số này để một phép đo đẹp lên rồi quên ghi lại.

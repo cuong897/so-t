@@ -1,13 +1,13 @@
 # Bàn giao — dự án Soát
 
-Đọc file này trước, rồi `README.md` (tổng quan) và `docs/decisions.md` (33 quyết
+Đọc file này trước, rồi `README.md` (tổng quan) và `docs/decisions.md` (34 quyết
 định, kèm lý do và mọi lỗi đã mắc).
 
 ---
 
 ## Phiên vừa rồi làm gì (15–17/09/2026)
 
-Sáu commit, `ea8c174..` commit bàn giao này. Bắt đầu từ yêu cầu "xem xét kỹ việc
+Chín commit, `ea8c174..` commit bàn giao này. Bắt đầu từ yêu cầu "xem xét kỹ việc
 sửa model cắt cụt văn bản" (việc số 4 cũ), và nó mở ra ba chuyện lớn hơn:
 
 **Tầng model giữ luồng chính của trang** (`ea8c174`). `onnxEngine.js` khai "chạy
@@ -24,10 +24,18 @@ cửa sổ. Thủ phạm chính là **vị trí** trong cửa sổ, không phả
 bpe cắt giữa từ → `afb0774` cài đặt, quyết định 33). Trên văn bản **có dấu câu**:
 qua cả bảy điều kiện áp dụng, phủ 100% mọi cỡ, recall 0,7457 trùng đúng số của
 `evaluate.py`. Trên văn bản **không dấu câu**: không đường lui nào qua đủ, nên
-theo luật ghi trước **vẫn cắt cụt như cũ**.
+theo luật ghi trước lúc đó **vẫn cắt cụt**.
 
-Và một điều kiện ghi trước hoá ra đặt sai — đứng hình "≤ 100ms, lâu nhất trong 3
-lần" — vì chính bản cũ cũng trượt nó khi đo cùng lượt. **Đã ghi lại, không lách.**
+Một điều kiện ghi trước hoá ra đặt sai — đứng hình "≤ 100ms, lâu nhất trong 3
+lần" — vì chính bản cũ cũng trượt nó khi đo cùng lượt. Không lách: mở **đợt đo
+riêng** (`35fbf45`, quyết định 34) với p50/p90 trên 40 văn bản, mốc cùng lượt, và
+một **đối chứng A/A** để thước đo tự nói được "tôi không đủ phân giải". Đối chứng
+qua, cả F2 lẫn F2s qua, luật chọn ra **F2** — văn bản không dấu câu giờ cũng được
+đọc hết: recall 0,1553 → 0,7202, precision 0,9419 → 0,9671.
+
+Và một chuyện nhỏ nhưng dai (`73fc3c1`): byte NUL thật nằm trong mã nguồn từ
+commit đầu tiên, làm `grep` coi `bpe.js` là file nhị phân. Nó lặp lại ba lần
+trong phiên này vì chuỗi thoát bị giải mã ngay trong tham số lệnh gọi công cụ.
 
 ---
 
@@ -47,8 +55,8 @@ viết khoá luận.
 
 ## Trạng thái: CHẠY ĐƯỢC TRONG CHROME THẬT — nhưng code tầng model vừa đổi
 
-- 63 commit, cây git sạch
-- 59 test JS + 2 bộ kiểm tra Python, tất cả pass (`npm run test:all`)
+- 66 commit, cây git sạch
+- 60 test JS + 2 bộ kiểm tra Python, tất cả pass (`npm run test:all`)
 - **ĐÃ XÁC NHẬN CHẠY TRONG CHROME THẬT với tầng luật.** Chủ repo gõ trên
   Facebook câu *"mình xin chia sẽ một vãi trãi nghiệm cho mọi ngươi"* và thấy
   gạch chân đúng hai chỗ — khớp chính xác với `chia sẽ→chia sẻ` và
@@ -75,7 +83,8 @@ lớp nhãn**: thanh điệu **0,95**, phụ âm **0,90** (`onnxEngine.js`, quy�
 | Gói cài | 95,3 MB thô → **58,6 MB nén** | `package_extension.py` |
 | **Theo CÂU** — câu sạch hẳn | **39,2%** | `sentence_eval.py` + `dev/sentence-eval.html` |
 | **Theo CÂU** — câu sản phẩm KHÔNG ĐỤNG | **49,0%** | nt |
-| **Phạm vi phủ của model** | có dấu câu: **100%** mọi cỡ · KHÔNG dấu câu: 100% ≤300 ký tự, **58%** ở 700, **7%** ở 6.000 | `dev/bench-accept.html` |
+| **Phạm vi phủ của model** | **100%** mọi cỡ, có hay không có dấu câu (bản cắt cụt cũ: 58% ở 700, 7% ở 6.000) | `dev/bench-accept.html`, `dev/bench-fallback.html` |
+| **Trên bài KHÔNG dấu câu** (đường lui F2) | P **0,9671** · R **0,7202** · câu sạch bị gạch 0,87% | `dev/bench-fallback.html` |
 | **Trên bài đăng có dấu câu**, qua `check()` | P **0,9669** · R **0,7457** · câu sạch bị gạch 0,98% | `dev/bench-accept.html` |
 
 **Con số độ trễ đã sai HAI lần trong tài liệu này.** Lần đầu ghi "p50 5,4ms ·
@@ -115,8 +124,9 @@ dự án.
 
 6. **Mọi dòng từ `evaluate.py` tới `sentence_eval.py` chấm câu ĐỨNG MỘT MÌNH.**
    Trước `afb0774` chúng đẹp hơn thứ người dùng gặp trong bài đăng nhiều câu
-   (recall 0,62–0,71 thay vì 0,7426, quyết định 32). Giờ chúng khớp — nhưng chỉ
-   trên văn bản **có dấu câu**. Văn bản không dấu câu vẫn đi đường cũ.
+   (recall 0,62–0,71 thay vì 0,7426, quyết định 32). Giờ chúng khớp trên văn bản
+   **có dấu câu**. Văn bản không dấu câu đi cửa sổ trượt F2 và thấp hơn một chút:
+   recall 0,7202, precision 0,9671 (quyết định 34).
 
 ---
 
@@ -169,6 +179,11 @@ subword — lỗi nằm ở câu cuối, **sau** chỗ bản cũ cắt):
 * gạch chân dưới `cứ` → chấm theo câu chạy trong extension
 * có gạch ở câu `cứ trú` ngắn mà **không** có ở đoạn này → extension đang chạy code
   cũ. Reload extension rồi thử lại.
+
+Rồi dán lại **đúng đoạn đó nhưng xoá hết dấu chấm, dấu phẩy và viết thường** —
+kiểu bài Facebook viết liền. Đó là đường lui F2 (quyết định 34), cũng chưa từng
+chạy trong extension. Đã chạy với model thật: bản mới vẫn gạch `cứ→cư` 100%,
+bản cắt cụt im lặng.
 
 #### Bốn ảnh chụp màn hình thật đã dạy gì
 
@@ -234,43 +249,42 @@ bước 0 là thử lại trên Chrome thật (tức việc số 1 ở trên).
 Sinh lại: `python ml/package_extension.py` và `python ml/make_screenshots.py`
 (cả hai neo đường dẫn theo vị trí file, đứng đâu chạy cũng được).
 
-### 4. Văn bản KHÔNG dấu câu vẫn bị cắt cụt (quyết định 33)
+### 4. Việc tiếp theo cho tầng model: cache theo cửa sổ, rồi đẩy model khỏi luồng chính
 
 **Đây là việc đầu tiên không cần tài khoản hay quyền gì của chủ repo.**
 
-Phần có dấu câu đã sửa (`afb0774`). Phần không dấu câu thì không đường lui nào
-qua đủ ngưỡng đã ghi trước, nên `DEFAULT_FALLBACK = 'none'` — bài đăng Facebook
-viết liền không chấm câu vẫn chỉ được soát ~96 subword đầu (58% bài 700 ký tự,
-20% bài 2.000, 7% bài 6.000).
+Việc số 4 cũ — văn bản không dấu câu bị cắt cụt — **đã xong** (quyết định 34,
+`35fbf45` ngưỡng ghi trước → commit bàn giao này đổi mặc định sang F2). Văn bản
+không dấu câu giờ được đọc hết bằng cửa sổ trượt 64 subword bước 32:
 
-| | recall | precision | câu sạch bị gạch | đứng hình, hai lượt |
-|---|---|---|---|---|
-| F1 — cắt cứng 40 | 0,7149 | **0,9465** ✗ | 2,26% | 65 / 110ms |
-| F2 — trượt 64 bước 32 | 0,7202 | 0,9671 | 0,87% | 110 / 134ms ✗ |
-| `none` — hiện trạng | 0,1553 | 0,9419 | 0,23% | — / 158ms |
+| trên 216 bài không dấu câu | recall | precision | câu sạch bị gạch |
+|---|---|---|---|
+| **F2 — đang ship** | 0,7202 | 0,9671 | 0,87% |
+| F2s — cửa sổ 48, qua nhưng không được chọn | 0,7138 | 0,9586 | 1,16% |
+| cắt cụt — trước đây | 0,1553 | 0,9419 | 0,23% |
 
-**F2 trông tốt hơn hiện trạng ở mọi cột. Đừng bật nó bằng tay.** Nó trượt đúng
-một điều kiện, và điều kiện đó đặt sai: "đứng hình ≤ 100ms, lâu nhất trong 3 lần"
-— trong khi một lượt `session.run` trên cùng một văn bản dao động 48–94ms, và bản
-cũ đo cùng lượt cũng trượt (125–130ms). Sửa ngưỡng sau khi thấy số là thứ nếp
-ghi-trước được dựng ra để chặn. Việc đúng là mở **một đợt mới**:
+Đứng hình so bản cắt cụt **đo cùng lượt, cùng 40 văn bản mỗi cỡ**: p90 x0,75–1,09,
+không tệ hơn. Đối chứng A/A qua nhưng sát (p50 x1,23 ở 2.000 ký tự, ngưỡng 1,25) —
+thước đo này **không** phân biệt được hai cấu hình chênh dưới ~25% ở p50.
 
-1. Ghi ngưỡng đứng hình **trước**, bằng thống kê chịu được nhiễu: p95 trên ít
-   nhất 30 văn bản mỗi cỡ, so với **bản cũ đo cùng lượt, cùng văn bản** — ví dụ
-   "không tệ hơn bản cũ quá 20%". `dev/bench-accept.html` đã có sẵn bản cũ
-   (`dev/baseline/onnxEngine.catcut.js`) để so.
-2. Nếu thêm ứng viên (F2 cửa sổ 48 chẳng hạn) thì ghi nó vào **cùng** commit ngưỡng.
-3. Giữ nguyên các điều kiện chất lượng của quyết định 33 — chúng không có vấn đề.
+Còn lại hai việc, theo thứ tự:
 
-Hai chỗ nên biết trước khi bắt tay:
+1. **Cache theo cửa sổ cho câu dài.** Sửa một chữ trong bài 6.000 ký tự không dấu
+   câu hiện chấm lại **cả bài** (~3,4 giây CPU, chia thành các lượt ~100ms có nhả
+   luồng, bị huỷ ngay khi người dùng gõ tiếp) — vì cả bài là một "câu" nên cache
+   theo câu không trúng. Chỗ khó: cửa sổ trượt dịch đi khi chèn hay xoá chữ ở đầu
+   bài, nên khoá cache không thể là vị trí. Ghi ngưỡng trước; đo đúng ca "sửa một
+   chữ ở giữa bài không dấu câu" mà `dev/bench-accept.html` mục 7 đã có sẵn.
+2. **`ort.env.wasm.proxy = true`** — đẩy `session.run` sang worker của
+   onnxruntime. Đó là gốc của mọi con số đứng hình trong quyết định 32–34. Chưa ai
+   thử, và **phải kiểm trong Chrome thật** chứ không phải localhost: worker cần nạp
+   được qua `chrome-extension://` từ một content script, đúng loại chỗ đã giết tầng
+   model hai tuần ở quyết định 24. Nếu nó chạy thì cả việc nhả luồng lẫn phần lớn
+   quyết định 34 trở thành không cần thiết — đo lại bằng `dev/bench-blocking.html`.
 
-* **Sửa một chữ trong bài không dấu câu là chấm lại cả bài** với F1/F2, vì cả bài
-  là một "câu" nên cache không trúng. F2 bài 6.000 ký tự tốn ~3,4 giây tổng. Có
-  thể cache theo **cửa sổ** thay vì theo câu — nhưng đó là thiết kế mới, đo riêng.
-* **Luồng chính vẫn là vấn đề gốc.** Mọi con số đứng hình ở trên tồn tại vì
-  `session.run` chạy trên luồng của trang. `ort.env.wasm.proxy = true` đẩy nó sang
-  worker của onnxruntime — chưa ai thử, và phải kiểm nó có chạy được trong
-  content script qua `chrome-extension://` không (quyết định 24).
+Một lưu ý khi sửa code ở đây: **đếm byte NUL trước khi commit** (quyết định 34).
+Chuỗi thoát NUL gõ trong tham số lệnh gọi công cụ bị giải mã thành byte thật, đã
+làm `grep` coi `bpe.js` là file nhị phân từ commit đầu tiên.
 
 ### 5. ĐÃ XONG — ngưỡng riêng cho lớp phụ âm (quyết định 29)
 
@@ -354,7 +368,7 @@ extension/          MV3, không cần build
   src/engine/       vi.js (âm tiết + 23 nhãn), rules.js, ruleEngine.js,
                     bpe.js (BPE tự viết), onnxEngine.js (tầng 3,
                     thanh điệu 0,95 / phụ âm 0,90, CHẤM THEO CÂU,
-                    đường lui 'none' cho văn bản không dấu câu)
+                    đường lui F2 — cửa sổ trượt — cho câu dài quá cửa sổ)
   src/content/      targets.js (lọc ô), highlighter.js, replace.js, tooltip.js
   models/           artifact sinh ra, KHÔNG commit
   vendor/           onnxruntime-web 14MB, tải bằng ml/fetch_vendor.sh
@@ -389,9 +403,10 @@ dev/                playground.html, onnx-test.html, shots.html (nguồn ảnh s
   bench-chunking.html chia đoạn ở maxLen 96/192/256 lệch khỏi mốc bao nhiêu
   bench-batch.html    gộp lô: đúng trước, nhanh sau (đã bác — chậm hơn)
   bench-accept.html   TÁM ĐIỀU KIỆN của quyết định 33, qua đúng check()
+  bench-fallback.html quyết định 34 — đường lui, đứng hình so bản cũ cùng lượt, A/A
   baseline/           onnxEngine cắt cụt cũ, để đo so cùng lượt
 test/chunking.test.mjs  splitSentences + planRuns: mọi từ phải được phủ
-docs/decisions.md   33 quyết định
+docs/decisions.md   34 quyết định
 docs/blog.html      bài viết về toàn bộ quá trình và các lần sai
 docs/store/         hồ sơ nộp Chrome Web Store
 ```

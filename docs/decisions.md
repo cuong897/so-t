@@ -1866,3 +1866,62 @@ tiên** (`5cf20f0`): `bpe.js` dùng byte NUL thật làm dấu ngăn trong khoá
 merge, ở cả chỗ ghi lẫn chỗ đọc. Chạy đúng từ đầu tới giờ, nhưng đó chính là lý
 do `grep` luôn báo "Binary file ./extension/src/engine/bpe.js matches" thay vì
 in dòng khớp. Đã thay; test parity `bpe.js` ↔ PhoBERT Python vẫn xanh.
+
+#### Kết quả — `dev/bench-fallback.html`, lần chạy đầu tiên và duy nhất
+
+Trang chạy hết không đổ, không phải sửa gì. Tự chấm ra:
+
+**Chất lượng**, 216 bài không dấu câu:
+
+| | đúng | sửa sai | báo oan | recall | precision | câu sạch bị gạch |
+|---|---|---|---|---|---|---|
+| **F2** | 677 | 17 | 6 | 0,7202 | **0,9671** | **0,87%** |
+| F2s | 671 | 18 | 11 | 0,7138 | 0,9586 | 1,16% |
+| cũ (`none`) | 146 | 6 | 3 | 0,1553 | 0,9419 | 0,23% |
+
+F2 ra **đúng tới số lẻ thứ tư** số của quyết định 33 — phép đo chất lượng tất định,
+như phải thế. Cả hai ứng viên phủ 100% mọi cỡ, và 0 / 2.589 câu có dấu câu bị đổi
+kế hoạch chạy.
+
+Cửa sổ nhỏ hơn thua ở chất lượng: F2s báo oan gần gấp đôi. Vị trí nông có lợi
+(quyết định 32), nhưng ở 48 subword phần ngữ cảnh mất đi nặng hơn.
+
+**Đứng hình**, 40 văn bản mỗi cỡ, tỷ số so bản cũ đo cùng lượt (p50 / p90):
+
+| cỡ | A/A — đối chứng | F2 | F2s |
+|---|---|---|---|
+| 280 | x1,01 / x1,03 | x0,98 / x1,09 | x1,00 / x1,04 |
+| 700 | x0,89 / x1,04 | x0,83 / x0,75 | x0,71 / x0,63 |
+| 2.000 | **x1,23** / x1,04 | x1,02 / x0,84 | x0,81 / x0,67 |
+| 6.000 | x0,95 / x0,93 | x1,01 / x0,84 | x0,80 / x0,69 |
+
+A/A qua, **nhưng sát**: ở 2.000 ký tự, cùng một bản cũ đo hai lần mà p50 chênh 23%,
+ngưỡng là 25%. Thước đo đủ phân giải cho kết luận này — không ứng viên nào tiến gần
+ngưỡng, tỷ số tệ nhất là x1,09 — nhưng nó **không** đủ để phân biệt hai cấu hình
+chênh nhau dưới ~25% ở p50. Đừng đọc x0,98 với x1,02 là khác nhau.
+
+Ở 280 ký tự mọi cấu hình làm đúng một lượt chạy giống nhau, và tỷ số ra x0,98–1,09:
+đó là độ rộng của nhiễu. Từ 700 ký tự trở lên, p90 của cả hai ứng viên **thấp hơn**
+bản cũ, đúng như cấu trúc dự đoán: lượt chạy 64 hay 48 subword ngắn hơn lượt 96.
+
+Và cột "lâu nhất" — thứ quyết định 33 đã dùng — ra 101–156ms cho **bản cũ** ở mọi
+cỡ. Nếu đợt này vẫn dùng nó, cả bản cũ lẫn hai ứng viên đều trượt, lần nữa.
+
+**Áp luật:** cả hai qua hết; ít câu sạch bị gạch oan nhất là **F2** (0,87% so với
+1,16%). `DEFAULT_FALLBACK = 'F2'`.
+
+F2s đứng hình ít hơn F2 ở mọi cỡ lớn. Luật ghi trước ưu tiên báo oan, nên nó không
+được chọn — đúng với nguyên tắc precision quan trọng hơn recall, và càng đúng với
+việc 20–30% chênh lệch đứng hình nằm quanh vùng mà thước đo này vừa đủ phân giải.
+
+Kiểm thêm bằng model thật: đoạn thử 494 ký tự của bàn giao, bỏ hết dấu câu và viết
+thường — bản mới gạch `cứ→cư` 100%, bản cũ im lặng, không gạch oan chỗ nào.
+
+#### Cái giá còn lại, ghi để không ai bất ngờ
+
+* **Sửa một chữ trong bài không dấu câu là chấm lại cả bài**, vì cả bài là một
+  "câu" nên cache theo câu không trúng. Bài 6.000 ký tự tốn ~3,4 giây CPU mỗi lần —
+  chia thành những lượt ~100ms có nhả luồng, và bị huỷ ngay khi người dùng gõ tiếp.
+  Cache theo **cửa sổ** sẽ cắt phần này; đó là thiết kế mới, đo riêng.
+* **Luồng chính vẫn là vấn đề gốc.** Mọi con số đứng hình ở đây tồn tại vì
+  `session.run` chạy trên luồng của trang.
