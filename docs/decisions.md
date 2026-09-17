@@ -1685,3 +1685,83 @@ cài đặt, sửa rồi đo lại **toàn bộ**, không đo lại riêng đi�
 * **Mọi con số hiệu năng đang ghi trong README và bàn giao là số của câu đứng một
   mình.** Nếu bản này ship, chúng lần đầu tiên đúng với sản phẩm. Nếu không ship,
   chúng phải được ghi chú lại theo quyết định 32 — việc đó làm bất kể kết quả.
+
+#### Kết quả — `dev/bench-accept.html`, chạy qua đúng `OnnxEngine.check()`
+
+216 bài đăng dựng từ 863 câu VSEC có lỗi, xen giữa câu đã sửa đúng, trung bình
+1.619 ký tự. Ba lượt chạy: một lượt **bỏ dở** vì lộ lỗi thước đo (mục dưới), rồi
+**hai lượt đầy đủ**. Giữa hai lượt đầy đủ chỉ đổi đường lui mặc định và thêm mốc
+đứng hình của bản cũ; mọi con số chất lượng ra trùng khít.
+
+**Bài đăng có dấu câu** — đường chính:
+
+| # | điều kiện | lượt 1 | lượt 2 | cần | |
+|---|---|---|---|---|---|
+| 1 | phủ, mọi cỡ | 100% | 100% | 100% | qua |
+| 2 | precision | 0,9669 | 0,9669 | ≥ 0,9550 | qua |
+| 3 | recall trong tầm | 0,7457 | 0,7457 | ≥ 0,7140 | qua |
+| 5 | câu sạch bị gạch oan | 0,98% | 0,98% | ≤ 1,50% | qua |
+| 6 | đứng hình lâu nhất | 82,0ms | 81,9ms | ≤ 100ms | qua |
+| 7 | sửa một câu trong bài 6.000 | 36,4ms, 1 lượt | 32,2ms, 1 lượt | ≤ 100ms | qua |
+| 8 | văn bản một câu, so bản cũ | 486/486 | 486/486 | giống hệt | qua |
+
+Recall 0,7457 trùng **đúng tới số lẻ thứ tư** con số `evaluate.py` báo cho câu
+đứng một mình. Đó là thứ quyết định 32 muốn: sản phẩm giờ đi đúng đường của phép
+đo. Cùng các bài đó, bản cắt cụt được recall **0,1553** — nó bỏ qua phần lớn bài.
+Như đã ghi trước, con số đó hiển nhiên chứ không phải thành tích.
+
+**Bài đăng KHÔNG dấu câu** — đường lui:
+
+| | recall | precision | câu sạch bị gạch | đứng lâu nhất, lượt 1 / lượt 2 |
+|---|---|---|---|---|
+| F1 — cắt cứng 40 | 0,7149 | **0,9465** ✗ | 2,26% | 65,0 / **110,3ms** ✗ |
+| F2 — trượt 64 bước 32 | 0,7202 | 0,9671 | 0,87% | **110,0 / 134,2ms** ✗ |
+| `none` — giữ như cũ | 0,1553 | **0,9419** ✗ | 0,23% | — / **157,8ms** ✗ |
+
+Không ứng viên nào qua đủ điều kiện. Theo luật ghi trước: **văn bản không dấu câu
+giữ hành vi cũ**, `DEFAULT_FALLBACK = 'none'`. F1 và F2 vẫn nằm trong code, chọn
+được qua `opts.fallback`, để đợt sau đo mà không phải viết lại.
+
+#### Hai chỗ sửa trong thước đo
+
+1. **Một issue lạc suýt bị bỏ đi** — sửa trước lượt đầy đủ thứ nhất. Token VSEC
+   như `dâng,thời` hay `Mac-côp-nhi-côp` được `tokenize()` tách thành nhiều từ,
+   và mảnh bên trong không có trong bảng offset của trang đo. Lượt bỏ dở đếm nó
+   là "không khớp" rồi thôi, ra precision 0,9682. Lỗi VSEC không bao giờ nằm trên
+   token kiểu đó (đếm: 0 ca), nên nó là **báo oan** — giờ tính chống lại mình:
+   0,9669. May là trang đo in bộ đếm "không khớp" ra thay vì lặng lẽ nuốt. Bẫy
+   số 11, lần hai.
+2. **Điều kiện 6 thiếu mốc** — sửa giữa hai lượt đầy đủ. Ngưỡng ghi "hôm nay
+   70,8ms", lấy từ một phép đo KHÁC. Lượt hai đo bản cũ cùng lượt, cùng văn bản —
+   và xem mục dưới.
+
+#### Điều kiện 6 được đặt SAI, và phải nói ra thay vì lách
+
+Truy vì sao F2 đứng 110ms trong khi một cửa sổ 64 subword chỉ tốn ~50ms: ghi dấu
+thời gian từng nhịp đập và từng `session.run`. Khoảng đứng lâu nhất **lần nào
+cũng chứa đúng một lượt chạy** — nhả luồng chạy đúng. Cái dao động là chính lượt
+chạy đó: cùng một bài 280 ký tự, cùng một lượt duy nhất, lúc 47,7ms lúc 93,5ms.
+
+Lượt hai xác nhận bằng mốc cùng lượt: **bản cũ đang ship cũng trượt** — 130,2ms
+trên bài có dấu câu, 125,0ms trên bài không dấu. F1 ở 280 ký tự đứng 51,7ms lượt
+một và 110,3ms lượt hai, cho **cùng một lượt chạy duy nhất**.
+
+"Lâu nhất trong 3 lần" của một đại lượng dao động gấp đôi thì đo nhiễu của máy
+nhiều hơn đo cấu hình. Điều kiện này không phân biệt được F2 với hiện trạng.
+
+Nhưng **không** vì thế mà ship F2. Đổi cách đọc ngưỡng sau khi thấy số là đúng thứ
+mà nếp ghi-trước được dựng ra để chặn. Việc đúng là mở một đợt riêng, với thống
+kê đứng hình viết trước và mốc đo cùng lượt — xem việc tiếp theo trong bàn giao.
+
+Còn đường có dấu câu qua điều kiện 6 ở **cả hai** lượt dù nhiễu như vậy, vì mỗi
+lượt chạy ở đó chỉ là một câu ngắn (~30 subword). Đó là lý do cấu trúc, không
+phải may mắn: lượt chạy ngắn thì đỉnh nhiễu cũng ngắn.
+
+#### Vá sau hai lượt đo — ở chỗ không phép đo nào chạm tới
+
+Tín hiệu huỷ ban đầu chỉ được kiểm **giữa các câu**. Với `none` một câu là một
+lượt nên không sao; nhưng bật F1/F2 cho bài 6.000 ký tự không dấu câu thì một lượt
+đã lỗi thời vẫn đốt hết ~3,4 giây. Giờ kiểm cả giữa các cửa sổ trong một câu, và
+kết quả dở dang không vào cache. Không đổi gì khi không huỷ — kiểm bằng model thật:
+câu ngắn 60/60 giống bản cũ, F2 có và không có tín hiệu ra y hệt từng issue, huỷ
+sau lượt 2 thì dừng đúng ở 2 lượt (105ms) và cache trống.

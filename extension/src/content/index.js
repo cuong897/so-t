@@ -172,7 +172,11 @@
     // Tầng model chạy sau, gộp vào rồi vẽ lại. Luật thắng khi chồng lấn vì
     // độ tin cậy cao hơn — dedupe() lo việc đó.
     const token = ++s.seq;
-    model.check(text).then((modelIssues) => {
+    // Văn bản đổi giữa chừng thì check() dừng ở lượt kế tiếp. Trước đây phép
+    // so `token` chỉ nằm ở dưới, tức lượt cũ vẫn đốt hết CPU rồi mới bị vứt —
+    // với bài dài chấm theo câu, đó là cả giây giữ luồng cho một kết quả bỏ đi.
+    const signal = { get aborted() { return token !== s.seq || !el.isConnected; } };
+    model.check(text, { signal }).then((modelIssues) => {
       if (token !== s.seq || !el.isConnected) return;   // văn bản đã đổi
       if (modelIssues.length === 0) return;
 

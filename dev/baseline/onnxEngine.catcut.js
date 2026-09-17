@@ -1,3 +1,7 @@
+// BẢN CŨ của onnxEngine.js (commit 6cd2a6e) — cắt cụt ở maxLen, một lượt cho cả
+// văn bản. Chỉ giữ để dev/bench-accept.html so điều kiện 8 của quyết định 33.
+// Dùng bpe.js MỚI (không cắt giữa từ); với câu ngắn hai bản bpe cho y hệt nhau.
+
 /**
  * Tầng 3 — chấm điểm bằng model ONNX chạy ngay trong trình duyệt.
  *
@@ -24,8 +28,8 @@
  *     tự nhả luồng giữa hai lượt; `await` không tự nhả cho ai cả.
  */
 
-import { applicableTags, getTone, TAGS, TAG_NAMES, TONE, tokenize, isWordLike } from './vi.js';
-import { loadTokenizer } from './bpe.js';
+import { applicableTags, getTone, TAGS, TAG_NAMES, TONE, tokenize, isWordLike } from '../../extension/src/engine/vi.js';
+import { loadTokenizer } from '../../extension/src/engine/bpe.js';
 
 // 0.95 chứ không phải 0.90, và hai thay đổi này ĐI LIỀN NHAU: lượng tử hoá
 // per-channel trả lại phần xác suất mà per-tensor làm tụt, nên ngưỡng cũ 0.90
@@ -38,97 +42,6 @@ import { loadTokenizer } from './bpe.js';
 const DEFAULT_THRESHOLD = 0.95;
 const DEFAULT_MARGIN = 0.25;   // phải hơn KEEP ít nhất chừng này
 const MAX_LEN = 128;
-// 'none' — văn bản không dấu câu vẫn bị cắt cụt như trước. KHÔNG phải vì thích:
-// quyết định 33 ghi trước luật chọn, và không ứng viên nào qua đủ điều kiện:
-//   F1 (cắt cứng 40)      precision 0,9465 — trượt ranh giới 0,95
-//   F2 (trượt 64 bước 32) precision 0,9671 nhưng đứng hình 110ms — trượt 100ms
-// Luật nói: không ứng viên nào qua thì giữ hành vi cũ. Đổi mặc định này là mở
-// một đợt đo MỚI, có ngưỡng ghi trước — đừng đổi vì F2 "trông tốt hơn".
-const DEFAULT_FALLBACK = 'none';
-
-// Hai ứng viên đường lui, cố định từ quyết định 33 TRƯỚC khi đo — đừng chỉnh các
-// số này để một phép đo đẹp lên rồi quên ghi lại.
-const F1_PIECE = 40;           // cắt cứng ở ranh giới từ, mỗi mảnh <= 40 subword
-const F2_WINDOW = 64;          // cửa sổ trượt 64 subword...
-const F2_STRIDE = 32;          // ...bước 32
-
-// Ranh giới câu nằm ở KHOẢNG TRỐNG giữa hai từ liền nhau. tokenize() chỉ trả từ,
-// không trả dấu câu, nên nhìn vào khoảng trống là cách duy nhất vừa tách được câu
-// vừa giữ nguyên offset gốc để vẽ gạch chân.
-const SENTENCE_GAP = /[.!?…\n]/;
-
-/**
- * Chia các span từ thành câu. Trả mảng [đầu, cuối) theo chỉ số span.
- * "TP.HCM" thành hai câu — tách thừa chỉ làm câu ngắn hơn, tức model đọc ở vị
- * trí nông hơn, không bao giờ làm tệ đi (quyết định 32).
- */
-export function splitSentences(text, spans) {
-  const out = [];
-  let from = 0;
-  for (let i = 1; i < spans.length; i++) {
-    if (SENTENCE_GAP.test(text.slice(spans[i - 1].end, spans[i].start))) {
-      out.push([from, i]);
-      from = i;
-    }
-  }
-  if (spans.length) out.push([from, spans.length]);
-  return out;
-}
-
-/**
- * Lên kế hoạch các lượt chạy cho MỘT câu, theo số subword của từng từ.
- * Trả [{from, to}] theo chỉ số từ TRONG câu. Không bao giờ chia giữa một từ.
- *   budget : số subword tối đa cho nội dung (maxLen trừ <s> và </s>)
- */
-export function planRuns(pieceCounts, budget, fallback) {
-  const total = pieceCounts.reduce((a, b) => a + b, 0);
-  const n = pieceCounts.length;
-  if (total <= budget || fallback === 'none') return [{ from: 0, to: n }];
-
-  if (fallback === 'F1') {
-    const size = Math.min(F1_PIECE, budget);
-    const out = [];
-    let from = 0; let acc = 0;
-    for (let i = 0; i < n; i++) {
-      if (i > from && acc + pieceCounts[i] > size) { out.push({ from, to: i }); from = i; acc = 0; }
-      acc += pieceCounts[i];
-    }
-    out.push({ from, to: n });
-    return out;
-  }
-
-  if (fallback === 'F2') {
-    const win = Math.min(F2_WINDOW, budget);
-    const offs = [0];                      // offset subword của đầu mỗi từ
-    for (const c of pieceCounts) offs.push(offs[offs.length - 1] + c);
-    const out = [];
-    let from = 0;
-    for (;;) {
-      let to = from;
-      while (to < n && (to === from || offs[to + 1] - offs[from] <= win)) to++;
-      out.push({ from, to });
-      if (to >= n) break;
-      const target = offs[from] + F2_STRIDE;
-      let next = from + 1;
-      while (next < n && offs[next] < target) next++;
-      from = Math.min(next, to);           // luôn tiến, và không bỏ sót từ nào
-    }
-    return out;
-  }
-
-  throw new Error(`fallback không hợp lệ: ${fallback}`);
-}
-
-// Nhả luồng chính. MessageChannel chứ không setTimeout: setTimeout lồng nhau bị
-// kẹp tối thiểu 4ms, và ở tab nền bị bóp tới 1 giây một lần.
-function yieldToMain() {
-  if (typeof MessageChannel === 'undefined') return new Promise((r) => setTimeout(r, 0));
-  return new Promise((resolve) => {
-    const ch = new MessageChannel();
-    ch.port1.onmessage = () => { ch.port1.close(); resolve(); };
-    ch.port2.postMessage(0);
-  });
-}
 
 // Lớp phụ âm được hạ ngưỡng riêng xuống 0.90, thanh điệu giữ 0.95 (quyết định
 // 29). Không phải chỉnh cho đẹp số: consonant_diagnose.py đo được 244 ca d/gi/r
@@ -170,15 +83,6 @@ export class OnnxEngine {
       ? thresholdsFor(this.threshold)
       : opts.thresholds;
     this.maxLen = opts.maxLen ?? MAX_LEN;
-    // Đường lui cho một "câu" dài quá cửa sổ — thường là văn bản không chấm câu.
-    // 'F1' cắt cứng, 'F2' cửa sổ trượt, 'none' giữ hành vi cũ (chỉ chấm cửa sổ
-    // đầu). Quyết định 33 chọn giữa ba cái này bằng phép đo, không bằng ý thích.
-    this.fallback = opts.fallback ?? DEFAULT_FALLBACK;
-    // Bộ nhớ đệm LOGIT theo nội dung câu, không phải kết quả đã qua ngưỡng — để
-    // đổi ngưỡng trên một instance đang chạy vẫn ra đúng, không phải xoá cache.
-    this.cacheSize = opts.cacheSize ?? 400;
-    this._cache = new Map();
-    this.stats = { runs: 0, cacheHits: 0 };
     this.ready = false;
     this.session = null;
     this.tokenizer = null;
@@ -250,137 +154,54 @@ export class OnnxEngine {
 
   /**
    * Soát một đoạn văn bản.
-   *
-   * Chấm TỪNG CÂU một, không nhét cả văn bản vào một cửa sổ (quyết định 32,
-   * 33). Hai lý do, đều đã đo:
-   *  - bản cũ cắt cụt ở maxLen, bỏ qua 42% bài 700 ký tự và 93% bài 6.000;
-   *  - từ nằm sâu trong cửa sổ bị chấm tệ hơn hẳn — recall 0,7426 khi câu đứng
-   *    một mình, 0,6202 khi câu nằm cuối cửa sổ. Mọi phép đo offline chấm câu
-   *    đứng một mình, nên giờ sản phẩm đi đúng đường của phép đo.
-   *
-   * @param {string} text
-   * @param {{signal?: {aborted: boolean}}} [opts] signal.aborted = true thì dừng
-   *        sau lượt đang chạy và trả mảng rỗng — người gọi đã không cần nữa.
-   * @returns {Promise<Array>} Issue[] đã sắp theo vị trí — rỗng nếu model chưa
-   *          sẵn sàng hoặc bị huỷ
+   * @returns {Promise<Array>} Issue[] — rỗng nếu model chưa sẵn sàng
    */
-  async check(text, opts = {}) {
+  async check(text) {
     if (!this.ready) return [];
-    const signal = opts.signal;
 
     const spans = tokenize(text).filter(isWordLike);
     if (spans.length === 0) return [];
 
+    const words = spans.map((s) => s.text);
+    const { ids, wordIds } = this.tokenizer.encodeWords(words, this.maxLen);
+    const firstIdx = this.tokenizer.firstSubwordIndex(wordIds, words.length);
+
+    const n = ids.length;
+    const feeds = {
+      input_ids: new this.ort.Tensor('int64', BigInt64Array.from(ids, BigInt), [1, n]),
+      attention_mask: new this.ort.Tensor('int64', new BigInt64Array(n).fill(1n), [1, n]),
+    };
+
+    const out = await this.session.run(feeds);
+    const logits = out.logits ?? out[Object.keys(out)[0]];
+    const nTags = this.tagNames.length;
+    const data = logits.data;
+
     const issues = [];
-    let ran = false;
-    for (const [from, to] of splitSentences(text, spans)) {
-      const words = spans.slice(from, to).map((s) => s.text);
-      const key = `${this.fallback} ${this.maxLen} ${words.join(' ')}`;
+    for (let w = 0; w < words.length; w++) {
+      const pos = firstIdx[w];
+      if (pos < 0) continue;                       // từ bị cắt vì vượt maxLen
 
-      let rows = this._cacheGet(key);
-      if (!rows) {
-        if (signal?.aborted) return [];
-        // Nhả luồng TRƯỚC mỗi lượt chạy trừ lượt đầu: lượt đầu chạy ngay để bài
-        // ngắn không trễ thêm, các lượt sau nhường cho phím gõ và việc vẽ.
-        if (ran) {
-          await yieldToMain();
-          if (signal?.aborted) return [];
-        }
-        rows = await this._scoreSentence(words, signal);
-        if (!rows) return [];                      // bị huỷ giữa câu — KHÔNG cache nửa chừng
-        this._cachePut(key, rows);
-        ran = true;
-      } else {
-        this.stats.cacheHits++;
-      }
+      const token = words[w];
+      const allowed = applicableTags(token, this.lexicon);
+      if (allowed.length <= 1) continue;           // chỉ còn KEEP, không có gì để đề xuất
 
-      for (let w = 0; w < words.length; w++) {
-        if (!rows[w]) continue;                    // bị cắt, hoặc chỉ còn KEEP
-        const token = words[w];
-        const issue = this._decode(rows[w].logits, 0, this.tagNames.length, token, rows[w].allowed);
-        if (!issue) continue;
+      const issue = this._decode(data, pos * nTags, nTags, token, allowed);
+      if (!issue) continue;
 
-        const span = spans[from + w];
-        issues.push({
-          start: span.start,
-          end: span.end,
-          original: token,
-          suggestion: issue.suggestion,
-          why: `Model đề xuất "${issue.suggestion}" (${Math.round(issue.prob * 100)}%).`,
-          tag: tagGroup(issue.tag, token, issue.suggestion),
-          confidence: issue.prob,
-          source: 'model',
-        });
-      }
+      issues.push({
+        start: spans[w].start,
+        end: spans[w].end,
+        original: token,
+        suggestion: issue.suggestion,
+        why: `Model đề xuất "${issue.suggestion}" (${Math.round(issue.prob * 100)}%).`,
+        tag: tagGroup(issue.tag, token, issue.suggestion),
+        confidence: issue.prob,
+        source: 'model',
+      });
     }
     return issues;
   }
-
-  /**
-   * Chạy model cho một câu. Trả mảng theo từ: {logits, allowed} ở subword đầu
-   * của từ đó, hoặc null nếu từ không có ứng viên nào ngoài KEEP hay không được
-   * lượt chạy nào phủ tới. Trả null nếu bị huỷ giữa chừng.
-   */
-  async _scoreSentence(words, signal) {
-    const nTags = this.tagNames.length;
-    const counts = words.map((w) => this.tokenizer.bpe(w).length);
-    const runs = planRuns(counts, this.maxLen - 2, this.fallback);
-
-    const offs = [0];
-    for (const c of counts) offs.push(offs[offs.length - 1] + c);
-
-    const rows = new Array(words.length).fill(null);
-    const best = new Array(words.length).fill(-1);   // độ "ở giữa" của cửa sổ đã chọn
-
-    for (let r = 0; r < runs.length; r++) {
-      if (r > 0) {
-        await yieldToMain();
-        if (signal?.aborted) return null;
-      }
-      const { from, to } = runs[r];
-      const part = words.slice(from, to);
-      const { ids, wordIds } = this.tokenizer.encodeWords(part, this.maxLen);
-      const first = this.tokenizer.firstSubwordIndex(wordIds, part.length);
-
-      const n = ids.length;
-      const out = await this.session.run({
-        input_ids: new this.ort.Tensor('int64', BigInt64Array.from(ids, BigInt), [1, n]),
-        attention_mask: new this.ort.Tensor('int64', new BigInt64Array(n).fill(1n), [1, n]),
-      });
-      this.stats.runs++;
-      const data = (out.logits ?? out[Object.keys(out)[0]]).data;
-
-      for (let i = 0; i < part.length; i++) {
-        if (first[i] < 0) continue;
-        const w = from + i;
-        // Một từ nằm trong nhiều cửa sổ (F2) thì lấy cửa sổ nó ở GIỮA nhất —
-        // xa cả hai mép, tức có ngữ cảnh ở cả hai bên.
-        const centred = Math.min(offs[w] - offs[from], offs[to] - offs[w + 1]);
-        if (centred <= best[w]) continue;
-
-        const allowed = applicableTags(words[w], this.lexicon);
-        if (allowed.length <= 1) continue;
-        rows[w] = { logits: data.slice(first[i] * nTags, first[i] * nTags + nTags), allowed };
-        best[w] = centred;
-      }
-    }
-    return rows;
-  }
-
-  _cacheGet(key) {
-    const hit = this._cache.get(key);
-    if (hit) { this._cache.delete(key); this._cache.set(key, hit); }  // làm mới thứ tự LRU
-    return hit;
-  }
-
-  _cachePut(key, rows) {
-    this._cache.set(key, rows);
-    while (this._cache.size > this.cacheSize) {
-      this._cache.delete(this._cache.keys().next().value);
-    }
-  }
-
-  clearCache() { this._cache.clear(); }
 
   /** Softmax CHỈ trên tập nhãn hợp lệ, rồi áp ngưỡng và biên so với KEEP. */
   _decode(data, offset, nTags, token, allowed) {

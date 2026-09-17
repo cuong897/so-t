@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Soát — chấm bản chấm-theo-câu theo tám điều kiện của quyết định 33</title>
+<style>
+  body { font: 400 15px/1.6 -apple-system, "Segoe UI", Roboto, sans-serif;
+         max-width: 1000px; margin: 32px auto; padding: 0 20px; }
+  h1 { font-size: 19px; font-weight: 600; }
+  pre { background: #f6f8fa; padding: 14px; border-radius: 8px; white-space: pre-wrap;
+        font: 12px/1.55 ui-monospace, Menlo, Consolas, monospace; }
+  .bad { color: #cf222e; font-weight: 600; }
+  .ok { color: #1a7f37; font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>Tám điều kiện của quyết định 33 — đo qua đúng <code>OnnxEngine.check()</code></h1>
+<p>
+Ngưỡng đã commit ở <code>1464863</code>, trước khi viết code. Trang này không
+dựng lại logic chia câu: nó gọi thẳng <code>check()</code> mà extension gọi, và
+chấm kết quả bằng nhãn vàng VSEC. Chỗ nào phải tự tính (phạm vi phủ) thì dùng
+đúng các hàm <code>splitSentences</code> / <code>planRuns</code> mà engine dùng.
+</p>
+<pre id="log">đang nạp model…</pre>
+<script type="module">
+const v = `?v=${Date.now()}`;
+const { OnnxEngine, splitSentences, planRuns } = await import(`../extension/src/engine/onnxEngine.js${v}`);
+const Old = (await import(`./baseline/onnxEngine.catcut.js${v}`)).OnnxEngine;
+const { tokenize, isWordLike } = await import(`../extension/src/engine/vi.js${v}`);
+
+const lines = [];
+const say = (s, cls) => { lines.push(cls ? `<span class="${cls}">${s}</span>` : s);
+  document.getElementById('log').innerHTML = lines.join('\n'); };
+const f4 = (x) => x.toFixed(4);
+const ms = (x) => x.toFixed(1);
+const result = {};
+window.__result = result;
+
+const engine = new OnnxEngine();
+await engine.load({
+  ort: '../extension/vendor/ort.wasm.bundle.min.mjs',
+  wasmDir: '../extension/vendor/',
+  model: `../extension/models/soat.int8.onnx${v}`,
+  tokenizer: `../extension/models/tokenizer.json${v}`,
+  lexicon: `../extension/models/lexicon.json${v}`,
+  meta: `../extension/models/soat.meta.json${v}`,
+});
+// Bản cũ dùng CHUNG phiên model — nạp 78MB hai lần chỉ để so thì phí.
+const old = new Old();
+Object.assign(old, { ort: engine.ort, session: engine.session, tokenizer: engine.tokenizer,
+  lexicon: engine.lexicon, tagNames: engine.tagNames, maxLen: engine.maxLen, ready: true });
+const DEFAULT_FB = engine.fallback;       // đúng thứ extension sẽ chạy
+say(`✓ model maxLen = ${engine.maxLen} · đường lui mặc định = ${engine.fallback}`);
+
+const cases = await (await fetch(`../extension/models/_sentence_cases.json${v}`)).json();
+const targets = cases.filter((c) => c.in_scope.length > 0);
+say(`✓ ${targets.length} câu có lỗi trong tầm\n`);
+
+// --- dựng bài đăng ----------------------------------------------------------
+// Mẫu mỗi bài: [sạch, ĐÍCH, sạch] x 4. Câu sạch là bản đã sửa đúng của câu VSEC
+// khác — cùng nguồn với false_alarm.py 1,05%, nên điều kiện 5 so được với nó.
+// punct = false: nối bằng dấu cách và bỏ token có dấu câu — văn bản không chấm câu.
+const PUNCT = /[.!?…]/;
+function buildDocs(punct) {
+  const docs = [];
+  let t = 0; let f = 0;
+  while (t < targets.length) {
+    const sents = [];
+    for (let k = 0; k < 4 && t < targets.length; k++) {
+      sents.push({ kind: 'clean', words: cases[(f++ * 13 + 101) % cases.length].right });
+      sents.push({ kind: 'target', c: targets[t], idx: t, words: targets[t].wrong });
+      sents.push({ kind: 'clean', words: cases[(f++ * 13 + 101) % cases.length].right });
+      t++;
+    }
+    let text = '';
+    const byStart = new Map();       // offset ký tự -> {sent, i}
+    const cleanRanges = [];
+    const targetRanges = [];
+    for (let s = 0; s < sents.length; s++) {
+      const S = sents[s];
+      if (s > 0) text += punct ? '. ' : ' ';
+      const begin = text.length;
+      S.words.forEach((w, i) => {
+        if (!punct && PUNCT.test(w)) return;
+        if (text.length > begin) text += ' ';
+        byStart.set(text.length, { S, i });
+        text += w;
+      });
+      if (S.kind === 'clean') cleanRanges.push({ begin, end: text.length, alarmed: false });
+      else targetRanges.push({ begin, end: text.length });
+    }
+    if (punct) text += '.';
+    docs.push({ text, byStart, cleanRanges, targetRanges, sents });
+  }
+  return docs;
+}
+
+async function scoreDocs(eng, docs) {
+  const acc = { tp: 0, wrongFix: 0, fpClean: 0, inScope: 0, cleanSents: 0, cleanAlarmed: 0, unmapped: 0 };
+  for (const d of docs) {
+    for (const S of d.sents) if (S.kind === 'target') acc.inScope += S.c.in_scope.length;
+    for (const r of d.cleanRanges) r.alarmed = false;
+    const issues = await eng.check(d.text);
+    for (const it of issues) {
+      const hit = d.byStart.get(it.start);
+      if (hit && hit.S.kind === 'target') {
+        const { c } = hit.S; const i = hit.i;
+        if (c.errs.includes(i)) (it.suggestion === c.right[i] ? acc.tp++ : acc.wrongFix++);
+        else acc.fpClean++;
+      } else {
+        const r = d.cleanRanges.find((x) => it.start >= x.begin && it.start < x.end);
+        if (r) r.alarmed = true;
+        // Nằm trong câu đích nhưng không trùng đầu token VSEC nào: là mảnh bên
+        // trong một token như "dâng,thời" mà tokenize() tách ra. Lỗi VSEC không
+        // bao giờ nằm trên token kiểu đó (đã đếm: 0 ca), nên đây là BÁO OAN — tính
+        // chống lại mình, không được bỏ đi. Lần chạy đầu bỏ đi đúng 1 ca như vậy.
+        else if (d.targetRanges.some((x) => it.start >= x.begin && it.start < x.end)) acc.fpClean++;
+        else acc.unmapped++;             // không thuộc câu nào — phải bằng 0
+      }
+    }
+    acc.cleanSents += d.cleanRanges.length;
+    acc.cleanAlarmed += d.cleanRanges.filter((x) => x.alarmed).length;
+  }
+  acc.recall = acc.tp / acc.inScope;
+  acc.precision = acc.tp / Math.max(1, acc.tp + acc.wrongFix + acc.fpClean);
+  acc.cleanRate = acc.cleanAlarmed / acc.cleanSents;
+  return acc;
+}
+const accLine = (name, a) => say(`  ${name.padEnd(34)} đúng ${String(a.tp).padStart(4)} · sửa sai ${String(a.wrongFix).padStart(3)}`
+  + ` · báo oan ${String(a.fpClean).padStart(3)} · recall ${f4(a.recall)} · precision ${f4(a.precision)}`
+  + ` · câu sạch bị gạch ${(a.cleanRate * 100).toFixed(2)}%`
+  + (a.unmapped ? ` · ${a.unmapped} ISSUE KHÔNG KHỚP ĐƯỢC` : ''), a.unmapped ? 'bad' : null);
+
+// --- đồng hồ nhịp đập (xem dev/bench-blocking.html vì sao không dùng rAF) -----
+const mc = new MessageChannel();
+let ticks = 0, worstGap = 0, last = performance.now(), watching = false;
+mc.port1.onmessage = () => {
+  const now = performance.now();
+  if (watching) { ticks++; worstGap = Math.max(worstGap, now - last); }
+  last = now; mc.port2.postMessage(0);
+};
+mc.port2.postMessage(0);
+async function watch(fn) {
+  await new Promise((r) => setTimeout(r, 20));
+  ticks = 0; worstGap = 0; watching = true; last = performance.now();
+  const t0 = performance.now();
+  await fn();
+  const dt = performance.now() - t0;
+  // khoảng từ nhịp cuối tới lúc xong cũng là thời gian giữ luồng
+  worstGap = Math.max(worstGap, performance.now() - last);
+  watching = false;
+  return { dt, stall: ticks === 0 ? dt : worstGap };
+}
+
+// --- văn bản theo cỡ, cho điều kiện 1 và 6 ------------------------------------
+let seed = 20260917;
+const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+function docOf(n, punct) {
+  const out = []; let k = 0; let i = Math.floor(rnd() * cases.length);
+  while (k < n) {
+    const words = cases[i % cases.length].wrong.filter((w) => punct || !PUNCT.test(w));
+    const s = words.join(' ');
+    out.push(s); k += s.length + 2; i++;
+  }
+  return out.join(punct ? '. ' : ' ').slice(0, n);
+}
+function coverage(text, fallback) {
+  const spans = tokenize(text).filter(isWordLike);
+  let seen = 0;
+  for (const [a, b] of splitSentences(text, spans)) {
+    const words = spans.slice(a, b).map((s) => s.text);
+    const counts = words.map((w) => engine.tokenizer.bpe(w).length);
+    const got = new Array(words.length).fill(false);
+    for (const { from, to } of planRuns(counts, engine.maxLen - 2, fallback)) {
+      const part = words.slice(from, to);
+      const { wordIds } = engine.tokenizer.encodeWords(part, engine.maxLen);
+      engine.tokenizer.firstSubwordIndex(wordIds, part.length)
+        .forEach((p, i) => { if (p >= 0) got[from + i] = true; });
+    }
+    seen += got.filter(Boolean).length;
+  }
+  return { seen, total: spans.length };
+}
+function coverageOld(text) {
+  const words = tokenize(text).filter(isWordLike).map((s) => s.text);
+  const { wordIds } = engine.tokenizer.encodeWords(words, engine.maxLen);
+  return { seen: engine.tokenizer.firstSubwordIndex(wordIds, words.length).filter((p) => p >= 0).length,
+    total: words.length };
+}
+
+const SIZES = [280, 700, 2000, 6000];
+
+// ============================================================================
+say('=== 1. PHẠM VI PHỦ ===');
+result.coverage = {};
+for (const punct of [true, false]) {
+  for (const L of SIZES) {
+    const row = { old: [0, 0], F1: [0, 0], F2: [0, 0] };
+    for (let r = 0; r < 20; r++) {
+      const t = docOf(L, punct);
+      const o = coverageOld(t); row.old[0] += o.seen; row.old[1] += o.total;
+      for (const fb of ['F1', 'F2']) { const c = coverage(t, fb); row[fb][0] += c.seen; row[fb][1] += c.total; }
+    }
+    const pct = ([a, b]) => (100 * a / b);
+    result.coverage[`${punct ? 'dau' : 'khong'}-${L}`] = { old: pct(row.old), F1: pct(row.F1), F2: pct(row.F2) };
+    say(`  ${punct ? 'có dấu câu  ' : 'KHÔNG dấu câu'} ${String(L).padStart(5)} ký tự: cũ ${pct(row.old).toFixed(1).padStart(5)}%`
+      + ` · mới/F1 ${pct(row.F1).toFixed(1).padStart(5)}% · mới/F2 ${pct(row.F2).toFixed(1).padStart(5)}%`);
+  }
+}
+
+// ============================================================================
+say('\n=== 2, 3, 5. BÀI ĐĂNG CÓ DẤU CÂU, nhãn vàng ===');
+const punctDocs = buildDocs(true);
+say(`  ${punctDocs.length} bài, trung bình ${Math.round(punctDocs.reduce((a, d) => a + d.text.length, 0) / punctDocs.length)} ký tự`);
+engine.clearCache();
+const P = await scoreDocs(engine, punctDocs);
+accLine('mới (chấm theo câu)', P);
+const PO = await scoreDocs(old, punctDocs);
+accLine('cũ (cắt cụt) — để đối chiếu', PO);
+result.punct = P; result.punctOld = PO;
+
+// ============================================================================
+say('\n=== 4. BÀI ĐĂNG KHÔNG DẤU CÂU, nhãn vàng ===');
+const flatDocs = buildDocs(false);
+result.flat = {};
+for (const fb of ['F1', 'F2', 'none']) {
+  engine.fallback = fb; engine.clearCache();
+  const a = await scoreDocs(engine, flatDocs);
+  result.flat[fb] = a;
+  accLine(`đường lui ${fb}`, a);
+}
+const FO = await scoreDocs(old, flatDocs);
+accLine('cũ (cắt cụt) — để đối chiếu', FO);
+result.flatOld = FO;
+engine.fallback = DEFAULT_FB;
+
+// ============================================================================
+// Lần chạy đầu thiếu một mốc: ngưỡng 100ms ghi "hôm nay 70,8ms" lấy từ một phép
+// đo KHÁC, trong khi một lượt session.run dao động 48–94ms ngay trên cùng một
+// văn bản. Nên bản cũ giờ được đo cùng lượt, cùng cách, cùng văn bản.
+say('\n=== 6. ĐỨNG HÌNH LÂU NHẤT (cache trống mỗi lượt, 3 văn bản mỗi ô) ===');
+result.stall = {};
+const STALL_ROWS = [
+  ['có dấu câu', true, engine, DEFAULT_FB],
+  [`không dấu / ${DEFAULT_FB}`, false, engine, DEFAULT_FB],
+  ['không dấu / F1', false, engine, 'F1'],
+  ['không dấu / F2', false, engine, 'F2'],
+  ['CŨ, có dấu câu', true, old, null],
+  ['CŨ, không dấu', false, old, null],
+];
+for (const [label, punct, eng, fb] of STALL_ROWS) {
+  if (fb) eng.fallback = fb;
+  for (const L of SIZES) {
+    let worst = 0; let tot = 0;
+    for (let r = 0; r < 3; r++) {
+      const t = docOf(L, punct);
+      if (eng.clearCache) eng.clearCache();
+      const m = await watch(() => eng.check(t));
+      worst = Math.max(worst, m.stall); tot += m.dt;
+    }
+    result.stall[`${label}-${L}`] = { worst, avg: tot / 3 };
+    say(`  ${label.padEnd(20)} ${String(L).padStart(5)} ký tự: tổng TB ${ms(tot / 3).padStart(8)}ms · đứng lâu nhất ${ms(worst).padStart(7)}ms`,
+      worst > 100 ? 'bad' : null);
+  }
+}
+engine.fallback = DEFAULT_FB;
+
+// ============================================================================
+say('\n=== 7. SỬA MỘT CÂU trong bài 6.000 ký tự đã chấm xong ===');
+result.edit = {};
+for (const [label, punct] of [['có dấu câu', true], ['KHÔNG dấu câu', false]]) {
+  const t = docOf(6000, punct);
+  engine.clearCache();
+  await engine.check(t);
+  // đổi một từ ở giữa bài thành một từ khác vẫn là chữ
+  const spans = tokenize(t).filter(isWordLike);
+  const mid = spans[Math.floor(spans.length / 2)];
+  const t2 = t.slice(0, mid.start) + (mid.text === 'bàn' ? 'ghế' : 'bàn') + t.slice(mid.end);
+  const runs0 = engine.stats.runs;
+  const m = await watch(() => engine.check(t2));
+  const runs = engine.stats.runs - runs0;
+  result.edit[label] = { ...m, runs };
+  say(`  ${label.padEnd(14)}: chạy lại ${String(runs).padStart(3)} lượt · tổng ${ms(m.dt).padStart(8)}ms · đứng lâu nhất ${ms(m.stall).padStart(7)}ms`,
+    m.dt > 100 ? 'bad' : null);
+}
+
+// ============================================================================
+say('\n=== 8. VĂN BẢN MỘT CÂU NGẮN: mới so với cũ, từng issue ===');
+let same = 0; let diff = 0; let n8 = 0; const diffs = [];
+for (const c of cases.slice(0, 500)) {
+  const text = c.wrong.join(' ');
+  if (PUNCT.test(text)) continue;                          // phải đúng MỘT câu
+  n8++;
+  engine.clearCache();
+  const a = await old.check(text);
+  const b = await engine.check(text);
+  const key = (x) => `${x.start}:${x.end}:${x.suggestion}:${x.confidence}`;
+  const A = a.map(key).join('|'); const B = b.map(key).join('|');
+  if (A === B) same++; else { diff++; if (diffs.length < 3) diffs.push([text, A, B]); }
+}
+result.single = { n: n8, same, diff, diffs };
+say(`  ${n8} câu: ${same} giống hệt (kể cả confidence), ${diff} khác`, diff ? 'bad' : null);
+for (const [t, A, B] of diffs) say(`    "${t.slice(0, 60)}…"\n      cũ: ${A}\n      mới: ${B}`);
+
+// ============================================================================
+say('\n=== TỔNG KẾT theo ngưỡng đã commit ở 1464863 ===\n');
+const cov = Object.entries(result.coverage).filter(([k]) => k.startsWith('dau')).map(([, x]) => x.F1);
+const verdict = (ok) => (ok ? 'QUA ' : 'TRƯỢT');
+const rows = [
+  ['1 phủ, có dấu câu, mọi cỡ', `${Math.min(...cov).toFixed(1)}%`, '100%', Math.min(...cov) >= 99.999],
+  ['2 precision, có dấu câu', f4(P.precision), '≥ 0,9550', P.precision >= 0.955],
+  ['3 recall trong tầm, có dấu câu', f4(P.recall), '≥ 0,7140', P.recall >= 0.714],
+  ['4 precision, KHÔNG dấu / F1', f4(result.flat.F1.precision), '≥ 0,9500', result.flat.F1.precision >= 0.95],
+  ['4 precision, KHÔNG dấu / F2', f4(result.flat.F2.precision), '≥ 0,9500', result.flat.F2.precision >= 0.95],
+  ['4 precision, KHÔNG dấu / none (=cũ)', f4(result.flat.none.precision), '≥ 0,9500', result.flat.none.precision >= 0.95],
+  ['5 câu sạch bị gạch oan', `${(P.cleanRate * 100).toFixed(2)}%`, '≤ 1,50%', P.cleanRate <= 0.015],
+  ...['có dấu câu', `không dấu / ${DEFAULT_FB}`, 'không dấu / F1', 'không dấu / F2',
+    'CŨ, có dấu câu', 'CŨ, không dấu'].map((label) => {
+    const worst = Math.max(...SIZES.map((L) => result.stall[`${label}-${L}`].worst));
+    return [`6 đứng lâu nhất, ${label}`, `${ms(worst)}ms`, '≤ 100ms', worst <= 100];
+  }),
+  ['7 sửa một câu, bài 6.000, có dấu', `${ms(result.edit['có dấu câu'].dt)}ms`, '≤ 100ms', result.edit['có dấu câu'].dt <= 100],
+  ['8 một câu ngắn giống hệt bản cũ', `${same}/${n8}`, 'tất cả', diff === 0],
+];
+result.verdict = rows.map(([name, got, need, ok]) => ({ name, got, need, ok }));
+for (const [name, got, need, ok] of rows) {
+  say(`  ${verdict(ok)}  ${name.padEnd(40)} ${String(got).padStart(10)}   cần ${need}`, ok ? 'ok' : 'bad');
+}
+say('\nKhông tính là điều kiện, ghi để khỏi quên: sửa một câu trong bài KHÔNG dấu câu');
+say(`chạy lại ${result.edit['KHÔNG dấu câu'].runs} lượt, ${ms(result.edit['KHÔNG dấu câu'].dt)}ms với đường lui ${DEFAULT_FB}. Cả bài là`);
+say('một "câu", nên với F1/F2 cache không giúp gì — sửa một chữ là chấm lại cả bài.');
+window.__benchDone = true;
+</script>
+</body>
+</html>
