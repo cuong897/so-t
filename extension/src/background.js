@@ -1,5 +1,5 @@
 /**
- * Service worker — gom thống kê.
+ * Service worker — gom thống kê, và dẫn lượt chấm của content script tới offscreen.
  *
  * Nguyên tắc bất di bất dịch: CHỈ ĐẾM, KHÔNG BAO GIỜ LƯU NỘI DUNG.
  * Không câu văn, không tên miền, không thời điểm chính xác. Chỉ có số đếm
@@ -28,6 +28,72 @@ function prune(stats) {
   while (keys.length > 8) delete stats[keys.shift()];
   return stats;
 }
+
+// ---------------------------------------------------------------------------
+// Model — một offscreen document cho cả trình duyệt (quyết định 38).
+//
+// Content script KHÔNG nói thẳng với offscreen. runtime.sendMessage phát tới mọi
+// ngữ cảnh extension cùng lúc; nếu offscreen chưa tồn tại lúc tin được phát, nó không
+// bao giờ nhận được tin đó, và không ai trả lời — content script đợi mãi, tầng model
+// im lặng biến mất. Đi qua đây thì tin luôn có người nhận: service worker thức dậy vì
+// nó, đảm bảo offscreen đã có, rồi mới chuyển tiếp.
+// ---------------------------------------------------------------------------
+
+const OFFSCREEN_PATH = 'src/offscreen/offscreen.html';
+let creating = null;
+
+async function ensureOffscreen() {
+  const url = chrome.runtime.getURL(OFFSCREEN_PATH);
+  const existing = await chrome.runtime.getContexts({
+    contextTypes: ['OFFSCREEN_DOCUMENT'],
+    documentUrls: [url],
+  });
+  if (existing.length) return;
+  // Hai tab focus cùng lúc thì hai lời gọi tới đây gần như cùng lúc — tạo hai lần là
+  // Chrome ném "Only a single offscreen document may be created".
+  if (!creating) {
+    creating = chrome.offscreen.createDocument({
+      url: OFFSCREEN_PATH,
+      reasons: ['WORKERS'],
+      justification: 'Runs the Vietnamese spell-check model in a Web Worker, entirely on-device, shared by all tabs instead of loaded in each one.',
+    }).finally(() => { creating = null; });
+  }
+  await creating;
+}
+
+async function forwardCheck(msg, sender) {
+  await ensureOffscreen();
+  const payload = {
+    type: 'soat:offscreen:check',
+    // Khoá huỷ lượt cũ phải riêng cho từng ô của từng tab: seq là bộ đếm của một ô.
+    key: `${sender.tab?.id ?? '-'}:${sender.frameId ?? 0}:${msg.key}`,
+    seq: msg.seq,
+    text: msg.text,
+  };
+  // Offscreen vừa tạo có thể chưa kịp gắn listener. Thử lại vài lần rồi mới chịu.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await chrome.runtime.sendMessage(payload);
+      if (res !== undefined) return res;
+      throw new Error('offscreen không trả lời');
+    } catch (err) {
+      if (attempt >= 20) return { ok: false, error: err?.message || String(err) };
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  }
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg?.type === 'soat:warm') {
+    ensureOffscreen().then(() => sendResponse({ ok: true }), (err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+  if (msg?.type === 'soat:check') {
+    forwardCheck(msg, sender).then(sendResponse);
+    return true;
+  }
+  return false;
+});
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type !== 'stat') return false;

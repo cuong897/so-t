@@ -16,6 +16,7 @@ Nạp nguyên <code>extension/src/content/index.js</code> — không chép lại
 <code>?debug=1</code> đặt cờ <code>soatDebug</code>. Ô bên dưới là contenteditable
 mà nội dung được thay bằng <strong>thao tác DOM trực tiếp</strong>, không bắn sự
 kiện <code>input</code> — đúng thứ Lexical làm khi dán (quyết định 36).
+Tầng model chạy ngay trong trang thay cho offscreen (quyết định 38), qua cùng hàng đợi.
 </p>
 <div id="ed" contenteditable="true" aria-label="soạn bài"></div>
 <pre id="log">…</pre>
@@ -26,7 +27,27 @@ kiện <code>input</code> — đúng thứ Lexical làm khi dán (quyết địn
   window.chrome = {
     runtime: {
       getURL: (p) => base + p,
-      sendMessage: (m) => { window.__harness.messages.push(m); return Promise.resolve(); },
+      // Đứng thay service worker + offscreen + Worker (quyết định 38): cùng OnnxEngine,
+      // cùng hàng đợi checkService.js, chỉ bỏ hai chặng message. Đường message thật
+      // chỉ kiểm được trong Chrome thật — dev/measure-chrome.mjs.
+      sendMessage: async (m) => {
+        window.__harness.messages.push(m);
+        if (m.type === 'soat:warm') return { ok: true };
+        if (m.type !== 'soat:check') return undefined;
+        window.__harness.service ||= (async () => {
+          const { OnnxEngine } = await import(base + 'src/engine/onnxEngine.js');
+          const { createCheckService } = await import(base + 'src/offscreen/checkService.js');
+          const engine = new OnnxEngine();
+          const ready = engine.load({
+            ort: base + 'vendor/ort.wasm.bundle.min.mjs', wasmDir: base + 'vendor/',
+            model: base + 'models/soat.int8.onnx', tokenizer: base + 'models/tokenizer.json',
+            lexicon: base + 'models/lexicon.json', meta: base + 'models/soat.meta.json',
+          });
+          return createCheckService(engine, ready);
+        })();
+        const svc = await window.__harness.service;
+        return { ...(await svc.handle({ key: `harness:${m.key}`, seq: m.seq, text: m.text })), instance: 'harness', loadMs: null };
+      },
       onMessage: { addListener: () => {} },
     },
     storage: { local: {

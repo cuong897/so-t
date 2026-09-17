@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
-  "minimum_chrome_version": "105",
+  "minimum_chrome_version": "116",
   "name": "Soát — kiểm tra chính tả tiếng Việt",
   "version": "1.0.0",
   "description": "Sửa lỗi dấu tiếng Việt ngay khi bạn gõ: thiếu dấu, sai dấu, hỏi/ngã. Chạy trên máy bạn, không gửi dữ liệu đi.",
 
-  "permissions": ["storage", "activeTab"],
+  "permissions": ["storage", "activeTab", "offscreen"],
 
   "content_scripts": [
     {
@@ -16,9 +16,13 @@
     }
   ],
 
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
+  },
+
   "web_accessible_resources": [
     {
-      "resources": ["src/engine/*.js", "src/content/*.js", "models/*", "vendor/*"],
+      "resources": ["src/engine/*.js", "src/content/*.js"],
       "matches": ["<all_urls>"]
     }
   ],

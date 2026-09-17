@@ -5,7 +5,9 @@
  * cổ điển và nạp phần còn lại bằng import() động từ chrome.runtime.getURL.
  * Đổi lại ta không cần bước build nào — sửa file là chạy được ngay.
  *
- * Toàn bộ xử lý diễn ra tại chỗ. Không một ký tự nào được gửi đi đâu.
+ * Toàn bộ xử lý diễn ra trong trình duyệt: tầng luật ngay tại trang, tầng model trong
+ * offscreen document của chính extension (quyết định 38). Không một ký tự nào rời khỏi
+ * trình duyệt.
  */
 
 (async () => {
@@ -34,45 +36,16 @@
     if (!debug) { if (!debugKnown) pendingMarks.push([k, v]); return; }
     try { document.documentElement.dataset[k] = v; } catch {}
   };
-  mark('soatBuild', 'do-3');
-  mark('soatModel', 'dang-nap');
+  mark('soatBuild', 'do-4-offscreen');
 
   const base = chrome.runtime.getURL('');
-  const [engine, targets, hl, replacer, tip, onnx] = await Promise.all([
+  const [engine, targets, hl, replacer, tip] = await Promise.all([
     import(base + 'src/engine/ruleEngine.js'),
     import(base + 'src/content/targets.js'),
     import(base + 'src/content/highlighter.js'),
     import(base + 'src/content/replace.js'),
     import(base + 'src/content/tooltip.js'),
-    import(base + 'src/engine/onnxEngine.js'),
   ]);
-
-  // Tầng 3. Nạp nền, không chặn gì cả: nếu chưa có file model thì load()
-  // thất bại êm và check() trả mảng rỗng — tầng luật vẫn chạy bình thường.
-  const model = new onnx.OnnxEngine();
-  const modelReady = model.load({
-    // Bản wasm-only (73KB js + 14MB wasm). Bỏ qua bản WebGPU vì nó cần
-    // .jsep.wasm nặng 27MB — gấp đôi dung lượng để đổi lấy tốc độ mà phần
-    // lớn máy người dùng không tận dụng được.
-    ort: base + 'vendor/ort.wasm.bundle.min.mjs',
-    wasmDir: base + 'vendor/',
-    model: base + 'models/soat.int8.onnx',
-    tokenizer: base + 'models/tokenizer.json',
-    lexicon: base + 'models/lexicon.json',
-    meta: base + 'models/soat.meta.json',
-  });
-
-  // Nạp model mất vài giây (78MB + 14MB wasm). Người dùng thường gõ xong
-  // TRƯỚC khi nó sẵn sàng, và lần soát cuối cùng đã thoát sớm ở `!model.ready`.
-  // Không soát lại ở đây thì tầng model im lặng biến mất cho tới khi người
-  // dùng gõ thêm một ký tự nữa — không lỗi, không crash, chỉ là mất tầng đắt
-  // nhất. Bắt được đúng cách: thử trên Facebook thật bằng một câu mà tầng luật
-  // cố ý không bắt.
-  const tLoad0 = performance.now();   // ĐO TẠM THỜI
-  modelReady.then((ok) => {
-    mark('soatModel', `${ok ? 'san-sang' : 'LOI'} sau ${Math.round(performance.now() - tLoad0)}ms`);
-    if (ok && active && active.isConnected) run(active);
-  });
 
   // -------------------------------------------------------------------------
   // Kiểu gạch chân. Phải nằm ở stylesheet của TRANG, không phải shadow DOM,
@@ -162,13 +135,53 @@
   }
 
   // -------------------------------------------------------------------------
+  // Tầng 3 KHÔNG nằm ở trang nữa (quyết định 38).
+  //
+  // Trước đây file này nạp onnxruntime + model 78MB ở MỌI trang, kể cả trang không
+  // có ô nhập liệu nào: đo trong Chrome thật, mỗi tab thêm 279 MB (quyết định 37).
+  // Giờ model sống trong MỘT offscreen document cho cả trình duyệt; trang chỉ gửi
+  // văn bản của ô qua message nội bộ của extension và nhận lại đúng mảng Issue mà
+  // OnnxEngine.check() trả. Không ký tự nào rời khỏi trình duyệt.
+  //
+  // Không import thứ gì của model ở đây — test/manifest.test.mjs canh chuyện đó.
+  // -------------------------------------------------------------------------
+  let warmed = false;
+  function warmModel() {
+    // Lần đầu một ô đủ điều kiện được focus: bảo service worker dựng offscreen và
+    // bắt đầu nạp model ngay, để lúc người dùng dán xong thì model đã gần sẵn sàng.
+    // Trang không ai gõ gì thì không bao giờ tới đây — không tốn MB nào.
+    if (warmed || dead) return;
+    warmed = true;
+    try {
+      const p = chrome.runtime.sendMessage({ type: 'soat:warm' });
+      if (p && p.catch) p.catch(() => {});
+    } catch (err) {
+      dead = /context invalidated/i.test(err?.message || '');
+    }
+  }
+
+  let elementIds = 0;
+  async function modelCheck(s, text) {
+    if (dead) return { ok: false, error: 'context chết' };
+    try {
+      const res = await chrome.runtime.sendMessage({ type: 'soat:check', key: s.id, seq: s.seq, text });
+      return res || { ok: false, error: 'không có trả lời' };
+    } catch (err) {
+      // sendMessage ném đồng bộ khi context đã chết (extension vừa cập nhật) — tầng
+      // luật vẫn chạy, tầng model im lặng cho tới khi trang được tải lại.
+      if (/context invalidated/i.test(err?.message || '')) dead = true;
+      return { ok: false, error: err?.message || String(err) };
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // Soát và vẽ
   // -------------------------------------------------------------------------
 
   function sessionFor(el) {
     let s = sessions.get(el);
     if (!s) {
-      s = { kind: targets.kindOf(el), issues: [], placed: [], map: null, timer: 0, seq: 0 };
+      s = { id: ++elementIds, kind: targets.kindOf(el), issues: [], placed: [], map: null, timer: 0, seq: 0 };
       sessions.set(el, s);
     }
     return s;
@@ -205,19 +218,20 @@
     s.placed = hl.paint(el, s.kind, ruleIssues, map);
     if (ruleIssues.length) bump('shown');
 
-    if (!model.ready) return;
-
     // Tầng model chạy sau, gộp vào rồi vẽ lại. Luật thắng khi chồng lấn vì
     // độ tin cậy cao hơn — dedupe() lo việc đó.
+    //
+    // Văn bản đổi giữa chừng thì lượt cũ phải dừng, không đốt CPU cho một kết quả bỏ
+    // đi. Offscreen làm việc đó: lượt mới của cùng ô (cùng s.id, seq lớn hơn) làm lượt
+    // cũ dừng ở lần nhả luồng kế tiếp, hoặc không chạy nếu còn xếp hàng.
     const token = ++s.seq;
-    // Văn bản đổi giữa chừng thì check() dừng ở lượt kế tiếp. Trước đây phép
-    // so `token` chỉ nằm ở dưới, tức lượt cũ vẫn đốt hết CPU rồi mới bị vứt —
-    // với bài dài chấm theo câu, đó là cả giây giữ luồng cho một kết quả bỏ đi.
-    const signal = { get aborted() { return token !== s.seq || !el.isConnected; } };
     // --- ĐO TẠM THỜI, GỠ TRƯỚC KHI NỘP STORE ----------------------------------
     const d = timing.start(burst, s, text, tRun);
     // ---------------------------------------------------------------------------
-    model.check(text, { signal }).then((modelIssues) => {
+    modelCheck(s, text).then((res) => {
+      timing.remote(res);
+      if (!res.ok) { timing.end(d, res.aborted ? 'BỎ — offscreen huỷ lượt cũ' : `LỖI ${res.error}`, 0); return; }
+      const modelIssues = res.issues;
       if (token !== s.seq || !el.isConnected) { timing.end(d, 'BỎ — văn bản đã đổi', modelIssues.length); return; }
       if (modelIssues.length === 0) { timing.end(d, 'model không đề xuất gì', 0); return; }
 
@@ -261,8 +275,13 @@
     start(burst, s, text, tRun) {
       const b = burst || { first: tRun, last: tRun, inputs: 0 };
       this.inFlight++;
-      return { b, tRun, tModel: performance.now(), len: text.length, runs0: model.stats.runs,
-        hits0: model.stats.cacheHits, overlap: this.inFlight - 1, seq: s.seq };
+      return { b, tRun, tModel: performance.now(), len: text.length, overlap: this.inFlight - 1, seq: s.seq };
+    },
+    // Offscreen trả kèm số lượt model, câu trúng cache, mã phiên và thời gian nạp —
+    // mã phiên đổi nghĩa là offscreen đã bị tạo lại và model nạp lại (quyết định 38).
+    remote(res) {
+      this.last = res;
+      if (res && res.instance) mark('soatModel', `offscreen ${res.instance} · nap ${res.loadMs ?? '?'}ms`);
     },
     end(d, outcome, n) {
       this.inFlight--;
@@ -271,7 +290,7 @@
       const line = `#${d.seq} ${outcome} · ${d.len} ký tự · ${d.b.inputs} sự kiện input`
         + ` · input đầu→chấm ${f(d.tRun - d.b.first)} (input cuối→chấm ${f(d.tRun - d.b.last)})`
         + ` · tầng luật ${f(d.tModel - d.tRun)} · model ${f(now - d.tModel)}`
-        + ` · ${model.stats.runs - d.runs0} lượt model, ${model.stats.cacheHits - d.hits0} câu trúng cache`
+        + ` · ${this.last?.runs ?? 0} lượt model, ${this.last?.cacheHits ?? 0} câu trúng cache`
         + ` · ${n} đề xuất · TỔNG từ input đầu ${f(now - d.b.first)}`
         + (d.overlap ? ` · CHỒNG ${d.overlap} lượt đang chạy` : '');
       if (!debug) return;
@@ -342,6 +361,7 @@
   document.addEventListener('focusin', (e) => {
     const el = e.target;
     if (!targets.isEligible(el)) return;
+    if (enabled) warmModel();
     active = el;
     watchEdits(el);
     schedule(el);
