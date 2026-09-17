@@ -2239,3 +2239,35 @@ qua message nội bộ, đúng loại thay đổi từng giết tầng model hai
 * **Cờ Chrome khác người dùng:** `--remote-debugging-pipe`,
   `--enable-unsafe-extension-debugging`, profile trắng, không extension nào khác. Không
   cờ nào đổi cách nạp wasm hay chạy content script.
+
+#### Sửa trước lượt đo chính thức — ghi lại cả số của hai lượt thử
+
+Viết xong `dev/measure-chrome.mjs` thì chạy thử để bắt lỗi công cụ. Thử là **thấy số**,
+nên ghi cả số ra đây — để ai đọc cũng biết lượt chính thức chạy sau khi tôi đã thấy gì.
+Luật chọn và ngưỡng ở trên **không đổi**.
+
+| lượt thử, 1 tắt + 1 bật | T | L | M sau GC | T∥ |
+|---|---|---|---|---|
+| có cửa sổ, đứng 10 s / 20 s | 387 ms | 147 ms | 281 MB | 773 ms |
+| headless, đứng 4 s / 5 s | 392 ms | 158 ms | 276 MB | 749 ms |
+
+Ba thứ sửa sau khi thử:
+
+1. **Headless.** Chrome bật cửa sổ sáu lần giữa lúc chủ repo đang làm việc, và chủ repo
+   yêu cầu dừng. Lượt chính thức chạy `--headless` — cùng `chrome.exe`, cùng
+   `Extensions.loadUnpacked`, cùng content script. Hai lượt thử ở bảng trên cho T, L, M
+   lệch nhau 1–7%. **Luật thêm:** nếu T, L hoặc M của lượt chính thức lệch quá 25% so
+   với lượt thử có cửa sổ thì không kết luận bằng headless, ghi rõ và hỏi chủ repo.
+2. **"TỔNG từ input đầu" trong chế độ đo đếm sai.** Chỉ `timing.start()` mới xoá đợt
+   input, mà `run()` thoát sớm (ô dưới 12 ký tự, model chưa nạp) thì không gọi nó. Bấm
+   vào ô soạn bài rồi vài giây sau mới dán thì TỔNG tính từ **cú bấm**: lượt thử ra 1.444
+   ms và 2.856 ms cho một lần dán mà đổi DOM → có log thật chỉ ~600 ms. Phép đo C trên
+   Facebook sẽ dính đúng lỗi này. Sửa: `run()` lấy đợt input ngay khi bắt đầu. Chỉ đụng
+   code đo, không đụng hành vi.
+3. **Tab rời tiền cảnh.** Lượt thử có cửa sổ ghi 2 tab `hidden` lúc đọc. Giờ đầu dò ghi
+   mọi lần đổi `visibilityState`, và mẫu nào từng `hidden` trong thời gian đứng thì
+   không kết luận.
+
+Không sửa: nhận diện tiến trình extension. Cờ `--extension-process` có thật, nhưng tiến
+trình của extension có sẵn trong Chrome tắt khi rảnh, nên số renderer nhỏ (~20 MB) lệch
+một hai cái giữa các lượt. Tính ra không quá ~5 MB mỗi tab — A/A sẽ bắt nếu nó lớn hơn.

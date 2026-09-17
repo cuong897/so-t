@@ -178,6 +178,10 @@
     if (!enabled || !targets.isEligible(el)) return;
     const s = sessionFor(el);
     const tRun = performance.now();   // ĐO TẠM THỜI
+    // ĐO TẠM THỜI — lấy đợt input NGAY, kể cả khi lượt này thoát sớm (ô ngắn, model
+    // chưa nạp). Trước đây chỉ timing.start() mới xoá đợt, nên bấm vào ô soạn bài rồi
+    // vài giây sau mới dán thì "TỔNG từ input đầu" tính từ cú bấm (quyết định 37).
+    const burst = timing.take(s);
 
     let text, map = null;
     if (s.kind === 'contenteditable') {
@@ -211,7 +215,7 @@
     // với bài dài chấm theo câu, đó là cả giây giữ luồng cho một kết quả bỏ đi.
     const signal = { get aborted() { return token !== s.seq || !el.isConnected; } };
     // --- ĐO TẠM THỜI, GỠ TRƯỚC KHI NỘP STORE ----------------------------------
-    const d = timing.start(s, text, tRun);
+    const d = timing.start(burst, s, text, tRun);
     // ---------------------------------------------------------------------------
     model.check(text, { signal }).then((modelIssues) => {
       if (token !== s.seq || !el.isConnected) { timing.end(d, 'BỎ — văn bản đã đổi', modelIssues.length); return; }
@@ -249,9 +253,13 @@
       s.burst.inputs++;
       s.burst.last = now;
     },
-    start(s, text, tRun) {
-      const b = s.burst || { first: tRun, last: tRun, inputs: 0 };
+    take(s) {
+      const b = s.burst;
       s.burst = null;
+      return b;
+    },
+    start(burst, s, text, tRun) {
+      const b = burst || { first: tRun, last: tRun, inputs: 0 };
       this.inFlight++;
       return { b, tRun, tModel: performance.now(), len: text.length, runs0: model.stats.runs,
         hits0: model.stats.cacheHits, overlap: this.inFlight - 1, seq: s.seq };
