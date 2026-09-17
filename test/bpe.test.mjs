@@ -74,6 +74,29 @@ test('từ bị cắt vì vượt maxLen thì báo -1 chứ không trỏ bừa',
     assert.ok(first.slice(-10).every((i) => i === -1));
   });
 
+// Quyết định 32. Test ở trên dùng toàn từ MỘT subword nên không bao giờ chạm
+// được chỗ cắt giữa từ. Ở đây cửa sổ đầy đúng lúc 'nguyễn' ('nguy@@' + 'ễn')
+// mới vào được một nửa. Bản cũ cho 'nguy@@' lọt vào và CHẤM từ đó trên mảnh cụt.
+// ml/test_encoding.py khẳng định đúng mảng wordIds này cho bản Python.
+test('không bao giờ để lọt một từ bị cắt dở — bỏ cả từ',
+  { skip: !hasFixtures }, () => {
+    const tok = new BpeTokenizer(JSON.parse(fs.readFileSync(specPath, 'utf8')));
+    assert.equal(tok.bpe('nguyễn').length, 2, 'fixture đổi: nguyễn không còn là hai subword');
+
+    const words = [...Array(6).fill('nghiêng'), 'nguyễn', 'sau', 'đó'];
+    const { ids, wordIds } = tok.encodeWords(words, 9);
+    const first = tok.firstSubwordIndex(wordIds, words.length);
+
+    assert.deepEqual(wordIds, [-1, 0, 1, 2, 3, 4, 5, -1]);
+    assert.equal(first[6], -1, 'nguyễn bị chấm dù chỉ vào được một mảnh');
+    assert.equal(ids[ids.length - 1], tok.eosId);
+    assert.ok(ids.length <= 9);
+
+    // Vừa khít thì vẫn nhận trọn: maxLen 10 đủ chỗ cho cả hai mảnh.
+    const fit = tok.encodeWords(words, 10);
+    assert.deepEqual(fit.wordIds, [-1, 0, 1, 2, 3, 4, 5, 6, 6, -1]);
+  });
+
 // --- phân nhóm nhãn hiển thị ---------------------------------------------
 
 test('tagGroup phân biệt hỏi/ngã với thiếu dấu và sai dấu', async () => {

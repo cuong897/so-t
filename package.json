@@ -7,7 +7,7 @@
   "scripts": {
     "test": "node --test \"test/*.test.mjs\"",
     "dev": "python -m http.server 8777",
-    "test:py": "cd ml && python test_evaluate.py",
+    "test:py": "cd ml && python test_evaluate.py && python test_encoding.py",
     "test:all": "npm test && npm run test:py"
   }
 }

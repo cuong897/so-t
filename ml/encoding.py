@@ -14,19 +14,26 @@ from __future__ import annotations
 
 
 def encode_words(tok, words: list[str], max_len: int = 96):
-    """-> (ids, word_ids) với word_ids[i] là chỉ số từ, hoặc None cho token đặc biệt."""
+    """-> (ids, word_ids) với word_ids[i] là chỉ số từ, hoặc None cho token đặc biệt.
+
+    Từ nào không vừa TRỌN trong max_len thì bỏ cả từ, kể cả mọi từ sau nó —
+    không bao giờ để lọt một mảnh cụt như `nguy@@` rồi chấm nhãn trên mảnh đó
+    (quyết định 32). Bản JS: BpeTokenizer.encodeWords, phải đổi cùng lúc.
+
+    Lưu ý cho train.py: cache `.tok<max_len>.npz` đặt tên theo max_len chứ không
+    theo phiên bản hàm này. Cache sinh TRƯỚC lần sửa này vẫn chứa mảnh cụt ở
+    những câu dài quá cửa sổ — xoá cache nếu train lại.
+    """
     ids = [tok.bos_token_id]
     word_ids: list[int | None] = [None]
 
     for w, word in enumerate(words):
         pieces = tok.tokenize(word) or [tok.unk_token]
+        if len(ids) + len(pieces) > max_len - 1:
+            break
         for p in pieces:
-            if len(ids) >= max_len - 1:
-                break
             ids.append(tok.convert_tokens_to_ids(p))
             word_ids.append(w)
-        if len(ids) >= max_len - 1:
-            break
 
     ids.append(tok.eos_token_id)
     word_ids.append(None)
