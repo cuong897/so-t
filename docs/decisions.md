@@ -2005,3 +2005,54 @@ tra `Map` mỗi cửa sổ. Không gate thứ không thể khác.
   đó là **F2** — bộ nhớ của bản đang ship tăng tới đâu.
 * **Điều kiện đáng lo thật là 1.** Cache sai thì không đổ, không chậm — chỉ lặng lẽ
   gạch sai chỗ.
+
+#### Kết quả — `dev/bench-editcache.html`, lần chạy đầu tiên: **trượt, giữ 0**
+
+Trang chạy hết không đổ. Tự chấm:
+
+| | kết quả | cần | |
+|---|---|---|---|
+| A/A | tệ nhất x1,14 | ≤ 1,25 | qua |
+| 1 đồng nhất | **240/240 · 240/240**, 3.005 issue, 1.405 lần trúng cache cửa sổ | tất cả | qua |
+| 2 chi phí sửa — gõ thêm cuối | **x0,02** (56ms so 3,1 giây), 1 lượt model | ≤ 0,25 | qua |
+| 2 chi phí sửa — thay từ giữa | **x0,04**, 2 lượt | ≤ 0,25 | qua |
+| 2 chi phí sửa — **xoá từ giữa** | **x0,47**, **22 lượt** trên 43 | ≤ 0,25 | **trượt** |
+| 3 đứng hình p90 — ba kiểu sửa | x0,78 / x0,84 / x1,02 | ≤ 1,25 | qua |
+| 4 bộ nhớ W | 15.553 dòng | ≤ 16.384 | qua |
+
+Luật: trượt 2 → **`DEFAULT_WINDOW_CACHE` giữ 0.** W giống hệt F2 ở mọi issue, rẻ hơn
+ở cả ba kiểu sửa, không đứng hình hơn, có trần bộ nhớ — và vẫn không ship, vì nó
+trượt một điều kiện đã ghi. Lần này điều kiện **không** đặt sai: nó bắt đúng một
+chỗ thiết kế hỏng.
+
+#### Chỗ hỏng nằm ở phép đếm thiết kế, không ở code
+
+Phép đếm cấu trúc ở đầu mục này thử ba kiểu sửa — thêm cuối, thay một từ, đổi dấu —
+và **không thử xoá hay chèn nguyên một từ**. Chạy lại với đủ năm kiểu, 40 văn bản
+6.000 ký tự không dấu câu, số cửa sổ phải chạy lại:
+
+| | thêm cuối | thay giữa | đổi dấu | **xoá từ** | **chèn từ** | tổng |
+|---|---|---|---|---|---|---|
+| F2 | 1,0 | 3,9 | 2,5 | **17,2** | **16,3** | 42,8 |
+| cắt theo nội dung | 1,0 | 2,3 | 2,2 | **2,5** | **2,6** | 58,4 |
+
+F2 chỉ tự khớp lại khi **số từ** không đổi. Thêm hay bớt nguyên một từ thì mọi từ
+phía sau dời chỉ số, điểm bắt đầu cửa sổ bám theo offset subword rơi lệch một từ, và
+độ lệch đó kéo dài tới cuối bài trong khoảng một nửa số ca. Kết luận "F2 tự khớp lại"
+trong phần thiết kế — và việc loại phương án cắt theo nội dung — đều rút ra từ một
+phép đếm thiếu đúng hai kiểu sửa làm hai phương án khác nhau.
+
+Đây là họ lỗi của cả dự án, ở tầng thấp nhất: **đo đủ trường hợp mình nghĩ tới, trong
+khi người dùng xoá chữ còn nhiều hơn thay chữ.** Ngưỡng ghi trước bắt được nó; một
+lập luận thiết kế thì không.
+
+#### Hai thứ còn nguyên sau đợt này
+
+* **Lỗi bộ nhớ trong bản đang ship vẫn còn**, vì W không ship. Đo được: 60 lần sửa
+  bài 2.000 ký tự không dấu câu, F2 giữ **26.460** dòng logit (60 mục câu, tăng đều
+  mỗi lần sửa); trần là 400 mục. Với bài 6.000 ký tự thì 400 × ~1.340 dòng. Chặn cache
+  theo câu bằng **số dòng** thay vì số mục là sửa riêng, không đổi issue nào — nhưng
+  đổi thời gian ở ca biên, nên vẫn cần đo.
+* **Code cache cửa sổ nằm sẵn trong `onnxEngine.js`, tắt.** Đợt sau chỉ cần thêm kế
+  hoạch cửa sổ cắt theo nội dung (một ứng viên đường lui mới, `F2c`) rồi đo lại **cả
+  chất lượng** — cửa sổ khác thì issue khác, không còn điều kiện "giống hệt" để dựa.

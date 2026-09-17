@@ -104,7 +104,7 @@ nhầm một lần là người dùng gỡ cài; bỏ sót thì họ không bi�
 ## Chạy thử
 
 ```bash
-npm run test:all  # 60 test JS + 10 kiểm tra Python
+npm run test:all  # 63 test JS + 10 kiểm tra Python
 npm run dev       # rồi mở hai trang dưới đây
 ```
 

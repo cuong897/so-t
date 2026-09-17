@@ -1,13 +1,13 @@
 # Bàn giao — dự án Soát
 
-Đọc file này trước, rồi `README.md` (tổng quan) và `docs/decisions.md` (34 quyết
+Đọc file này trước, rồi `README.md` (tổng quan) và `docs/decisions.md` (35 quyết
 định, kèm lý do và mọi lỗi đã mắc).
 
 ---
 
 ## Phiên vừa rồi làm gì (15–17/09/2026)
 
-Chín commit, `ea8c174..` commit bàn giao này. Bắt đầu từ yêu cầu "xem xét kỹ việc
+Mười một commit, `ea8c174..` commit bàn giao này. Bắt đầu từ yêu cầu "xem xét kỹ việc
 sửa model cắt cụt văn bản" (việc số 4 cũ), và nó mở ra ba chuyện lớn hơn:
 
 **Tầng model giữ luồng chính của trang** (`ea8c174`). `onnxEngine.js` khai "chạy
@@ -37,6 +37,11 @@ Và một chuyện nhỏ nhưng dai (`73fc3c1`): byte NUL thật nằm trong mã
 commit đầu tiên, làm `grep` coi `bpe.js` là file nhị phân. Nó lặp lại ba lần
 trong phiên này vì chuỗi thoát bị giải mã ngay trong tham số lệnh gọi công cụ.
 
+**Cache theo cửa sổ — thử và trượt** (`c5e374f`, quyết định 35). Giống hệt F2 ở mọi
+issue, rẻ hơn 25–50 lần khi gõ thêm hay thay một từ, nhưng xoá một từ giữa bài vẫn
+chạy lại nửa bài. Phép đếm lúc thiết kế đã bỏ sót đúng kiểu sửa đó. Code nằm sẵn,
+tắt; việc số 4 ghi hướng tiếp.
+
 ---
 
 ## Sản phẩm là gì
@@ -55,8 +60,8 @@ viết khoá luận.
 
 ## Trạng thái: CHẠY ĐƯỢC TRONG CHROME THẬT — nhưng code tầng model vừa đổi
 
-- 66 commit, cây git sạch
-- 60 test JS + 2 bộ kiểm tra Python, tất cả pass (`npm run test:all`)
+- 68 commit, cây git sạch
+- 63 test JS + 2 bộ kiểm tra Python, tất cả pass (`npm run test:all`)
 - **ĐÃ XÁC NHẬN CHẠY TRONG CHROME THẬT với tầng luật.** Chủ repo gõ trên
   Facebook câu *"mình xin chia sẽ một vãi trãi nghiệm cho mọi ngươi"* và thấy
   gạch chân đúng hai chỗ — khớp chính xác với `chia sẽ→chia sẻ` và
@@ -249,42 +254,51 @@ bước 0 là thử lại trên Chrome thật (tức việc số 1 ở trên).
 Sinh lại: `python ml/package_extension.py` và `python ml/make_screenshots.py`
 (cả hai neo đường dẫn theo vị trí file, đứng đâu chạy cũng được).
 
-### 4. Việc tiếp theo cho tầng model: cache theo cửa sổ, rồi đẩy model khỏi luồng chính
+### 4. Sửa bài dài không dấu câu vẫn chấm lại cả bài — và một lỗi bộ nhớ
 
 **Đây là việc đầu tiên không cần tài khoản hay quyền gì của chủ repo.**
 
-Việc số 4 cũ — văn bản không dấu câu bị cắt cụt — **đã xong** (quyết định 34,
-`35fbf45` ngưỡng ghi trước → commit bàn giao này đổi mặc định sang F2). Văn bản
-không dấu câu giờ được đọc hết bằng cửa sổ trượt 64 subword bước 32:
+Đã xong trước đó: văn bản không dấu câu được đọc hết bằng cửa sổ trượt F2 (quyết
+định 34 — recall 0,7202, precision 0,9671).
 
-| trên 216 bài không dấu câu | recall | precision | câu sạch bị gạch |
-|---|---|---|---|
-| **F2 — đang ship** | 0,7202 | 0,9671 | 0,87% |
-| F2s — cửa sổ 48, qua nhưng không được chọn | 0,7138 | 0,9586 | 1,16% |
-| cắt cụt — trước đây | 0,1553 | 0,9419 | 0,23% |
+**Vừa thử và TRƯỢT: cache theo cửa sổ** (quyết định 35, `c5e374f` ngưỡng ghi trước).
+Code nằm sẵn trong `onnxEngine.js`, **tắt** (`DEFAULT_WINDOW_CACHE = 0`). Trên model
+thật: giống hệt F2 480/480, và một lần sửa bài 6.000 ký tự tốn x0,02 khi gõ thêm
+cuối, x0,04 khi thay một từ — nhưng **x0,47 khi xoá một từ giữa bài** (22 lượt model
+trên 43), trượt ngưỡng 0,25.
 
-Đứng hình so bản cắt cụt **đo cùng lượt, cùng 40 văn bản mỗi cỡ**: p90 x0,75–1,09,
-không tệ hơn. Đối chứng A/A qua nhưng sát (p50 x1,23 ở 2.000 ký tự, ngưỡng 1,25) —
-thước đo này **không** phân biệt được hai cấu hình chênh dưới ~25% ở p50.
+Lý do: F2 chỉ tự khớp lại ranh giới cửa sổ khi **số từ** không đổi. Phép đếm lúc
+thiết kế bỏ sót đúng kiểu xoá và chèn từ, nên đã loại nhầm phương án đúng:
 
-Còn lại hai việc, theo thứ tự:
+| 6.000 ký tự, số cửa sổ phải chạy lại | thay từ | **xoá từ** | **chèn từ** | tổng cửa sổ |
+|---|---|---|---|---|
+| F2 | 3,9 | **17,2** | **16,3** | 42,8 |
+| cắt theo nội dung | 2,3 | **2,5** | **2,6** | 58,4 |
 
-1. **Cache theo cửa sổ cho câu dài.** Sửa một chữ trong bài 6.000 ký tự không dấu
-   câu hiện chấm lại **cả bài** (~3,4 giây CPU, chia thành các lượt ~100ms có nhả
-   luồng, bị huỷ ngay khi người dùng gõ tiếp) — vì cả bài là một "câu" nên cache
-   theo câu không trúng. Chỗ khó: cửa sổ trượt dịch đi khi chèn hay xoá chữ ở đầu
-   bài, nên khoá cache không thể là vị trí. Ghi ngưỡng trước; đo đúng ca "sửa một
-   chữ ở giữa bài không dấu câu" mà `dev/bench-accept.html` mục 7 đã có sẵn.
-2. **`ort.env.wasm.proxy = true`** — đẩy `session.run` sang worker của
-   onnxruntime. Đó là gốc của mọi con số đứng hình trong quyết định 32–34. Chưa ai
-   thử, và **phải kiểm trong Chrome thật** chứ không phải localhost: worker cần nạp
-   được qua `chrome-extension://` từ một content script, đúng loại chỗ đã giết tầng
-   model hai tuần ở quyết định 24. Nếu nó chạy thì cả việc nhả luồng lẫn phần lớn
-   quyết định 34 trở thành không cần thiết — đo lại bằng `dev/bench-blocking.html`.
+Việc tiếp theo, theo thứ tự:
 
-Một lưu ý khi sửa code ở đây: **đếm byte NUL trước khi commit** (quyết định 34).
-Chuỗi thoát NUL gõ trong tham số lệnh gọi công cụ bị giải mã thành byte thật, đã
-làm `grep` coi `bpe.js` là file nhị phân từ commit đầu tiên.
+1. **Chặn cache theo câu bằng số dòng logit** — lỗi bộ nhớ **đang ship**. Cache theo
+   câu lưu cả bài cho mọi phiên bản: 60 lần sửa bài 2.000 ký tự không dấu câu đã giữ
+   26.460 dòng, và trần là 400 phiên bản — với bài 6.000 ký tự là ~536.000 dòng. Sửa
+   này không đổi issue nào, chỉ đổi thời gian ở ca biên. Nhỏ, nên làm trước.
+2. **Ứng viên `F2c`: cửa sổ cắt theo nội dung + cache cửa sổ.** Mẫu cài đặt nằm trong
+   quyết định 35 (hash FNV của từ, đoạn 16–32 subword, cửa sổ = hai đoạn liền nhau,
+   tối đa 64). Cửa sổ khác F2 nên **issue khác F2** — phải ghi lại cả điều kiện chất
+   lượng của quyết định 34 (precision ≥ 0,95, câu sạch bị gạch ≤ 1,50%, so F2 đo cùng
+   lượt), cộng chi phí sửa cho **đủ năm** kiểu: thêm cuối, thay, đổi dấu, xoá, chèn.
+   Tốn 36% cửa sổ hơn F2 khi chấm lạnh — đứng hình phải đo, không suy ra.
+3. **`ort.env.wasm.proxy = true`** — đẩy `session.run` khỏi luồng chính. Gốc của mọi
+   con số đứng hình trong quyết định 32–35. Phải kiểm trong Chrome thật: worker phải
+   nạp được qua `chrome-extension://` từ content script (quyết định 24).
+
+Hai lưu ý khi sửa code ở đây:
+
+* **Đếm byte NUL trước khi commit** (quyết định 34). Chuỗi thoát NUL gõ trong tham số
+  lệnh gọi công cụ bị giải mã thành byte thật — đã lặp lại **bốn** lần, lần cuối ngay
+  trong đợt cache cửa sổ.
+* **Tái cấu trúc engine thì so với commit trước bằng session giả**, như quyết định 35
+  đã làm: trang đo so hai cấu hình của **cùng** code, nên không nhìn thấy lỗi làm lệch
+  cả hai phía cùng lúc.
 
 ### 5. ĐÃ XONG — ngưỡng riêng cho lớp phụ âm (quyết định 29)
 
@@ -404,9 +418,11 @@ dev/                playground.html, onnx-test.html, shots.html (nguồn ảnh s
   bench-batch.html    gộp lô: đúng trước, nhanh sau (đã bác — chậm hơn)
   bench-accept.html   TÁM ĐIỀU KIỆN của quyết định 33, qua đúng check()
   bench-fallback.html quyết định 34 — đường lui, đứng hình so bản cũ cùng lượt, A/A
+  bench-editcache.html quyết định 35 — cache cửa sổ: đồng nhất, chi phí sửa, bộ nhớ
   baseline/           onnxEngine cắt cụt cũ, để đo so cùng lượt
 test/chunking.test.mjs  splitSentences + planRuns: mọi từ phải được phủ
-docs/decisions.md   34 quyết định
+test/windowcache.test.mjs  cache cửa sổ giống hệt chạy lạnh — session giả nhạy ngữ cảnh
+docs/decisions.md   35 quyết định
 docs/blog.html      bài viết về toàn bộ quá trình và các lần sai
 docs/store/         hồ sơ nộp Chrome Web Store
 ```
