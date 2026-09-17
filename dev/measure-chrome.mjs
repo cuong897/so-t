@@ -10,8 +10,10 @@
  * tồn tại. Đổi cách đo thì sửa quyết định trước, đừng sửa ở đây cho số đẹp lên.
  *
  * Chạy (cần Python có psutil để đọc bộ nhớ tiến trình):
- *   node dev/measure-chrome.mjs --out kq.json
+ *   node dev/measure-chrome.mjs --out kq.json                 quyết định 37: tắt / bật
  *   node dev/measure-chrome.mjs --rounds 1 --dwell 10 --conc 20   (thử nhanh)
+ *   node dev/measure-chrome.mjs --plan 38 --out kq.json       quyết định 38: tắt / A / O
+ *        --a dist/soat-A-31a821e.zip  (bản trước offscreen)  --o dist/soat-1.0.0.zip
  *
  * Chạy Chrome KHÔNG CỬA SỔ (--headless) — chủ repo không muốn cửa sổ bật lên giữa lúc
  * làm việc. Cùng chrome.exe, cùng đường nạp extension. --headful để thấy cửa sổ.
@@ -36,7 +38,11 @@ const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) =>
 const OPT = {
   chrome: args.chrome || 'C:/Program Files/Google/Chrome/Application/chrome.exe',
   zip: path.resolve(ROOT, args.zip || 'dist/soat-1.0.0.zip'),
-  rounds: Number(args.rounds || 3),        // số cặp tắt/bật
+  plan: String(args.plan || '37'),
+  zipA: path.resolve(ROOT, args.a || 'dist/soat-A-31a821e.zip'),
+  zipO: path.resolve(ROOT, args.o || 'dist/soat-1.0.0.zip'),
+  idle: Number(args.idle || 45),           // giây rảnh trước bước 7 của quyết định 38
+  rounds: Number(args.rounds || 3),        // số bộ lượt (37: tắt+bật, 38: tắt+A+O)
   dwell: Number(args.dwell || 10),         // giây mỗi tab tuần tự
   conc: Number(args.conc || 20),           // giây cho 4 tab đồng thời
   out: args.out ? path.resolve(args.out) : null,
@@ -57,6 +63,14 @@ const MB = (b) => b / 2 ** 20;
 // ---------------------------------------------------------------------------
 const PASTE_P = 'Tuần trước nhóm mình đã tổ chức một buổi gặp mặt nhỏ ở quán cà phê gần trường. Mọi người đến khá đông và ai cũng mang theo một món quà nhỏ để trao đổi với nhau. Sau đó cả nhóm cùng nhau đi dạo quanh hồ và chụp rất nhiều ảnh kỷ niệm. Buổi tối chúng mình ăn lẩu và nói chuyện về những dự định trong năm tới. Có bạn muốn học thêm tiếng Anh, có bạn định xin việc ở một công ty lớn. Mình thì vẫn đang phân vân giữa việc học tiếp và đi làm ngay. Hơn một nửa dân số cứ trú tại vùng đồng bằng ven biển.';
 const PASTE_U = 'tuần trước nhóm mình đã tổ chức một buổi gặp mặt nhỏ ở quán cà phê gần trường mọi người đến khá đông và ai cũng mang theo một món quà nhỏ để trao đổi với nhau sau đó cả nhóm cùng nhau đi dạo quanh hồ và chụp rất nhiều ảnh kỷ niệm buổi tối chúng mình ăn lẩu và nói chuyện về những dự định trong năm tới có bạn muốn học thêm tiếng anh có bạn định xin việc ở một công ty lớn mình thì vẫn đang phân vân giữa việc học tiếp và đi làm ngay hơn một nửa dân số cứ trú tại vùng đồng bằng ven biển';
+// Quyết định 38, bước 7: câu cuối đổi một chữ để KHÔNG trúng cache theo câu — model
+// phải chạy thật sau khi rảnh, không phải trả lại kết quả cũ.
+const PASTE_I = PASTE_P.replace('Hơn một nửa dân số cứ trú', 'Gần một nửa dân số cứ trú');
+// Bước 6b, thêm sau lượt thử, KHÔNG vào luật: cache giờ dùng chung mọi tab, nên hai đoạn
+// của bước 6 đã được t1 chấm từ bước 2 và 5 — bước 6 không hề chạy model song song. Hai
+// đoạn này chưa ai chấm.
+const PASTE_6P = PASTE_P.replace('Tuần trước', 'Tháng trước').replace('Hơn một nửa', 'Khoảng một nửa');
+const PASTE_6U = PASTE_U.replace('tuần trước', 'tháng trước').replace('hơn một nửa', 'khoảng một nửa');
 
 // ---------------------------------------------------------------------------
 // Trang thử. Đầu dò nằm ở <head>, chạy trước mọi script khác của trang và trước
@@ -289,13 +303,42 @@ async function gcAll(b, tabs) {
   for (const t of tabs) {
     try { await b.send('HeapProfiler.collectGarbage', {}, t.sessionId); } catch {}
   }
+  // "Sau GC" phải ép GC ở NƠI MODEL SỐNG. Ở bản A đó là các tab; ở bản offscreen là
+  // trang offscreen và Worker của nó. Lượt thử đầu của quyết định 38 chỉ ép GC các tab,
+  // nên bộ đệm 78 MB model vừa tải về còn nằm trong Worker (backingStorageSize
+  // 78.704.947 byte) và bị tính vào "bộ nhớ một lần".
+  await gcOffscreen(b);
   await sleep(2000);
+}
+
+async function gcOffscreen(b) {
+  const race = (p) => Promise.race([p, sleep(5000).then(() => { throw new Error('hết giờ'); })]);
+  const { targetInfos } = await b.send('Target.getTargets');
+  const off = targetInfos.find((t) => t.url.endsWith('/src/offscreen/offscreen.html'));
+  if (!off) return;
+  if (!b.offscreen || b.offscreen.targetId !== off.targetId) {
+    const { sessionId } = await b.send('Target.attachToTarget', { targetId: off.targetId, flatten: true });
+    // Worker riêng của trang chỉ nhận lệnh qua phiên tự gắn từ trang cha — gắn thẳng từ
+    // trình duyệt thì mọi lệnh treo.
+    const workers = [];
+    b.listeners.push((msg) => {
+      if (msg.method === 'Target.attachedToTarget' && msg.sessionId === sessionId
+          && msg.params.targetInfo.type === 'worker') workers.push(msg.params.sessionId);
+    });
+    await b.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }, sessionId);
+    await sleep(500);
+    b.offscreen = { targetId: off.targetId, sessionId, workers };
+  }
+  for (const sid of [...b.offscreen.workers, b.offscreen.sessionId]) {
+    try { await race(b.send('HeapProfiler.collectGarbage', {}, sid)); } catch {}
+  }
+  b.gcOffscreenWorkers = b.offscreen.workers.length;
 }
 
 // ---------------------------------------------------------------------------
 // Dán: thay nội dung ô contenteditable bằng thao tác DOM, không bắn `input`.
 // ---------------------------------------------------------------------------
-async function pasteTest(b, tab, text, label) {
+async function focusEd(b, tab) {
   await b.send('Target.activateTarget', { targetId: tab.targetId });
   await b.send('Emulation.setFocusEmulationEnabled', { enabled: true }, tab.sessionId);
   const box = JSON.parse(await evalIn(b, tab, `(() => { const r = document.getElementById('ed').getBoundingClientRect();
@@ -303,8 +346,10 @@ async function pasteTest(b, tab, text, label) {
   for (const type of ['mousePressed', 'mouseReleased']) {
     await b.send('Input.dispatchMouseEvent', { type, x: box.x, y: box.y, button: 'left', clickCount: 1 }, tab.sessionId);
   }
-  // Để lượt soát của lần focus (ô rỗng, dưới MIN_LENGTH) chạy xong trước khi dán.
-  await sleep(800);
+}
+
+/** Dán ngay vào ô đang focus, đợi tới khi có dòng log không phải "BỎ", đọc gạch chân. */
+async function pasteNow(b, tab, text, label) {
   const result = await evalIn(b, tab, `(async () => {
     const ed = document.getElementById('ed');
     if (document.activeElement !== ed) return JSON.stringify({ error: 'ô soạn bài không được focus' });
@@ -324,28 +369,50 @@ async function pasteTest(b, tab, text, label) {
         const h = CSS.highlights.get(name);
         if (h) for (const r of h) marked.push(name + ':' + r.toString());
       }
-      const settled = log !== logBefore && !/BỎ — văn bản đã đổi$/.test(log);
+      const last = log.split(' || ').pop();
+      const settled = log !== logBefore && !/ BỎ — /.test(last);
       if (settled || performance.now() > deadline) {
+        const during = window.__probe.longtasks.filter(([s0]) => s0 >= t0 - 5);
         return JSON.stringify({ seenAfterMs: Math.round(performance.now() - t0), marked,
-          lastLog: log.split(' || ').pop(), timedOut: !settled });
+          lastLog: last, timedOut: !settled,
+          longestTaskDuring: during.reduce((a, [, d]) => Math.max(a, d), 0),
+          soatModel: document.documentElement.dataset.soatModel ?? null });
       }
     }
   })()`, true);
   const r = JSON.parse(result);
   const tot = /TỔNG từ input đầu ([0-9]+)ms/.exec(r.lastLog || '');
   const model = /model ([0-9]+)ms · ([0-9]+) lượt model/.exec(r.lastLog || '');
-  // Dọn ô cho lần sau — xoá cũng là một thay đổi DOM, đợi nó soát xong.
-  await evalIn(b, tab, `document.getElementById('ed').replaceChildren()`);
-  await sleep(1500);
+  const inst = /offscreen ([a-z0-9]+) /.exec(r.soatModel || '');
   return {
-    label, ...r,
+    label, host: tab.host, ...r,
     totalMs: tot ? Number(tot[1]) : null,
     modelMs: model ? Number(model[1]) : null,
     modelRuns: model ? Number(model[2]) : null,
+    instance: inst ? inst[1] : null,
     underlinesCu: r.marked ? r.marked.filter((m) => m.endsWith(':cứ')).length : 0,
     otherUnderlines: r.marked ? r.marked.filter((m) => !m.endsWith(':cứ')) : [],
   };
 }
+
+async function clearEd(b, tab) {
+  // Xoá cũng là một thay đổi DOM — đợi nó soát xong trước lần dán sau.
+  await evalIn(b, tab, `document.getElementById('ed').replaceChildren()`);
+  await sleep(1500);
+}
+
+async function pasteTest(b, tab, text, label) {
+  await focusEd(b, tab);
+  // Để lượt soát của lần focus (ô rỗng, dưới MIN_LENGTH) chạy xong trước khi dán.
+  await sleep(800);
+  const r = await pasteNow(b, tab, text, label);
+  await clearEd(b, tab);
+  return r;
+}
+
+const pasteLine = (r) => `đổi DOM→thấy log ${r.seenAfterMs}ms · model ${r.modelMs ?? '-'}ms/${r.modelRuns ?? '-'} lượt`
+  + ` · long task lúc chấm ${r.longestTaskDuring}ms · gạch "cứ": ${r.underlinesCu} · gạch khác: ${r.otherUnderlines.length}`
+  + `${r.instance ? ' · offscreen ' + r.instance : ''}${r.error ? ' · ' + r.error : ''}${r.timedOut ? ' · HẾT GIỜ · ' + r.lastLog : ''}`;
 
 // ---------------------------------------------------------------------------
 // Một lượt
@@ -461,33 +528,240 @@ function judge(rounds) {
 }
 
 // ---------------------------------------------------------------------------
+// Quyết định 38 — tắt / A (bản trước offscreen) / O (offscreen), bảy bước mỗi lượt.
+// ---------------------------------------------------------------------------
+async function round38(index, variant, extDirs) {
+  console.log(`lượt ${index + 1} (${variant}${OPT.headless ? ', headless' : ''}): mở Chrome…`);
+  const b = await launch(variant !== 'tắt', extDirs[variant]);
+  const on = variant !== 'tắt';
+  const out = { index, variant, extId: b.extId };
+  try {
+    await sleep(2000);
+    const tabs = [];
+
+    // 1. t1, đứng 10 s
+    tabs.push(await openTab(b, 't1', false));
+    await sleep(OPT.dwell * 1000);
+    out.sequential = [await readProbe(b, tabs[0], OPT.dwell * 1000)];
+
+    // 2. dán lạnh: bấm rồi dán NGAY
+    if (on) {
+      await focusEd(b, tabs[0]);
+      out.cold = await pasteNow(b, tabs[0], PASTE_P, 'lạnh, có dấu câu');
+      await clearEd(b, tabs[0]);
+      console.log(`  2 dán lạnh: ${pasteLine(out.cold)}`);
+    }
+
+    // 3. t2–t4 tuần tự, S4
+    for (let i = 2; i <= 4; i++) {
+      const tab = await openTab(b, `t${i}`, false);
+      tabs.push(tab);
+      await sleep(OPT.dwell * 1000);
+      out.sequential.push(await readProbe(b, tab, OPT.dwell * 1000));
+    }
+    console.log(`  1+3 long task dài nhất t1–t4: ${out.sequential.map((p) => p.longestTask).join(' / ')} ms${out.sequential.some((p) => p.everHidden) ? ' · CÓ TAB RỜI TIỀN CẢNH' : ''}`);
+    await sleep(5000);
+    out.s4 = await memory(b);
+    await gcAll(b, tabs);
+    out.s4gc = await memory(b);
+
+    // 4. t5–t8 cùng lúc, S8
+    const conc = await Promise.all([5, 6, 7, 8].map((i) => openTab(b, `t${i}`, i !== 8)));
+    tabs.push(...conc);
+    await sleep(OPT.conc * 1000);
+    out.concurrent = [];
+    for (const tab of conc) out.concurrent.push(await readProbe(b, tab, OPT.conc * 1000));
+    await sleep(5000);
+    out.s8 = await memory(b);
+    await gcAll(b, tabs);
+    out.s8gc = await memory(b);
+    out.gcOffscreenWorkers = b.gcOffscreenWorkers ?? 0;
+    console.log(`  S4 ${MB(out.s4gc.allPrivate).toFixed(0)} MB (trước GC ${MB(out.s4.allPrivate).toFixed(0)}) · S8 ${MB(out.s8gc.allPrivate).toFixed(0)} MB (trước GC ${MB(out.s8.allPrivate).toFixed(0)}) · mọi tiến trình${variant === 'O' ? ` · GC Worker offscreen: ${out.gcOffscreenWorkers}` : ''}`);
+
+    if (on) {
+      // 5. dán ấm ở t1
+      out.warm = [];
+      for (const [text, lbl] of [[PASTE_U, 'ấm, không dấu câu'], [PASTE_P, 'ấm, có dấu câu (cache ấm)']]) {
+        const r = await pasteTest(b, tabs[0], text, lbl);
+        out.warm.push(r);
+        console.log(`  5 dán ${lbl}: ${pasteLine(r)}`);
+      }
+
+      // 6. hai tab dán cùng lúc
+      await focusEd(b, tabs[1]);
+      await focusEd(b, tabs[2]);
+      await sleep(800);
+      out.together = await Promise.all([
+        pasteNow(b, tabs[1], PASTE_P, 'cùng lúc t2, có dấu câu'),
+        pasteNow(b, tabs[2], PASTE_U, 'cùng lúc t3, không dấu câu'),
+      ]);
+      for (const r of out.together) console.log(`  6 dán ${r.label}: ${pasteLine(r)}`);
+      await Promise.all([clearEd(b, tabs[1]), clearEd(b, tabs[2])]);
+
+      // 6b. (không vào luật) hai tab cùng lúc, đoạn chưa ai chấm
+      await focusEd(b, tabs[1]);
+      await focusEd(b, tabs[2]);
+      await sleep(800);
+      out.together6b = await Promise.all([
+        pasteNow(b, tabs[1], PASTE_6P, '6b cùng lúc t2, chưa ai chấm'),
+        pasteNow(b, tabs[2], PASTE_6U, '6b cùng lúc t3, chưa ai chấm'),
+      ]);
+      for (const r of out.together6b) console.log(`  6b dán ${r.label}: ${pasteLine(r)} · gạch: ${JSON.stringify(r.marked)}`);
+      await Promise.all([clearEd(b, tabs[1]), clearEd(b, tabs[2])]);
+
+      // 7. sau khi rảnh
+      await sleep(OPT.idle * 1000);
+      out.idle = await pasteTest(b, tabs[0], PASTE_I, `sau ${OPT.idle} s rảnh, đoạn biến thể`);
+      console.log(`  7 dán ${out.idle.label}: ${pasteLine(out.idle)} · gạch: ${JSON.stringify(out.idle.marked)}`);
+    }
+  } finally {
+    await close(b);
+  }
+  return out;
+}
+
+function judge38(rounds) {
+  const by = (v) => rounds.filter((r) => r.variant === v);
+  const off = by('tắt');
+  const A = by('A');
+  const O = by('O');
+  const problems = [];
+  const lines = [];
+  const f0 = (x) => (Number.isFinite(x) ? Math.round(x).toString() : '—');
+  const f1 = (x) => (Number.isFinite(x) ? x.toFixed(1) : '—');
+
+  if (off.length < 3 || A.length < 3 || O.length < 3) problems.push(`chỉ có ${off.length} tắt / ${A.length} A / ${O.length} O — quyết định 38 cần 3 / 3 / 3`);
+  const hidden = rounds.flatMap((r) => r.sequential).filter((p) => p.everHidden);
+  if (hidden.length) problems.push(`${hidden.length} tab tuần tự rời tiền cảnh`);
+  const memErr = rounds.flatMap((r) => [r.s4gc, r.s8gc]).reduce((a, m) => a + m.nErrors, 0);
+  if (memErr) problems.push(`${memErr} tiến trình không đọc được bộ nhớ`);
+
+  const good = (r) => r && !r.error && !r.timedOut && r.underlinesCu === 1 && r.otherUnderlines.length === 0;
+  const results = [];
+  const cond = (n, text, pass, need) => { results.push({ n, pass }); lines.push(`${pass ? 'qua ' : 'TRƯỢT'} ${n} ${text}   (cần ${need})`); };
+
+  // 1
+  const oPastes = O.flatMap((r) => [r.cold, ...(r.warm || []), ...(r.together || [])]);
+  const nGood = oPastes.filter(good).length;
+  cond('1', `đúng: ${nGood} / ${oPastes.length} lần dán của O gạch đúng một chỗ dưới "cứ"`, nGood === 15 && oPastes.length === 15, '15 / 15');
+
+  // 2, 3
+  const d84 = (r) => MB(r.s8gc.allPrivate - r.s4gc.allPrivate);
+  const perTab = (median(O.map(d84)) - median(off.map(d84))) / 4;
+  const perTabA = (median(A.map(d84)) - median(off.map(d84))) / 4;
+  cond('2', `bộ nhớ mỗi tab: O ${f1(perTab)} MB   [A ${f1(perTabA)} MB]`, perTab <= 30, '≤ 30 MB');
+  const once = MB(median(O.map((r) => r.s4gc.allPrivate)) - median(off.map((r) => r.s4gc.allPrivate))) - 4 * perTab;
+  const onceNoGc = MB(median(O.map((r) => r.s4.allPrivate)) - median(off.map((r) => r.s4.allPrivate))) - 4 * perTab;
+  cond('3', `bộ nhớ một lần: O ${f1(once)} MB   [trước GC ${f1(onceNoGc)} MB]`, once <= 350, '≤ 350 MB');
+  if (O.some((r) => !r.gcOffscreenWorkers)) problems.push('có lượt O không ép GC được Worker của offscreen — "sau GC" không đúng định nghĩa');
+
+  // 4, 5
+  const L = median(O.flatMap((r) => r.sequential.map((p) => p.longestTask)));
+  const LA = median(A.flatMap((r) => r.sequential.map((p) => p.longestTask)));
+  const Loff = median(off.flatMap((r) => r.sequential.map((p) => p.longestTask)));
+  cond('4', `long task lúc mở trang: O ${f0(L)} ms   [A ${f0(LA)} · tắt ${f0(Loff)}]`, L <= 50, '≤ 50 ms');
+  const Lc = Math.max(...O.flatMap((r) => (r.warm || []).map((x) => x.longestTaskDuring)));
+  const LcA = Math.max(...A.flatMap((r) => (r.warm || []).map((x) => x.longestTaskDuring)));
+  cond('5', `long task lúc chấm: O ${f0(Lc)} ms   [A ${f0(LcA)}]`, Lc <= 50, '≤ 50 ms');
+
+  // 6
+  let pass6 = true;
+  const parts6 = [];
+  for (let k = 0; k < 2; k++) {
+    const o = median(O.map((r) => r.warm?.[k]?.seenAfterMs));
+    const a = median(A.map((r) => r.warm?.[k]?.seenAfterMs));
+    parts6.push(`${O[0]?.warm?.[k]?.label ?? k}: O ${f0(o)} · A ${f0(a)} · ${o - a >= 0 ? '+' : ''}${f0(o - a)}`);
+    if (!(o - a <= 100)) pass6 = false;
+  }
+  cond('6', `dán ấm: ${parts6.join(' | ')} ms`, pass6, '≤ +100 ms mỗi đoạn');
+
+  // 7
+  const cold = median(O.map((r) => r.cold?.seenAfterMs));
+  const coldA = median(A.map((r) => r.cold?.seenAfterMs));
+  cond('7', `dán lạnh: O ${f0(cold)} ms   [A ${f0(coldA)}, model đã nạp sẵn trong tab]`, cold <= 2000, '≤ 2.000 ms');
+
+  // 8
+  const warmU = median(O.map((r) => r.warm?.[0]?.seenAfterMs));
+  let n8 = 0;
+  const why8 = [];
+  O.forEach((r, k) => {
+    const a = A[k]?.idle;
+    const o = r.idle;
+    const sameMarks = !!(a && o) && JSON.stringify([...a.marked].sort()) === JSON.stringify([...o.marked].sort());
+    const sameInstance = !!(o?.instance && r.cold?.instance && o.instance === r.cold.instance);
+    const inTime = !!o && o.seenAfterMs <= warmU + 300;
+    const ok = sameMarks && sameInstance && inTime && !o.error && !o.timedOut;
+    if (ok) n8++;
+    else why8.push(`lượt ${k + 1}: gạch giống A ${sameMarks} · cùng offscreen ${sameInstance} · kịp giờ ${inTime} (${o?.seenAfterMs} ms)`);
+  });
+  cond('8', `sau khi rảnh: ${n8} / ${O.length}${why8.length ? ' — ' + why8.join('; ') : ''}`, n8 === 3 && O.length === 3, '3 / 3');
+
+  // 6b — không vào luật
+  const same6b = O.flatMap((r, k) => (r.together6b || []).map((o, i) => {
+    const a = A[k]?.together6b?.[i];
+    return !!a && JSON.stringify([...a.marked].sort()) === JSON.stringify([...o.marked].sort()) && !o.error && !o.timedOut;
+  }));
+  const runs6b = O.flatMap((r) => (r.together6b || []).map((x) => x.modelRuns));
+  lines.push(`     6b (không vào luật) hai tab cùng lúc, đoạn chưa ai chấm: O gạch giống A ${same6b.filter(Boolean).length} / ${same6b.length} · lượt model O ${runs6b.join(', ')}`);
+
+  // A/A
+  const s4off = off.map((r) => r.s4gc.allPrivate);
+  const aa = off.length > 1 ? MB(Math.max(...s4off) - Math.min(...s4off)) / 4 : NaN;
+  lines.push(`A/A bộ nhớ ba lượt tắt: ${f1(aa)} MB/tab (cần ≤ 10)`);
+  if (!(aa <= 10)) problems.push(`A/A bộ nhớ trượt: ${f1(aa)} MB/tab`);
+
+  const failed = results.filter((x) => !x.pass).map((x) => x.n);
+  let verdict = null;
+  if (!problems.length) {
+    if (failed.includes('1') || failed.includes('8')) verdict = `LỖI CÀI ĐẶT (trượt ${failed.join(', ')}) — sửa, đo lại toàn bộ`;
+    else if (failed.length) verdict = `KHÔNG SHIP O (trượt ${failed.join(', ')})`;
+    else verdict = 'SHIP O';
+  }
+  return { perTab, perTabA, once, onceNoGc, L, LA, Lc, LcA, cold, coldA, n8, aa, results, problems, verdict, lines };
+}
+
+// ---------------------------------------------------------------------------
+
+function unzipTo(zip) {
+  if (!fs.existsSync(zip)) throw new Error(`không thấy gói ${zip} — chạy python ml/package_extension.py`);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'soat-ext-'));
+  const r = spawnSync('python', ['-c', 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])', zip, dir], { encoding: 'utf8' });
+  if (r.status !== 0) throw new Error(`giải nén hỏng: ${r.stderr}`);
+  return dir;
+}
 
 async function main() {
-  if (!fs.existsSync(OPT.zip)) throw new Error(`không thấy gói ${OPT.zip} — chạy python ml/package_extension.py`);
-  const extDir = fs.mkdtempSync(path.join(os.tmpdir(), 'soat-ext-'));
-  const unzip = spawnSync('python', ['-c', 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])', OPT.zip, extDir], { encoding: 'utf8' });
-  if (unzip.status !== 0) throw new Error(`giải nén hỏng: ${unzip.stderr}`);
+  const extDir = unzipTo(OPT.zip);
 
   const srv = await startServer();
   SERVER_PORT = srv.address().port;
   const started = new Date().toISOString();
   const rounds = [];
+  const extras = [];
   try {
-    for (let i = 0; i < OPT.rounds * 2; i++) rounds.push(await round(i, i % 2 === 1, extDir));
+    if (OPT.plan === '38') {
+      const extDirs = { A: unzipTo(OPT.zipA), O: unzipTo(OPT.zipO) };
+      extras.push(extDirs.A, extDirs.O);
+      for (let i = 0; i < OPT.rounds; i++) {
+        for (const v of ['tắt', 'A', 'O']) rounds.push(await round38(rounds.length, v, extDirs));
+      }
+    } else {
+      for (let i = 0; i < OPT.rounds * 2; i++) rounds.push(await round(i, i % 2 === 1, extDir));
+    }
   } finally {
     srv.close();
-    fs.rmSync(extDir, { recursive: true, force: true });
+    for (const d of [extDir, ...extras]) fs.rmSync(d, { recursive: true, force: true });
   }
 
-  const j = judge(rounds);
+  const j = OPT.plan === '38' ? judge38(rounds) : judge(rounds);
   console.log('');
-  console.log('=== Quyết định 37 ===');
+  console.log(`=== Quyết định ${OPT.plan} ===`);
   for (const l of j.lines) console.log(l);
   if (j.problems.length) {
     console.log('KHÔNG KẾT LUẬN:');
     for (const p of j.problems) console.log(`  - ${p}`);
   } else {
-    console.log(`Luật chọn: ${j.verdict}`);
+    console.log(`Luật: ${j.verdict}`);
   }
 
   if (OPT.out) {

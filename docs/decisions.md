@@ -2431,3 +2431,39 @@ task nào trên trang.
 * **7**: đoán ~1,1 s (400 ms debounce + ~500 ms tạo offscreen, Worker, nạp model + ~200 ms
   chấm).
 * Không đo: Facebook (C của bàn giao), máy yếu, Chrome thật sự vừa khởi động lại máy.
+
+#### Cài đặt, và một lỗi chỉ Chrome thật mới thấy
+
+`a673e7d`. Lần chạy đầu trong Chrome headless: offscreen được tạo, Worker chạy, message
+đi về đủ — và log ghi `LỖI model không nạp được`, không gạch nào. CSP mặc định của trang
+extension MV3 là `script-src 'self'`, **không cho biên dịch WebAssembly**. Content script
+cũ không vướng vì nó không chạy dưới CSP đó. Không crash; tầng luật vẫn gạch; tầng model
+im lặng — đúng họ lỗi của quyết định 24. Sửa: `content_security_policy.extension_pages`
+thêm `'wasm-unsafe-eval'`, và `manifest.test.mjs` canh nó.
+
+#### Sửa công cụ trước lượt đo chính thức — kèm số của hai lượt thử
+
+Như quyết định 37: thử là thấy số, nên ghi số ra. Mỗi lượt thử một bộ tắt/A/O, đứng 3 s /
+4 s, rảnh 35 s. **Điều kiện và ngưỡng không đổi.**
+
+| | 1 | 2 | 3 | 4 | 5 | 6 (không dấu câu / cache ấm) | 7 | 8 |
+|---|---|---|---|---|---|---|---|---|
+| thử 1 — chỉ ép GC các tab | 5/5 | −3,6 MB | **399 MB** | 0 ms | 0 ms | +1 / −4 ms | 600 ms | 1/1 |
+| thử 2 — ép GC cả Worker | 5/5 | −3,0 MB | **351 MB** (trước GC 419) | 0 ms | 0 ms | −2 / −1 ms | 597 ms | 1/1 |
+
+A ở cùng các lượt: long task lúc mở trang 149–166 ms, lúc chấm 50–119 ms.
+
+1. **"Sau GC" phải ép GC ở nơi model sống.** Thử 1 chỉ ép GC các tab — đúng cho A, nơi
+   model nằm trong tab, nhưng với O thì bộ đệm 78 MB model vừa tải nằm trong **Worker**
+   (`backingStorageSize` 78.704.947 byte, về 147.247 sau GC). Công cụ giờ gắn vào trang
+   offscreen, tự gắn xuống Worker của nó, và ép GC cả hai; lượt O nào không ép được Worker
+   thì không kết luận. Đây là làm đúng định nghĩa đã ghi, không phải đổi nó — nhưng tôi
+   **đã thấy** 399 rồi 351, nên kết quả chính thức ghi cả số trước GC.
+2. **Thử 2 rơi cách ngưỡng 350 MB đúng 1 MB.** Ngưỡng giữ nguyên. Trung vị ba lượt rơi phía
+   nào thì luật áp phía đó.
+3. **Bước 6 không kiểm được thứ nó định kiểm.** Cache giờ dùng chung mọi tab, và hai đoạn
+   của bước 6 đã được t1 chấm ở bước 2 và 5 — O trả cả hai với **0 lượt model**. Hàng đợi
+   chưa hề bị hai tab tranh nhau. Lỗi ở thiết kế phép đo, không ở code: tôi viết điều kiện
+   khi còn nghĩ theo kiến trúc cũ, mỗi tab một cache. Thêm **bước 6b, không vào luật**: hai
+   tab cùng lúc dán hai đoạn chưa ai chấm (đổi "Tuần trước" và "Hơn một nửa"), so gạch với
+   A. Điều kiện 1 vẫn đếm đúng 15 lần dán như đã ghi.
