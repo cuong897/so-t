@@ -22,7 +22,7 @@ viết khoá luận.
 
 ## Trạng thái: CẢ HAI TẦNG CHẠY TRONG CHROME THẬT, trên Facebook
 
-- 71 commit, cây git sạch
+- cây git sạch (số commit: `git rev-list --count HEAD` — ghi con số vào đây thì nó lỗi thời ngay commit sau)
 - 63 test JS + 2 bộ kiểm tra Python, tất cả pass (`npm run test:all`)
 - **Tầng luật** — xác nhận từ trước: gõ *"chia sẽ một vãi trãi nghiệm"* trên
   Facebook, gạch đúng `chia sẽ→chia sẻ` và `trãi→trải`.
@@ -46,7 +46,7 @@ viết khoá luận.
 
 ## Phiên vừa rồi làm gì (15–18/09/2026)
 
-Mười bốn commit, `ea8c174..` commit bàn giao này. Bắt đầu từ "xem xét kỹ việc sửa
+Các commit `ea8c174..HEAD` (`git log --oneline ea8c174~1..HEAD`). Bắt đầu từ "xem xét kỹ việc sửa
 model cắt cụt văn bản", kết thúc bằng lần đầu tầng model chạy thật trên Facebook.
 
 | quyết định | chuyện gì | kết quả |
