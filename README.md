@@ -104,7 +104,7 @@ nhầm một lần là người dùng gỡ cài; bỏ sót thì họ không bi�
 ## Chạy thử
 
 ```bash
-npm run test:all  # 48 test JS + 9 test Python
+npm run test:all  # 59 test JS + 10 kiểm tra Python
 npm run dev       # rồi mở hai trang dưới đây
 ```
 
@@ -114,6 +114,9 @@ npm run dev       # rồi mở hai trang dưới đây
 | `dev/onnx-test.html` | Đường ONNX — nạp runtime, mã hoá BPE, suy luận, chặn theo tập ứng viên |
 | `dev/bench-rules.html` | Độ trễ tầng luật — bấm giờ theo lô, văn bản người thật |
 | `dev/sentence-eval.html` | Chấm theo CÂU với **cả hai tầng** — phần mà `sentence_eval.py` không chạy được vì tầng luật là JS |
+| `dev/bench-accept.html` | Tám điều kiện của quyết định 33, đo qua đúng `check()` — chất lượng trên bài đăng, phủ, đứng hình, cache |
+| `dev/bench-blocking.html` | Tầng model có giữ luồng chính không — nhịp đập MessageChannel, không dùng rAF |
+| `dev/bench-context.html` | Cùng một câu, đứng một mình và nằm trong cửa sổ — nhãn vàng, so có cặp |
 
 Trước khi dùng `onnx-test.html` phải có runtime và model:
 
@@ -228,7 +231,16 @@ l/n/ch/tr/s/x mới có lỗi phụ âm.
 
 `student768_v4`, INT8 per-channel, biên **0,25**, và ngưỡng **theo lớp nhãn**:
 thanh điệu **0,95**, phụ âm **0,90** (quyết định 29). Đây là những con số người
-dùng thật sự gặp:
+dùng thật sự gặp — **với một điều kiện phải đọc trước bảng**:
+
+> Mọi phép đo chất lượng dưới đây chấm **từng câu đứng một mình**. Cho tới
+> `afb0774`, sản phẩm lại nhét **cả ô nhập liệu** vào một lượt chạy, và từ nằm sâu
+> trong cửa sổ bị chấm tệ hơn hẳn: recall 0,7426 khi câu đứng một mình, 0,6202
+> khi câu nằm cuối cửa sổ (quyết định 32). Giờ sản phẩm chấm theo câu, nên trên
+> **văn bản có dấu câu** các con số này là thật — đo lại qua đúng `check()` trên
+> bài đăng dựng sẵn ra recall 0,7457, trùng tới số lẻ thứ tư (quyết định 33).
+> **Văn bản không có dấu câu vẫn bị cắt cụt** ở 96 subword như trước — chưa đường
+> lui nào qua đủ ngưỡng.
 
 | Thước đo | Số | Đo bằng |
 |---|---|---|
@@ -236,27 +248,36 @@ dùng thật sự gặp:
 | Lỗi phụ âm (1.796 ca) | recall **48,2%** | `consonant_eval.py` |
 | riêng lớp `d/gi/r` (596 ca) | recall **33,9%** | `consonant_eval.py` |
 | Báo động giả trên văn bản đúng | **1,35%** / **1,05%** số câu | `false_alarm.py --limit 2000` |
-| Độ trễ **trong trình duyệt** (wasm) | nạp 355–585ms · một câu **20–22ms** · một bài đăng **51–58ms** | `dev/bench-model.html` |
+| Độ trễ **trong trình duyệt** (wasm) | nạp 355–585ms · một câu **20–27ms** · bài 2.000 ký tự **525–600ms** tổng, đứng hình ≤ **82ms** | `dev/bench-accept.html` |
 | Độ trễ onnxruntime Python, 1 luồng | p50 5,5ms · p95 5,7ms | `export_onnx.py` |
 | Gói cài | 95,3 MB thô → **58,6 MB nén** | `package_extension.py` |
 
 Độ trễ ghi thành **khoảng** chứ không một con số: đo lại bốn lần trên cùng máy
 được 18,4 / 23,1 / 23,8ms. Một con số lẻ là một lần bốc thăm.
 
-**Con số độ trễ của tầng model phụ thuộc ĐỘ DÀI văn bản** — và chỉ phụ thuộc cho
-tới khi chạm trần 96 subword:
+**Tầng model chạy trên LUỒNG CHÍNH của trang** — không có Web Worker nào, dù tài
+liệu từng khai như vậy (quyết định 32). Nên có hai con số độ trễ, và con số người
+dùng cảm thấy là cột "đứng hình", không phải cột tổng:
 
-| Độ dài | p50 | subword | **model xét bao nhiêu phần** |
-|---|---|---|---|
-| 80 ký tự — một câu | 20–22ms | 21 | 100% |
-| 280 ký tự — bài đăng ngắn | 51–58ms | 68 | 100% |
-| 700 ký tự — bài đăng dài | 73–77ms | **96** | **58%** |
-| 2.000 ký tự | 71–80ms | **96** | **20%** |
-| 6.000 ký tự — dán cả bài | 71–79ms | **96** | **7%** |
+| Độ dài, có dấu câu | tổng CPU | **đứng hình lâu nhất** | model xét | bản cắt cụt trước đây xét |
+|---|---|---|---|---|
+| 280 ký tự — bài đăng ngắn | 62–90ms | 38–65ms | 100% | 100% |
+| 700 ký tự — bài đăng dài | 177–223ms | 48–56ms | 100% | **58%** |
+| 2.000 ký tự | 525–600ms | 82ms | 100% | **20%** |
+| 6.000 ký tự — dán cả bài | 1.357–1.751ms | 55–78ms | 100% | **7%** |
 
-Độ trễ đứng yên từ 700 ký tự trở lên **không phải vì model co giãn tốt**, mà vì
-`check()` cắt văn bản xuống 96 subword rồi bỏ qua phần còn lại (quyết định 31).
-Đọc cột p50 mà không đọc cột cuối là tự khen một con số đẹp sinh ra từ một lỗi.
+Đo bằng `dev/bench-accept.html`, hai lượt. Tổng tăng theo độ dài vì giờ model đọc
+**hết** bài; đứng hình thì không tăng, vì mỗi câu một lượt và luồng được nhả giữa
+hai lượt. Sửa một câu trong bài 6.000 ký tự đã chấm xong chỉ chạy lại câu đó:
+32–36ms.
+
+Hai giới hạn phải nói cạnh bảng này:
+
+* **Văn bản không dấu câu vẫn bị cắt cụt** — cột "bản cắt cụt" vẫn là hiện trạng
+  của nó. Hai đường lui đã đo đều trượt ngưỡng ghi trước (quyết định 33).
+* **Một lượt `session.run` dao động gấp đôi trên cùng một văn bản** (48–94ms), nên
+  đỉnh đứng hình là một khoảng, không phải một con số. Bản cắt cụt cũ đo cùng lượt
+  đứng tới 125–130ms.
 
 Phân rã một lượt `check()`: `session.run` chiếm **98,8%**, `bpe.js` 0,2%, giải mã
 1,0%. Không có gì để tối ưu ngoài chính model. Lượt suy luận **đầu tiên 55–126ms**,
@@ -278,6 +299,10 @@ năm rổ (`dev/sentence-eval.html` chạy lại cùng phép đo với **cả ha
 
 **Một nửa số câu có lỗi thì sản phẩm im lặng hoàn toàn.** Đó là con số phải nói
 cạnh mọi con số recall, vì nó mới là thứ người dùng gặp.
+
+Bảng này đo từng câu đứng một mình. Trước `afb0774` nó **đẹp hơn** thứ người dùng
+gặp trong một bài đăng nhiều câu; giờ sản phẩm chấm theo câu nên nó khớp — trên
+văn bản có dấu câu.
 
 Và phải đọc `0,7457` kèm mẫu số của nó: đó là recall trên **phần bộ nhãn biểu
 diễn được**, tức 54,5% lỗi VSEC. Nhân ra thì tỷ lệ lỗi thật sự được sửa là

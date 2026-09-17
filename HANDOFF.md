@@ -1,31 +1,33 @@
 # Bàn giao — dự án Soát
 
-Đọc file này trước, rồi `README.md` (tổng quan) và `docs/decisions.md` (31 quyết
+Đọc file này trước, rồi `README.md` (tổng quan) và `docs/decisions.md` (33 quyết
 định, kèm lý do và mọi lỗi đã mắc).
 
 ---
 
-## Phiên vừa rồi làm gì (14–15/09/2026)
+## Phiên vừa rồi làm gì (15–17/09/2026)
 
-Mười sáu commit, `cfffea2..ae8079b`. Ba nhóm việc:
+Sáu commit, `ea8c174..` commit bàn giao này. Bắt đầu từ yêu cầu "xem xét kỹ việc
+sửa model cắt cụt văn bản" (việc số 4 cũ), và nó mở ra ba chuyện lớn hơn:
 
-**Sửa lỗi tài liệu khai không đúng sự thật.** Blob 311MB vẫn nằm trong HEAD dù
-commit trước khai đã bỏ theo dõi (nó chỉ sửa `.gitignore`). README báo số của v1
-trong suốt thời gian ship v3. Công thức dựng lại dữ liệu tham chiếu file không hề
-được version. Đó là bẫy số 10.
+**Tầng model giữ luồng chính của trang** (`ea8c174`). `onnxEngine.js` khai "chạy
+trong Web Worker"; không có Worker nào, và `ort.env.wasm.proxy` không bật. Quyết
+định 31 dựa vào chính lời khai đó để nói cái giá của việc chia đoạn "dễ chịu".
+Ba chỗ khai sai, đã sửa cả ba. Bẫy số 10, lần thứ tư.
 
-**Ba đợt đo và hai thay đổi sản phẩm.** Quyết định 27 (train v4 nhắm d/gi/r),
-28 (nới cổng cho phi từ — **đã bác**, thua ở mọi mức ngưỡng), 29 (hạ ngưỡng lớp
-phụ âm xuống 0,90 — **đã ship**), 30 (chấm theo CÂU), 31 (model cắt cụt bài đăng
-dài — **lỗi, chưa sửa**). Hai lần ghi ngưỡng chấp nhận TRƯỚC khi đo rồi commit,
-để lịch sử git làm chứng cho thứ tự (`77a9148`, `544c455`).
+**Mọi con số chất lượng là số của câu đứng một mình** (`18900d4`, quyết định 32).
+Cả bốn script đo chấm từng câu một; sản phẩm thì nhét cả ô nhập liệu vào một cửa
+sổ. Cùng câu, cùng model: recall 0,7426 khi đứng một mình, 0,6202 khi nằm cuối
+cửa sổ. Thủ phạm chính là **vị trí** trong cửa sổ, không phải có câu bên cạnh.
 
-**Gộp phép quyết định về một bản** (`331654c`). Trước đó nó có bốn bản chép tay;
-giờ phía Python có `ml/gate.py`, phía JS có `onnxEngine.js`, và `test/gate.test.mjs`
-canh hai bên bằng 1.200 ca.
+**Chấm theo câu thay cho cắt cụt** (`1464863` ngưỡng ghi trước → `6cd2a6e` sửa
+bpe cắt giữa từ → `afb0774` cài đặt, quyết định 33). Trên văn bản **có dấu câu**:
+qua cả bảy điều kiện áp dụng, phủ 100% mọi cỡ, recall 0,7457 trùng đúng số của
+`evaluate.py`. Trên văn bản **không dấu câu**: không đường lui nào qua đủ, nên
+theo luật ghi trước **vẫn cắt cụt như cũ**.
 
-**Bốn ảnh chụp màn hình thật từ chủ repo** đã xác nhận tầng luật chạy trong
-Chrome, và luôn thể làm lộ ra chuyện model nạp chậm hơn tốc độ người ta gõ.
+Và một điều kiện ghi trước hoá ra đặt sai — đứng hình "≤ 100ms, lâu nhất trong 3
+lần" — vì chính bản cũ cũng trượt nó khi đo cùng lượt. **Đã ghi lại, không lách.**
 
 ---
 
@@ -43,18 +45,19 @@ viết khoá luận.
 
 ---
 
-## Trạng thái: CHẠY ĐƯỢC TRONG CHROME THẬT
+## Trạng thái: CHẠY ĐƯỢC TRONG CHROME THẬT — nhưng code tầng model vừa đổi
 
-- 57 commit, cây git sạch
-- 48 test JS + 9 test Python, tất cả pass (`npm run test:all`)
-- **ĐÃ XÁC NHẬN CHẠY TRONG CHROME THẬT với bản đang ship.** Chủ repo gõ trên
+- 63 commit, cây git sạch
+- 59 test JS + 2 bộ kiểm tra Python, tất cả pass (`npm run test:all`)
+- **ĐÃ XÁC NHẬN CHẠY TRONG CHROME THẬT với tầng luật.** Chủ repo gõ trên
   Facebook câu *"mình xin chia sẽ một vãi trãi nghiệm cho mọi ngươi"* và thấy
   gạch chân đúng hai chỗ — khớp chính xác với `chia sẽ→chia sẻ` và
   `trãi→trải` mà tầng luật sinh ra. `targets.js`, `highlighter.js` và ô soạn
   Lexical của Facebook đều hoạt động.
-- **Nhưng đó là tầng LUẬT.** Tầng model qua `chrome-extension://` vẫn chưa có
-  lần nào được xác nhận — xem việc số 1.
-- Gói nộp store đã đóng lại với v4, **chưa nộp**
+- **Tầng model qua `chrome-extension://` vẫn chưa có lần nào được xác nhận** — và
+  giờ `check()` đã được viết lại hoàn toàn (`afb0774`). Mọi phép đo của phiên này
+  chạy trên `http://localhost`. Xem việc số 1.
+- Gói nộp store **đã đóng lại với code chấm theo câu** (58,6 MB nén), **chưa nộp**
 
 ### Số liệu chốt
 
@@ -67,12 +70,13 @@ lớp nhãn**: thanh điệu **0,95**, phụ âm **0,90** (`onnxEngine.js`, quy�
 | Lỗi phụ âm (1.796 ca) | recall **48,2%** | `consonant_eval.py` |
 | riêng lớp `d/gi/r` (596 ca) | recall **33,9%** | `consonant_eval.py` |
 | Báo động giả trên văn bản đúng | 1,35% / 1,05% số câu | `false_alarm.py` |
-| Độ trễ **trong trình duyệt** (wasm) | nạp 355–585ms · một câu **20–22ms** · một bài đăng **51–58ms** | `dev/bench-model.html` |
+| Độ trễ **trong trình duyệt** (wasm) | nạp 355–585ms · một câu **20–27ms** · bài 2.000 ký tự **525–600ms** tổng, đứng hình ≤ **82ms** | `dev/bench-accept.html` |
 | Độ trễ onnxruntime Python, 1 luồng | p50 5,5ms · p95 5,7ms | `export_onnx.py` |
 | Gói cài | 95,3 MB thô → **58,6 MB nén** | `package_extension.py` |
 | **Theo CÂU** — câu sạch hẳn | **39,2%** | `sentence_eval.py` + `dev/sentence-eval.html` |
 | **Theo CÂU** — câu sản phẩm KHÔNG ĐỤNG | **49,0%** | nt |
-| **Phạm vi phủ của model** | 100% ở bài ≤300 ký tự · **58%** ở 700 · **7%** ở 6.000 | `dev/bench-model.html` |
+| **Phạm vi phủ của model** | có dấu câu: **100%** mọi cỡ · KHÔNG dấu câu: 100% ≤300 ký tự, **58%** ở 700, **7%** ở 6.000 | `dev/bench-accept.html` |
+| **Trên bài đăng có dấu câu**, qua `check()` | P **0,9669** · R **0,7457** · câu sạch bị gạch 0,98% | `dev/bench-accept.html` |
 
 **Con số độ trễ đã sai HAI lần trong tài liệu này.** Lần đầu ghi "p50 5,4ms ·
 export_onnx.py" — đó là số onnxruntime trên **Python**, còn trình duyệt chạy qua
@@ -96,18 +100,23 @@ dự án.
    đổi: recall VSEC 0,7457 so với 0,7670, đổi lấy precision 0,9709 so với
    0,9550 và recall phụ âm 25,7% → 48,2%. Xem quyết định 26, 27 và 29.
 
-4. Độ trễ phụ thuộc ĐỘ DÀI văn bản, và ghi thành **khoảng** chứ không một con
-   số. Bản bàn giao trước ghi "p50 18–24ms" — đó là số của một CÂU 65 ký tự;
-   một BÀI ĐĂNG tốn 51–58ms, gấp ba. Và từ 700 ký tự trở lên độ trễ **đứng
-   yên** — không phải vì model co giãn tốt mà vì nó cắt bớt văn bản (quyết
-   định 31). Đọc cột độ trễ mà không đọc cột phạm vi phủ là tự khen một con
-   số sinh ra từ một lỗi.
+4. **Độ trễ có hai con số, và con số người dùng cảm thấy là ĐỨNG HÌNH.** Tầng
+   model chạy trên luồng chính của trang (quyết định 32). Tổng CPU tăng theo độ
+   dài vì giờ model đọc hết bài; đứng hình thì không, vì mỗi câu một lượt và
+   luồng được nhả giữa hai lượt. Và một lượt `session.run` dao động gấp đôi trên
+   cùng một văn bản (48–94ms) — ghi **khoảng**, và so với bản cũ **đo cùng lượt**,
+   đừng so với một con số chép từ lần đo khác.
 
 5. **`R 0,7457` PHẢI đi kèm mẫu số của nó.** Đó là recall trên phần bộ nhãn biểu
    diễn được, tức 54,5% lỗi VSEC. Nhân ra: `0,7457 x 0,545 = 0,406`, nên tỷ lệ
    lỗi thật sự được sửa là **40,8%**. Không phải lỗi tính toán — `evaluate.py`
    khối C đã báo sẵn con số toàn bộ. Nhưng 0,7457 là con số hay bị trích ra khỏi
    ngữ cảnh nhất, và người đọc CV sẽ hiểu nó là "sửa được 74,6% lỗi tôi mắc".
+
+6. **Mọi dòng từ `evaluate.py` tới `sentence_eval.py` chấm câu ĐỨNG MỘT MÌNH.**
+   Trước `afb0774` chúng đẹp hơn thứ người dùng gặp trong bài đăng nhiều câu
+   (recall 0,62–0,71 thay vì 0,7426, quyết định 32). Giờ chúng khớp — nhưng chỉ
+   trên văn bản **có dấu câu**. Văn bản không dấu câu vẫn đi đường cũ.
 
 ---
 
@@ -145,6 +154,21 @@ chrome://extensions → Developer mode → Load unpacked → chọn extension/
 **Đừng dùng `dành được phần quà` để kiểm** — model xếp `dành→giành` ở p = 0,835,
 dưới ngưỡng phụ âm 0,90, nên nó im lặng *đúng theo thiết kế*. Câu bắt được ở lớp
 này: *"Rao động về hình dáng từ cây bụi rậm rạp..."* — `Rao→Dao` ở 92,7%.
+
+#### Và kiểm luôn đường CHẤM THEO CÂU — code mới, chưa từng chạy trong extension
+
+Câu `cứ trú` ở trên ngắn, nên nó qua được cả bản cắt cụt lẫn bản mới. Muốn biết
+`afb0774` có chạy trong Chrome thật không thì dán nguyên đoạn này (494 ký tự, 114
+subword — lỗi nằm ở câu cuối, **sau** chỗ bản cũ cắt):
+
+> Tuần trước nhóm mình đã tổ chức một buổi gặp mặt nhỏ ở quán cà phê gần trường. Mọi người đến khá đông và ai cũng mang theo một món quà nhỏ để trao đổi với nhau. Sau đó cả nhóm cùng nhau đi dạo quanh hồ và chụp rất nhiều ảnh kỷ niệm. Buổi tối chúng mình ăn lẩu và nói chuyện về những dự định trong năm tới. Có bạn muốn học thêm tiếng Anh, có bạn định xin việc ở một công ty lớn. Mình thì vẫn đang phân vân giữa việc học tiếp và đi làm ngay. Hơn một nửa dân số cứ trú tại vùng đồng bằng ven biển.
+
+Đã chạy với model thật trên localhost: bản mới gạch `cứ→cư` ở 100%, bản cắt cụt
+**không gạch gì**, và sáu câu đầu không bị gạch oan ở bản nào.
+
+* gạch chân dưới `cứ` → chấm theo câu chạy trong extension
+* có gạch ở câu `cứ trú` ngắn mà **không** có ở đoạn này → extension đang chạy code
+  cũ. Reload extension rồi thử lại.
 
 #### Bốn ảnh chụp màn hình thật đã dạy gì
 
@@ -201,7 +225,7 @@ bước 0 là thử lại trên Chrome thật (tức việc số 1 ở trên).
 
 | Thứ | Ở đâu |
 |---|---|
-| Gói cài | `dist/soat-1.0.0.zip` (58,6 MB, đã đóng lại với v4) |
+| Gói cài | `dist/soat-1.0.0.zip` (58,6 MB, đóng lại với code chấm theo câu `afb0774`) |
 | 3 ảnh 1280×800 | `dist/store/*.png` |
 | Nội dung từng ô devconsole | `docs/store/listing.md` |
 | Chính sách riêng tư | `docs/store/privacy-policy.md` |
@@ -210,35 +234,43 @@ bước 0 là thử lại trên Chrome thật (tức việc số 1 ở trên).
 Sinh lại: `python ml/package_extension.py` và `python ml/make_screenshots.py`
 (cả hai neo đường dẫn theo vị trí file, đứng đâu chạy cũng được).
 
-### 4. Model CẮT CỤT bài đăng dài — lỗi thật, chưa sửa (quyết định 31)
+### 4. Văn bản KHÔNG dấu câu vẫn bị cắt cụt (quyết định 33)
 
-**Đây là việc đầu tiên không cần tài khoản hay quyền gì của chủ repo** — ba việc
-trên đều chặn ở người, việc này thì làm được ngay.
+**Đây là việc đầu tiên không cần tài khoản hay quyền gì của chủ repo.**
 
-`OnnxEngine.check()` không chia đoạn. Nó nhét cả văn bản vào `maxLen` = 96
-subword rồi cắt, từ nào vượt quá thì bị bỏ qua **lặng lẽ**:
+Phần có dấu câu đã sửa (`afb0774`). Phần không dấu câu thì không đường lui nào
+qua đủ ngưỡng đã ghi trước, nên `DEFAULT_FALLBACK = 'none'` — bài đăng Facebook
+viết liền không chấm câu vẫn chỉ được soát ~96 subword đầu (58% bài 700 ký tự,
+20% bài 2.000, 7% bài 6.000).
 
-| Độ dài | Tổng từ | Model xét | Bỏ qua | Phủ |
+| | recall | precision | câu sạch bị gạch | đứng hình, hai lượt |
 |---|---|---|---|---|
-| 280 ký tự | 62 | 62 | 0 | 100% |
-| 700 ký tự | 156 | 91 | 65 | **58%** |
-| 2.000 ký tự | 448 | 91 | 357 | **20%** |
-| 6.000 ký tự | 1.342 | 92 | 1.250 | **7%** |
+| F1 — cắt cứng 40 | 0,7149 | **0,9465** ✗ | 2,26% | 65 / 110ms |
+| F2 — trượt 64 bước 32 | 0,7202 | 0,9671 | 0,87% | 110 / 134ms ✗ |
+| `none` — hiện trạng | 0,1553 | 0,9419 | 0,23% | — / 158ms |
 
-Cái giá của việc sửa, đã đo: chia đoạn thì 700 ký tự tốn 124ms (thay vì 73ms),
-2.000 ký tự tốn 354ms, 6.000 ký tự tốn 1,13 giây. Bài đăng ≤300 ký tự **không đổi
-gì** — đã phủ 100%.
+**F2 trông tốt hơn hiện trạng ở mọi cột. Đừng bật nó bằng tay.** Nó trượt đúng
+một điều kiện, và điều kiện đó đặt sai: "đứng hình ≤ 100ms, lâu nhất trong 3 lần"
+— trong khi một lượt `session.run` trên cùng một văn bản dao động 48–94ms, và bản
+cũ đo cùng lượt cũng trượt (125–130ms). Sửa ngưỡng sau khi thấy số là thứ nếp
+ghi-trước được dựng ra để chặn. Việc đúng là mở **một đợt mới**:
 
-Dễ chịu hơn vẻ ngoài vì tầng model chạy async sau tầng luật và `run()` đã debounce
-400ms. Trường hợp xấu thật là dán 6.000 ký tự rồi sửa liên tục — muốn ship thì nên
-kèm: chỉ chạy lại đoạn có thay đổi, hoặc ưu tiên đoạn chứa con trỏ.
+1. Ghi ngưỡng đứng hình **trước**, bằng thống kê chịu được nhiễu: p95 trên ít
+   nhất 30 văn bản mỗi cỡ, so với **bản cũ đo cùng lượt, cùng văn bản** — ví dụ
+   "không tệ hơn bản cũ quá 20%". `dev/bench-accept.html` đã có sẵn bản cũ
+   (`dev/baseline/onnxEngine.catcut.js`) để so.
+2. Nếu thêm ứng viên (F2 cửa sổ 48 chẳng hạn) thì ghi nó vào **cùng** commit ngưỡng.
+3. Giữ nguyên các điều kiện chất lượng của quyết định 33 — chúng không có vấn đề.
 
-**Ghi ngưỡng chấp nhận TRƯỚC khi đo**, như `544c455` đã làm — đây là đổi hành vi
-sản phẩm kèm một cái giá độ trễ, không phải sửa lỗi thuần.
+Hai chỗ nên biết trước khi bắt tay:
 
-Và nhớ: `maxLen = 96` hiện là một hằng số đi ra từ lúc train, không phải một
-quyết định sản phẩm có ghi lại. Nó quyết định sản phẩm bỏ qua bao nhiêu phần văn
-bản của người dùng.
+* **Sửa một chữ trong bài không dấu câu là chấm lại cả bài** với F1/F2, vì cả bài
+  là một "câu" nên cache không trúng. F2 bài 6.000 ký tự tốn ~3,4 giây tổng. Có
+  thể cache theo **cửa sổ** thay vì theo câu — nhưng đó là thiết kế mới, đo riêng.
+* **Luồng chính vẫn là vấn đề gốc.** Mọi con số đứng hình ở trên tồn tại vì
+  `session.run` chạy trên luồng của trang. `ort.env.wasm.proxy = true` đẩy nó sang
+  worker của onnxruntime — chưa ai thử, và phải kiểm nó có chạy được trong
+  content script qua `chrome-extension://` không (quyết định 24).
 
 ### 5. ĐÃ XONG — ngưỡng riêng cho lớp phụ âm (quyết định 29)
 
@@ -321,13 +353,15 @@ ta chịu tải, mà để tầng model **kịp chạy**.
 extension/          MV3, không cần build
   src/engine/       vi.js (âm tiết + 23 nhãn), rules.js, ruleEngine.js,
                     bpe.js (BPE tự viết), onnxEngine.js (tầng 3,
-                    thanh điệu 0,95 / phụ âm 0,90)
+                    thanh điệu 0,95 / phụ âm 0,90, CHẤM THEO CÂU,
+                    đường lui 'none' cho văn bản không dấu câu)
   src/content/      targets.js (lọc ô), highlighter.js, replace.js, tooltip.js
   models/           artifact sinh ra, KHÔNG commit
   vendor/           onnxruntime-web 14MB, tải bằng ml/fetch_vendor.sh
 ml/                 vi.py (bản song song vi.js), noise.py, mine_errors.py,
                     build_corpus.py, dataset.py, train.py,
                     export_onnx.py, export_tokenizer.py, encoding.py
+  test_encoding.py  không để lọt từ cắt dở — bản song song test cuối của bpe.test.mjs
   mix_datasets.py   trộn nhiều tập train, IN RA phân bố đo được
   evaluate.py       VSEC — thêm --threshold/--margin để chấm ở ngưỡng thật,
                     và --result để không ghi đè out/eval.json
@@ -349,8 +383,15 @@ ml/                 vi.py (bản song song vi.js), noise.py, mine_errors.py,
 dev/                playground.html, onnx-test.html, shots.html (nguồn ảnh store)
   sentence-eval.html  chấm theo CÂU với cả hai tầng
   bench-rules.html    độ trễ tầng luật (bấm giờ theo lô)
-  bench-model.html    độ trễ tầng model + PHẠM VI PHỦ
-docs/decisions.md   31 quyết định
+  bench-model.html    độ trễ tầng model + PHẠM VI PHỦ (của bản cắt cụt cũ)
+  bench-blocking.html tầng model có giữ luồng chính không — MessageChannel
+  bench-context.html  cùng câu, đứng một mình và nằm trong cửa sổ (nhãn vàng)
+  bench-chunking.html chia đoạn ở maxLen 96/192/256 lệch khỏi mốc bao nhiêu
+  bench-batch.html    gộp lô: đúng trước, nhanh sau (đã bác — chậm hơn)
+  bench-accept.html   TÁM ĐIỀU KIỆN của quyết định 33, qua đúng check()
+  baseline/           onnxEngine cắt cụt cũ, để đo so cùng lượt
+test/chunking.test.mjs  splitSentences + planRuns: mọi từ phải được phủ
+docs/decisions.md   33 quyết định
 docs/blog.html      bài viết về toàn bộ quá trình và các lần sai
 docs/store/         hồ sơ nộp Chrome Web Store
 ```
@@ -416,7 +457,7 @@ python export_onnx.py --model out/student768_v4/best --out out/v4_onnx --name v4
 
 ---
 
-## Mười một điều dễ vấp — đều đã mắc ít nhất một lần
+## Mười ba điều dễ vấp — đều đã mắc ít nhất một lần
 
 1. **Luôn dùng `--held-out` khi chấm.** `mine_errors.py` rút phân bố lỗi từ nửa
    VSEC; chấm trên cả tập là tự lừa mình.
@@ -472,6 +513,20 @@ python export_onnx.py --model out/student768_v4/best --out out/v4_onnx --name v4
     ba mức hoà nhau ở một nguồn. Công cụ đọc số phải **dừng hẳn** khi thiếu dữ
     liệu, đừng bao giờ lặng lẽ bỏ một cột đi.
 
+12. **`async` không có nghĩa là không chặn.** `check()` trả Promise, `index.js`
+    gọi nó bằng `.then()`, chú thích ghi "chạy trong Web Worker" — và `session.run`
+    vẫn giữ luồng chính của trang suốt lượt chạy. Ba chỗ trong repo cùng suy từ
+    cú pháp ra hành vi (quyết định 32). Muốn biết có chặn không thì đo nhịp đập
+    bằng MessageChannel — **không dùng rAF**: Browser pane ẩn thì rAF không chạy
+    và mọi thứ trông như đứng hình.
+
+13. **Đo đúng ĐƠN VỊ mà sản phẩm đưa vào model.** Bốn script đo chấm từng câu
+    một; sản phẩm đưa cả ô nhập liệu vào một cửa sổ. Không script nào sai, không
+    con số nào sai — chỉ là suốt từ v1 tới v4 chúng đo một đường mà sản phẩm
+    không đi. Hỏi câu này trước mọi phép đo: *model nhìn thấy đúng chuỗi token này
+    ở đâu trong sản phẩm?* Và khi đặt ngưỡng cho một đại lượng nhiễu như độ trễ,
+    **đo mốc cùng lượt** — quyết định 33 đã đặt "≤ 100ms" mà bản cũ cũng trượt.
+
 ---
 
 ## Thứ đáng giữ khi viết CV và blog
@@ -490,6 +545,8 @@ Bài blog đầy đủ đã viết ở `docs/blog.html`. Luận điểm của n�
 | VSEC — lỗi người *gõ* | phục vụ người *không biết viết* |
 | Câu có sẵn lỗi | phần lớn thời gian người ta viết đúng |
 | File cấu hình trọng số lớp | phân bố thật bị chặn bởi lớp nào có mặt trong câu |
+| Từng câu đứng một mình | đưa cả ô nhập liệu vào một cửa sổ, từ sau nằm ở vị trí sâu |
+| `await`, Promise, "chạy trong Worker" | giữ luồng chính của trang suốt lượt chạy |
 
 Và cách rẻ nhất phát hiện ra khoảng cách đó: **cài sản phẩm vào máy mình rồi
 dùng như một người dùng**. Ba lỗi nặng nhất đều lộ ra trong ba mươi phút đầu
@@ -504,3 +561,9 @@ rồi commit nó, để thứ tự có lịch sử git làm chứng chứ không
 (`77a9148`, trước khi model train xong). Sáu điều kiện, mỗi điều kiện kèm sai số
 chuẩn tính trên đúng cỡ mẫu của phép đo đó. Lần này cả sáu đều qua, nhưng giá
 trị của việc ghi trước không nằm ở lần nó qua.
+
+Và quyết định 33 cho thấy giá trị đó thật: lần đầu tiên nếp ghi-trước **chặn
+một lựa chọn trông tốt hơn**. F2 hơn hiện trạng ở mọi cột, nhưng trượt một điều
+kiện đã ghi — nên không ship, dù chính điều kiện ấy hoá ra đặt sai. Câu đáng kể:
+*"ngưỡng tôi đặt trước sai, và tôi sửa nó bằng một đợt đo mới chứ không bằng
+cách đọc lại số cũ."*
