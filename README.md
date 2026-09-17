@@ -114,6 +114,7 @@ npm run dev       # rồi mở hai trang dưới đây
 | `dev/onnx-test.html` | Đường ONNX — nạp runtime, mã hoá BPE, suy luận, chặn theo tập ứng viên |
 | `dev/bench-rules.html` | Độ trễ tầng luật — bấm giờ theo lô, văn bản người thật |
 | `dev/sentence-eval.html` | Chấm theo CÂU với **cả hai tầng** — phần mà `sentence_eval.py` không chạy được vì tầng luật là JS |
+| `dev/harness-content.html` | Nạp nguyên `content/index.js` với `chrome.*` giả lập — kiểm đường **dán** vào ô soạn thảo (quyết định 36) |
 | `dev/bench-accept.html` | Tám điều kiện của quyết định 33, đo qua đúng `check()` — chất lượng trên bài đăng, phủ, đứng hình, cache |
 | `dev/bench-fallback.html` | Quyết định 34 — đường lui cho văn bản không dấu câu, đứng hình so bản cũ cùng lượt, kèm đối chứng A/A |
 | `dev/bench-blocking.html` | Tầng model có giữ luồng chính không — nhịp đập MessageChannel, không dùng rAF |
