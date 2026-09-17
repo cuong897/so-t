@@ -1925,3 +1925,83 @@ thường — bản mới gạch `cứ→cư` 100%, bản cũ im lặng, không 
   Cache theo **cửa sổ** sẽ cắt phần này; đó là thiết kế mới, đo riêng.
 * **Luồng chính vẫn là vấn đề gốc.** Mọi con số đứng hình ở đây tồn tại vì
   `session.run` chạy trên luồng của trang.
+
+---
+
+### 35. Cache theo cửa sổ khi sửa bài dài — ngưỡng ghi TRƯỚC
+
+Việc số 4 của bàn giao sau quyết định 34. Với đường lui F2, sửa một chữ trong bài
+6.000 ký tự không dấu câu làm `check()` chấm lại **cả bài** (~43 cửa sổ, ~3,4 giây
+CPU), vì cả bài là một "câu" và cache theo câu không trúng.
+
+#### Giả định trong bàn giao đã sai — đếm trước khi thiết kế
+
+Bàn giao viết: "cửa sổ trượt dịch đi khi chèn hay xoá chữ, nên khoá cache không
+thể là vị trí", và gợi ý cắt theo nội dung. Trước khi ghi ngưỡng, đếm thuần cấu trúc
+(không chạy model): sau một lần sửa, bao nhiêu cửa sổ của kế hoạch mới **chưa** có
+trong kế hoạch cũ. 40 văn bản mỗi cỡ, không dấu câu:
+
+| 6.000 ký tự | gõ thêm cuối | thay một từ giữa | đổi dấu một từ giữa | tổng cửa sổ |
+|---|---|---|---|---|
+| F2 hiện tại | 1,0 | 3,9 | 2,5 | 42,8 |
+| cắt theo nội dung (hash từ) | 1,0 | 2,3 | 2,2 | **58,4** |
+
+F2 **tự khớp lại** sau chỗ sửa: mỗi cửa sổ bắt đầu ở từ đầu tiên cách đầu cửa sổ
+trước ≥ 32 subword, nên một độ lệch ranh giới tắt dần sau vài cửa sổ. Cắt theo nội
+dung chỉ bớt được 1–2 cửa sổ phải chạy lại mà tốn thêm 36% cửa sổ cho mọi lần chấm
+lạnh — bỏ. Không có ứng viên cắt mới; chỉ có **một** thay đổi: cache kết quả theo
+**nội dung từng cửa sổ**.
+
+Vì kết quả một cửa sổ chỉ phụ thuộc các từ trong nó, thay đổi này **không được đổi
+một issue nào**. Rủi ro thật duy nhất là cache trả nhầm — nên điều kiện đầu tiên là
+đồng nhất tuyệt đối.
+
+#### Và một lỗi bộ nhớ lộ ra trên đường
+
+Cache theo câu (`afb0774`) lưu **cả câu** cho mọi phiên bản. Với bài dài không dấu
+câu, mỗi lần sửa thêm một mục ~1.340 dòng logit, trần 400 mục — cỡ nửa triệu dòng,
+tăng theo số lần sửa. Khi bật cache cửa sổ, câu nhiều cửa sổ **không** được lưu ở
+mức câu nữa; bộ nhớ chặn bởi 256 cửa sổ × ≤ 64 từ.
+
+#### Đã kiểm trước khi commit, không phải điều kiện
+
+* `test/windowcache.test.mjs`: session giả mà logit phụ thuộc token hai bên và vị
+  trí; 36 phiên bản văn bản qua 5 kiểu sửa (thêm cuối, thay giữa, xoá giữa, chèn
+  đầu, quay về bản cũ) — có cache giống hệt chạy lạnh. Làm hỏng khoá cache (chỉ còn
+  độ dài + từ đầu) thì test trượt.
+* Code mới với cache **tắt** cho y hệt `49de6ec` trên 120 văn bản, cùng số lượt
+  model — phần tái cấu trúc không đụng hành vi đang ship. Kiểm điều này riêng vì
+  trang đo dưới đây so W với F2 **của code mới**, nên không nhìn thấy nó.
+
+#### Điều kiện — `dev/bench-editcache.html`, commit cùng đoạn này, chưa chạy
+
+So `W` (F2 + cache cửa sổ 256) với `F2` đang ship, cùng lượt, cùng văn bản, xoay
+vòng thứ tự; `F2-A/A` là một bản F2 thứ hai làm đối chứng.
+
+| # | điều kiện | cần |
+|---|---|---|
+| 1 | **đồng nhất**: W cache ấm (dùng chung cho mọi bài) so F2 chạy lạnh, 60 bài có dấu câu + 60 bài không dấu câu × 4 phiên bản (gốc, gõ thêm cuối, thay từ giữa, xoá từ giữa), từng issue kể cả confidence | 480 / 480 |
+| 2 | chi phí một lần sửa, 20 văn bản 6.000 ký tự không dấu câu, **mỗi kiểu sửa**: tổng thời gian p50 W / F2 | ≤ **0,25** |
+| 3 | đứng hình trong lần chấm sau khi sửa, mỗi kiểu sửa: p90 W / F2 | ≤ 1,25 |
+| 4 | bộ nhớ: một bài 2.000 ký tự, 60 lần sửa liên tiếp, số dòng logit W giữ cao nhất | ≤ 16.384 |
+| A/A | F2-A/A / F2, cả tổng p50 lẫn đứng hình p90, mọi kiểu sửa | ≤ 1,25 |
+
+Không đo đứng hình lúc chấm **lạnh**: W chạy đúng các cửa sổ như F2, thêm một lần
+tra `Map` mỗi cửa sổ. Không gate thứ không thể khác.
+
+#### Luật
+
+* A/A trượt → vô hiệu, chạy lại một lần, lại trượt thì dừng.
+* Điều kiện 1 lệch dù một issue → **lỗi cài đặt**, không phải ứng viên trượt: sửa
+  rồi đo lại toàn bộ.
+* Qua hết → `DEFAULT_WINDOW_CACHE = 256`. Trượt 2, 3 hoặc 4 → giữ 0.
+
+#### Ghi trước để không tự lừa mình
+
+* **Điều kiện 2 gần như chắc qua**: đếm cấu trúc ở trên đã nói 1–4 cửa sổ trên 43.
+  Nó có mặt để bắt cache không trúng trong thực tế (khoá lệch vì chuỗi tokenize khác
+  với chuỗi đếm), không phải để chứng minh ý tưởng.
+* **Điều kiện 4 là trần cấu trúc**, cũng gần như chắc qua. Con số đáng đọc ở mục
+  đó là **F2** — bộ nhớ của bản đang ship tăng tới đâu.
+* **Điều kiện đáng lo thật là 1.** Cache sai thì không đổ, không chậm — chỉ lặng lẽ
+  gạch sai chỗ.

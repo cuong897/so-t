@@ -49,6 +49,10 @@ const MAX_LEN = 128;
 // Quyết định 33 từng giữ 'none' vì một điều kiện đứng hình đặt sai; xem 34.
 const DEFAULT_FALLBACK = 'F2';
 
+// 0 — tắt cache theo cửa sổ, đúng hành vi đang ship. Quyết định 35 đo bật/tắt
+// bằng luật ghi trước; chỉ đổi số này theo luật đó.
+const DEFAULT_WINDOW_CACHE = 0;
+
 // Các ứng viên đường lui, mỗi cái cố định TRƯỚC đợt đo của nó — đừng chỉnh các
 // số này để một phép đo đẹp lên rồi quên ghi lại.
 const F1_PIECE = 40;           // quyết định 33: cắt cứng ở ranh giới từ, mảnh <= 40 subword
@@ -187,7 +191,13 @@ export class OnnxEngine {
     // đổi ngưỡng trên một instance đang chạy vẫn ra đúng, không phải xoá cache.
     this.cacheSize = opts.cacheSize ?? 400;
     this._cache = new Map();
-    this.stats = { runs: 0, cacheHits: 0 };
+    // Cache theo NỘI DUNG CỬA SỔ, cho câu dài quá một cửa sổ (quyết định 35). Kết
+    // quả của một cửa sổ chỉ phụ thuộc đúng các từ trong nó, nên sửa một chữ trong
+    // bài 6.000 ký tự không dấu câu chỉ phải chạy lại 1–4 cửa sổ thay vì ~43.
+    // 0 = tắt, tức hành vi trước quyết định 35.
+    this.windowCacheSize = opts.windowCacheSize ?? DEFAULT_WINDOW_CACHE;
+    this._wcache = new Map();
+    this.stats = { runs: 0, cacheHits: 0, windowHits: 0 };
     this.ready = false;
     this.session = null;
     this.tokenizer = null;
@@ -295,9 +305,14 @@ export class OnnxEngine {
           await yieldToMain();
           if (signal?.aborted) return [];
         }
-        rows = await this._scoreSentence(words, signal);
-        if (!rows) return [];                      // bị huỷ giữa câu — KHÔNG cache nửa chừng
-        this._cachePut(key, rows);
+        const scored = await this._scoreSentence(words, signal);
+        if (!scored) return [];                    // bị huỷ giữa câu — KHÔNG cache nửa chừng
+        rows = scored.rows;
+        // Câu nhiều cửa sổ thì KHÔNG lưu cả câu khi đã có cache theo cửa sổ: mỗi lần
+        // sửa bài 6.000 ký tự không dấu câu sẽ đẻ ra một mục ~1.340 dòng logit, và
+        // 400 mục như thế là bộ nhớ tăng không chặn (quyết định 35). Cache cửa sổ đã
+        // giữ đủ để lần sau gần như không phải chạy lại.
+        if (this.windowCacheSize === 0 || scored.runs === 1) this._cachePut(key, rows);
         ran = true;
       } else {
         this.stats.cacheHits++;
@@ -341,39 +356,89 @@ export class OnnxEngine {
     const rows = new Array(words.length).fill(null);
     const best = new Array(words.length).fill(-1);   // độ "ở giữa" của cửa sổ đã chọn
 
+    let ranModel = false;
     for (let r = 0; r < runs.length; r++) {
-      if (r > 0) {
-        await yieldToMain();
-        if (signal?.aborted) return null;
-      }
       const { from, to } = runs[r];
       const part = words.slice(from, to);
-      const { ids, wordIds } = this.tokenizer.encodeWords(part, this.maxLen);
-      const first = this.tokenizer.firstSubwordIndex(wordIds, part.length);
+      // Chỉ dùng cache cửa sổ khi câu thật sự có nhiều cửa sổ — câu một lượt đã
+      // có cache theo câu, lưu hai lần là phí.
+      const useWindow = this.windowCacheSize > 0 && runs.length > 1;
+      const wkey = useWindow ? `${this.maxLen}\u0000${part.join(' ')}` : null;
 
-      const n = ids.length;
-      const out = await this.session.run({
-        input_ids: new this.ort.Tensor('int64', BigInt64Array.from(ids, BigInt), [1, n]),
-        attention_mask: new this.ort.Tensor('int64', new BigInt64Array(n).fill(1n), [1, n]),
-      });
-      this.stats.runs++;
-      const data = (out.logits ?? out[Object.keys(out)[0]]).data;
+      let windowRows = useWindow ? this._lruGet(this._wcache, wkey) : undefined;
+      if (windowRows) {
+        this.stats.windowHits++;
+      } else {
+        // Nhả luồng trước mỗi lượt MODEL trừ lượt đầu. Cửa sổ trúng cache không
+        // giữ luồng đáng kể, nên không cần nhả trước nó.
+        if (ranModel) {
+          await yieldToMain();
+          if (signal?.aborted) return null;
+        }
+        windowRows = await this._scoreWindow(part);
+        ranModel = true;
+        if (useWindow) this._lruPut(this._wcache, wkey, windowRows, this.windowCacheSize);
+      }
 
       for (let i = 0; i < part.length; i++) {
-        if (first[i] < 0) continue;
+        if (!windowRows[i]) continue;
         const w = from + i;
         // Một từ nằm trong nhiều cửa sổ (F2) thì lấy cửa sổ nó ở GIỮA nhất —
         // xa cả hai mép, tức có ngữ cảnh ở cả hai bên.
         const centred = Math.min(offs[w] - offs[from], offs[to] - offs[w + 1]);
         if (centred <= best[w]) continue;
-
-        const allowed = applicableTags(words[w], this.lexicon);
-        if (allowed.length <= 1) continue;
-        rows[w] = { logits: data.slice(first[i] * nTags, first[i] * nTags + nTags), allowed };
+        rows[w] = windowRows[i];
         best[w] = centred;
       }
     }
-    return rows;
+    return { rows, runs: runs.length };
+  }
+
+  /**
+   * Một lượt model cho đúng một cửa sổ. Trả mảng theo từ TRONG cửa sổ:
+   * {logits, allowed}, hoặc null nếu từ bị cắt hay chỉ còn KEEP. Kết quả chỉ phụ
+   * thuộc các từ trong cửa sổ — đó là điều làm cache theo cửa sổ đúng.
+   */
+  async _scoreWindow(part) {
+    const nTags = this.tagNames.length;
+    const { ids, wordIds } = this.tokenizer.encodeWords(part, this.maxLen);
+    const first = this.tokenizer.firstSubwordIndex(wordIds, part.length);
+
+    const n = ids.length;
+    const out = await this.session.run({
+      input_ids: new this.ort.Tensor('int64', BigInt64Array.from(ids, BigInt), [1, n]),
+      attention_mask: new this.ort.Tensor('int64', new BigInt64Array(n).fill(1n), [1, n]),
+    });
+    this.stats.runs++;
+    const data = (out.logits ?? out[Object.keys(out)[0]]).data;
+
+    const windowRows = new Array(part.length).fill(null);
+    for (let i = 0; i < part.length; i++) {
+      if (first[i] < 0) continue;
+      const allowed = applicableTags(part[i], this.lexicon);
+      if (allowed.length <= 1) continue;
+      windowRows[i] = { logits: data.slice(first[i] * nTags, first[i] * nTags + nTags), allowed };
+    }
+    return windowRows;
+  }
+
+  /** Số dòng logit đang nằm trong hai cache — để đo bộ nhớ bằng số đếm chứ không đoán. */
+  cacheRows() {
+    let n = 0;
+    for (const rows of this._cache.values()) n += rows.length;
+    for (const rows of this._wcache.values()) n += rows.length;
+    return n;
+  }
+
+  _lruGet(map, key) {
+    const hit = map.get(key);
+    if (hit) { map.delete(key); map.set(key, hit); }
+    return hit;
+  }
+
+  _lruPut(map, key, value, limit) {
+    map.set(key, value);
+    while (map.size > limit) map.delete(map.keys().next().value);
   }
 
   _cacheGet(key) {

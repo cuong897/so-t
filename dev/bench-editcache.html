@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Soát — cache theo cửa sổ khi sửa bài dài (quyết định 35)</title>
+<style>
+  body { font: 400 15px/1.6 -apple-system, "Segoe UI", Roboto, sans-serif;
+         max-width: 1000px; margin: 32px auto; padding: 0 20px; }
+  h1 { font-size: 19px; font-weight: 600; }
+  pre { background: #f6f8fa; padding: 14px; border-radius: 8px; white-space: pre-wrap;
+        font: 12px/1.55 ui-monospace, Menlo, Consolas, monospace; }
+  .bad { color: #cf222e; font-weight: 600; }
+  .ok { color: #1a7f37; font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>Cache theo cửa sổ — quyết định 35</h1>
+<p>
+Commit <strong>trước</strong> lần chạy đầu, cùng commit với ngưỡng. Tự chấm, tự áp
+luật; đọc dòng TỔNG KẾT. So <code>W</code> (F2 + cache cửa sổ 256) với
+<code>F2</code> đang ship, đo cùng lượt, cùng văn bản, xoay vòng thứ tự; có đối
+chứng A/A là một bản F2 thứ hai.
+</p>
+<pre id="log">đang nạp model…</pre>
+<script type="module">
+const v = `?v=${Date.now()}`;
+const { OnnxEngine } = await import(`../extension/src/engine/onnxEngine.js${v}`);
+const { tokenize, isWordLike } = await import(`../extension/src/engine/vi.js${v}`);
+
+const lines = [];
+const say = (s, cls) => { lines.push(cls ? `<span class="${cls}">${s}</span>` : s);
+  document.getElementById('log').innerHTML = lines.join('\n'); };
+const ms = (x) => x.toFixed(1);
+const result = { identity: {}, cost: {}, memory: {} };
+window.__result = result;
+
+// --- ngưỡng, ghi ở ĐÂY và trong decisions.md, cùng một commit ---------------
+const W_SIZE = 256;
+const N_IDENTITY = 60;           // bài mỗi loại, mỗi bài 4 phiên bản
+const N_COST = 20;               // văn bản 6.000 ký tự không dấu câu
+const MAX_COST_RATIO = 0.25;     // p50 tổng thời gian W / F2, mỗi kiểu sửa
+const MAX_STALL_RATIO = 1.25;    // p90 đứng hình W / F2, mỗi kiểu sửa
+const MAX_AA = 1.25;             // đối chứng: F2-A/A / F2, cả hai thống kê
+const N_MEMORY_EDITS = 60;
+const MAX_ROWS = W_SIZE * 64;    // trần cấu trúc: 256 cửa sổ, <= 64 từ mỗi cửa sổ
+
+const base = new OnnxEngine({ windowCacheSize: 0 });
+await base.load({
+  ort: '../extension/vendor/ort.wasm.bundle.min.mjs',
+  wasmDir: '../extension/vendor/',
+  model: `../extension/models/soat.int8.onnx${v}`,
+  tokenizer: `../extension/models/tokenizer.json${v}`,
+  lexicon: `../extension/models/lexicon.json${v}`,
+  meta: `../extension/models/soat.meta.json${v}`,
+});
+function make(windowCacheSize) {
+  const e = new OnnxEngine({ windowCacheSize });
+  Object.assign(e, { ort: base.ort, session: base.session, tokenizer: base.tokenizer,
+    lexicon: base.lexicon, tagNames: base.tagNames, maxLen: base.maxLen, ready: true });
+  return e;
+}
+say(`✓ model maxLen = ${base.maxLen} · đường lui ${base.fallback} · cache cửa sổ mặc định đang ship: ${base.windowCacheSize}`);
+
+const cases = await (await fetch(`../extension/models/_sentence_cases.json${v}`)).json();
+const PUNCT = /[.!?…]/;
+const isWord = (w) => /^[\p{L}\p{M}]+$/u.test(w);
+const key = (xs) => xs.map((x) => `${x.start}:${x.end}:${x.suggestion}:${x.confidence}`).join('|');
+
+let seed = 20260919;
+const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+function docOf(n, punct) {
+  const out = []; let k = 0; let i = Math.floor(rnd() * cases.length);
+  while (k < n) {
+    const s = cases[i % cases.length].wrong.filter((w) => punct || !PUNCT.test(w)).join(' ');
+    out.push(s); k += s.length + 2; i++;
+  }
+  return out.join(punct ? '. ' : ' ').slice(0, n);
+}
+const donor = () => { const ws = cases[Math.floor(rnd() * cases.length)].right.filter(isWord); return ws[Math.floor(rnd() * ws.length)] || 'bàn'; };
+
+/** Ba kiểu sửa, làm trên CHUỖI để offset của gạch chân đi đúng đường sản phẩm. */
+function edits(text) {
+  const spans = tokenize(text).filter(isWordLike);
+  const mid = spans[Math.floor(spans.length / 2)];
+  const mid2 = spans[Math.floor(spans.length / 2) + 3];
+  return {
+    'gõ thêm cuối': `${text} ${donor()}`,
+    'thay từ giữa': text.slice(0, mid.start) + donor() + text.slice(mid.end),
+    'xoá từ giữa': text.slice(0, mid2.start) + text.slice(mid2.end + 1),
+  };
+}
+
+// ============================================================================
+say('\n=== 1. ĐỒNG NHẤT — W có cache ấm, F2 chạy lạnh, từng issue kể cả confidence ===');
+for (const punct of [false, true]) {
+  const label = punct ? 'có dấu câu' : 'KHÔNG dấu câu';
+  const warm = make(W_SIZE);                 // dùng CHUNG cho mọi bài: cache mang lịch sử thật
+  let same = 0; let diff = 0; let issues = 0; const bad = [];
+  for (let d = 0; d < N_IDENTITY; d++) {
+    const text = docOf(1600, punct);
+    for (const t of [text, ...Object.values(edits(text))]) {
+      const got = await warm.check(t);
+      const cold = await make(0).check(t);
+      issues += cold.length;
+      if (key(got) === key(cold)) same++; else { diff++; if (bad.length < 2) bad.push([t.slice(0, 50), key(got), key(cold)]); }
+    }
+  }
+  result.identity[label] = { same, diff, issues, windowHits: warm.stats.windowHits };
+  say(`  ${label.padEnd(14)} ${same} giống hệt · ${diff} lệch · ${issues} issue được so · ${warm.stats.windowHits} lần trúng cache cửa sổ`,
+    diff ? 'bad' : null);
+  for (const [t, a, b] of bad) say(`    "${t}…"\n      W : ${a}\n      F2: ${b}`, 'bad');
+}
+
+// ============================================================================
+const mc = new MessageChannel();
+let ticks = 0, worstGap = 0, last = performance.now(), watching = false;
+mc.port1.onmessage = () => {
+  const now = performance.now();
+  if (watching) { ticks++; worstGap = Math.max(worstGap, now - last); }
+  last = now; mc.port2.postMessage(0);
+};
+mc.port2.postMessage(0);
+async function measure(fn) {
+  await new Promise((r) => setTimeout(r, 15));
+  ticks = 0; worstGap = 0; watching = true; last = performance.now();
+  const t0 = performance.now();
+  await fn();
+  const end = performance.now();
+  worstGap = Math.max(worstGap, end - last);
+  watching = false;
+  return { total: end - t0, stall: ticks === 0 ? end - t0 : worstGap };
+}
+const pct = (xs, q) => { const a = [...xs].sort((x, y) => x - y); return a[Math.ceil(q * a.length) - 1]; };
+
+say(`\n=== 2. CHI PHÍ MỘT LẦN SỬA — ${N_COST} văn bản 6.000 ký tự không dấu câu, mỗi cấu hình đã chấm bản gốc ===`);
+const CONFIGS = ['F2', 'F2-A/A', 'W'];
+const samples = {};
+for (const kind of ['gõ thêm cuối', 'thay từ giữa', 'xoá từ giữa']) {
+  samples[kind] = Object.fromEntries(CONFIGS.map((c) => [c, { total: [], stall: [], runs: [] }]));
+}
+for (let i = 0; i < N_COST; i++) {
+  const text = docOf(6000, false);
+  const E = edits(text);
+  for (let j = 0; j < CONFIGS.length; j++) {
+    const name = CONFIGS[(i + j) % CONFIGS.length];            // xoay vòng ai chạy trước
+    const eng = make(name === 'W' ? W_SIZE : 0);
+    await eng.check(text);                                      // ấm: đã chấm bản gốc MỘT lần
+    // Mỗi kiểu sửa đều tính từ bản GỐC. Cache của W vẫn còn đủ cửa sổ bản gốc
+    // (43 cửa sổ, trần 256); F2 không có cache cửa sổ nên kiểu gì cũng chạy lại
+    // cả bài — thứ tự các kiểu sửa không đổi được con số của ai.
+    for (const [kind, edited] of Object.entries(E)) {
+      const r0 = eng.stats.runs;
+      const m = await measure(() => eng.check(edited));
+      samples[kind][name].total.push(m.total);
+      samples[kind][name].stall.push(m.stall);
+      samples[kind][name].runs.push(eng.stats.runs - r0);
+    }
+  }
+  if (i % 5 === 4) say(`  … ${i + 1}/${N_COST}`);
+}
+for (const [kind, byCfg] of Object.entries(samples)) {
+  result.cost[kind] = {};
+  for (const c of CONFIGS) {
+    if (byCfg[c].total.length !== N_COST) throw new Error(`thiếu mẫu ${c} / ${kind} — DỪNG`);
+    result.cost[kind][c] = { p50: pct(byCfg[c].total, 0.5), stall90: pct(byCfg[c].stall, 0.9), runs50: pct(byCfg[c].runs, 0.5) };
+  }
+  const F = result.cost[kind].F2;
+  say(`  ${kind}`);
+  for (const c of CONFIGS) {
+    const s = result.cost[kind][c];
+    s.costRatio = s.p50 / F.p50; s.stallRatio = s.stall90 / F.stall90;
+    say(`    ${c.padEnd(7)} tổng p50 ${ms(s.p50).padStart(8)}ms (x${s.costRatio.toFixed(2)}) · đứng hình p90 ${ms(s.stall90).padStart(7)}ms (x${s.stallRatio.toFixed(2)}) · lượt model p50 ${s.runs50}`);
+  }
+}
+
+// ============================================================================
+say(`\n=== 3. BỘ NHỚ — một bài 2.000 ký tự không dấu câu, ${N_MEMORY_EDITS} lần sửa liên tiếp ===`);
+for (const name of ['F2', 'W']) {
+  const eng = make(name === 'W' ? W_SIZE : 0);
+  let text = docOf(2000, false);
+  let peak = 0;
+  for (let k = 0; k < N_MEMORY_EDITS; k++) {
+    await eng.check(text);
+    peak = Math.max(peak, eng.cacheRows());
+    const E = edits(text);
+    text = E[k % 2 ? 'thay từ giữa' : 'xoá từ giữa'];
+  }
+  result.memory[name] = { peak, end: eng.cacheRows(), sentences: eng._cache.size, windows: eng._wcache.size };
+  say(`  ${name.padEnd(3)} dòng logit giữ lại cao nhất ${String(peak).padStart(6)} · cuối ${eng.cacheRows()} · ${eng._cache.size} mục câu · ${eng._wcache.size} mục cửa sổ`);
+}
+
+// ============================================================================
+say('\n=== TỔNG KẾT — ngưỡng và luật đã commit cùng trang này ===\n');
+const kinds = Object.keys(result.cost);
+const aa = kinds.every((k) => result.cost[k]['F2-A/A'].costRatio <= MAX_AA && result.cost[k]['F2-A/A'].stallRatio <= MAX_AA);
+const aaWorst = Math.max(...kinds.flatMap((k) => [result.cost[k]['F2-A/A'].costRatio, result.cost[k]['F2-A/A'].stallRatio]));
+say(`  ${aa ? 'QUA ' : 'TRƯỢT'}  đối chứng A/A (F2 thứ hai / F2, tổng p50 và đứng hình p90)   tệ nhất x${aaWorst.toFixed(2)}   cần ≤ x${MAX_AA}`, aa ? 'ok' : 'bad');
+if (!aa) {
+  say('\n  THƯỚC ĐO KHÔNG ĐỦ PHÂN GIẢI — đợt đo vô hiệu, chạy lại MỘT lần; lại trượt thì dừng.', 'bad');
+  result.verdict = 'vô hiệu';
+} else {
+  const idOk = Object.values(result.identity).every((x) => x.diff === 0 && x.same === N_IDENTITY * 4);
+  const checks = [
+    ['đồng nhất, có + không dấu câu', Object.values(result.identity).map((x) => `${x.same}/${x.same + x.diff}`).join(' · '), 'tất cả', idOk],
+    ...kinds.map((k) => [`chi phí sửa, ${k}`, `x${result.cost[k].W.costRatio.toFixed(2)}`, `≤ x${MAX_COST_RATIO}`, result.cost[k].W.costRatio <= MAX_COST_RATIO]),
+    ...kinds.map((k) => [`đứng hình p90, ${k}`, `x${result.cost[k].W.stallRatio.toFixed(2)}`, `≤ x${MAX_STALL_RATIO}`, result.cost[k].W.stallRatio <= MAX_STALL_RATIO]),
+    ['bộ nhớ W, dòng logit cao nhất', String(result.memory.W.peak), `≤ ${MAX_ROWS}`, result.memory.W.peak <= MAX_ROWS],
+  ];
+  for (const [name, got, need, ok] of checks) {
+    say(`  ${ok ? 'QUA ' : 'TRƯỢT'}  ${name.padEnd(36)} ${String(got).padStart(14)}   cần ${need}`, ok ? 'ok' : 'bad');
+  }
+  result.checks = checks;
+  if (!idOk) result.verdict = 'lỗi cài đặt';
+  else result.verdict = checks.every((c) => c[3]) ? `bật ${W_SIZE}` : 'giữ 0';
+  say('');
+  say(`  KẾT LUẬN: ${result.verdict === 'lỗi cài đặt' ? 'LỆCH KẾT QUẢ — lỗi cài đặt, sửa rồi đo lại TOÀN BỘ'
+    : result.verdict === 'giữ 0' ? 'giữ DEFAULT_WINDOW_CACHE = 0' : `DEFAULT_WINDOW_CACHE = ${W_SIZE}`}`,
+    result.verdict.startsWith('bật') ? 'ok' : 'bad');
+}
+window.__benchDone = true;
+</script>
+</body>
+</html>
