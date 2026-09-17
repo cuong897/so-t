@@ -133,7 +133,7 @@ rồi **dán** đoạn thử ở dưới vào ô "Tạo bài viết" của Faceb
 |---|---|
 | **dán** rồi gõ thêm, sửa, xoá | đường người dùng thật đi; Lexical không bắn `input` (quyết định 36) |
 | mở 3–4 tab Facebook/Gmail cùng lúc, gõ ở nhiều tab | một phiên onnxruntime dùng chung, có hàng đợi — đã đo trên trang thử, chưa đo ở trang thật |
-| để yên 5 phút rồi gõ lại | service worker bị tắt sau 30 giây rảnh; offscreen phải còn sống (đo được 45 giây, chưa đo 5 phút) |
+| để yên 5 phút rồi gõ lại | service worker bị tắt sau 30 giây rảnh; offscreen phải còn sống. Đã đo 45 giây (quyết định 38) và **5 phút** trên Lexical thật — đều còn sống, cache còn ấm. Trên Facebook thì chưa |
 | Shift+Esc (Task Manager của Chrome) | phải thấy **một** dòng của Soát giữ ~300 MB, không phải mỗi tab một dòng |
 | gõ tiếng Việt bằng bộ gõ (Unikey/EVKey) | chưa bao giờ kiểm; bộ gõ và `MutationObserver` có thể đá nhau |
 

@@ -2552,6 +2552,10 @@ Ba điều rút ra, và điều thứ ba mới là điều đắt:
    tôi đọc gạch chân và log — hai thứ ở *cuối* chuỗi. Thứ hỏng nằm ở *đầu* chuỗi, và không
    có dấu vết nào của nó trong hai thứ đó.
 
+**Để yên 5 phút rồi dán lại** (điều kiện 8 chỉ đo được 45 giây): `#5 ĐÃ VẼ · model 205 ms,
+4 lượt, 19 câu trúng cache · TỔNG 611 ms`, gạch đúng `cứ`. Cache còn ấm nghĩa là **vẫn
+đúng offscreen cũ** — Chrome không đóng nó sau khi service worker chết từ lâu.
+
 **`dev/lexical-check.mjs` không thay được việc thử trên Facebook thật**: trang nhẹ, không
 React của Facebook, không bộ gõ tiếng Việt, và extension nạp qua CDP chứ không cài như
 người dùng.
