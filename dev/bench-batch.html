@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Soát — chạy theo LÔ thì có ra đúng kết quả cũ không?</title>
+<style>
+  body { font: 400 15px/1.6 -apple-system, "Segoe UI", Roboto, sans-serif;
+         max-width: 980px; margin: 32px auto; padding: 0 20px; }
+  h1 { font-size: 19px; font-weight: 600; }
+  pre { background: #f6f8fa; padding: 14px; border-radius: 8px; white-space: pre-wrap;
+        font: 12px/1.55 ui-monospace, Menlo, Consolas, monospace; }
+  .bad { color: #cf222e; font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>Chạy từng câu một, nhưng gộp thành LÔ</h1>
+<p>
+Nếu chấm theo từng CÂU thì mỗi câu là một lượt <code>session.run</code>, và phần
+tốn kém cố định của mỗi lượt bị trả đi trả lại. Model xuất ra có trục
+<code>batch</code> động (<code>export_onnx.py</code>), nên về lý thuyết gộp được.
+Trang này kiểm hai điều, theo đúng thứ tự đó:
+<strong>(1) lô có ra ĐÚNG kết quả như chạy lẻ không</strong> — nếu không thì
+nhanh cỡ nào cũng vứt; <strong>(2) nhanh hơn bao nhiêu.</strong>
+</p>
+<pre id="log">đang nạp model…</pre>
+<script type="module">
+const v = `?v=${Date.now()}`;
+const { OnnxEngine } = await import(`../extension/src/engine/onnxEngine.js${v}`);
+const { applicableTags } = await import(`../extension/src/engine/vi.js${v}`);
+const lines = [];
+const say = (s, cls) => { lines.push(cls ? `<span class="${cls}">${s}</span>` : s);
+  document.getElementById('log').innerHTML = lines.join('\n'); };
+
+const engine = new OnnxEngine();
+await engine.load({
+  ort: '../extension/vendor/ort.wasm.bundle.min.mjs',
+  wasmDir: '../extension/vendor/',
+  model: `../extension/models/soat.int8.onnx${v}`,
+  tokenizer: `../extension/models/tokenizer.json${v}`,
+  lexicon: `../extension/models/lexicon.json${v}`,
+  meta: `../extension/models/soat.meta.json${v}`,
+});
+const tok = engine.tokenizer;
+const nTags = engine.tagNames.length;
+const cases = await (await fetch(`../extension/models/_sentence_cases.json${v}`)).json();
+say(`✓ model maxLen = ${engine.maxLen} · pad id = ${tok.padId}\n`);
+
+function decodeRow(data, base, words, first) {
+  const res = new Map();
+  for (let w = 0; w < words.length; w++) {
+    if (first[w] < 0) continue;
+    const allowed = applicableTags(words[w], engine.lexicon);
+    if (allowed.length <= 1) continue;
+    const r = engine._decode(data, base + first[w] * nTags, nTags, words[w], allowed);
+    if (r) res.set(w, { key: `${r.tag}:${r.suggestion}`, prob: r.prob });
+  }
+  return res;
+}
+
+async function runOne(words) {
+  const { ids, wordIds } = tok.encodeWords(words, engine.maxLen);
+  const first = tok.firstSubwordIndex(wordIds, words.length);
+  const n = ids.length;
+  const out = await engine.session.run({
+    input_ids: new engine.ort.Tensor('int64', BigInt64Array.from(ids, BigInt), [1, n]),
+    attention_mask: new engine.ort.Tensor('int64', new BigInt64Array(n).fill(1n), [1, n]),
+  });
+  const logits = out.logits ?? out[Object.keys(out)[0]];
+  return decodeRow(logits.data, 0, words, first);
+}
+
+async function runBatch(rows) {
+  const enc = rows.map((w) => {
+    const { ids, wordIds } = tok.encodeWords(w, engine.maxLen);
+    return { ids, first: tok.firstSubwordIndex(wordIds, w.length) };
+  });
+  const L = Math.max(...enc.map((e) => e.ids.length));
+  const B = rows.length;
+  const inp = new BigInt64Array(B * L).fill(BigInt(tok.padId));
+  const mask = new BigInt64Array(B * L);          // 0 = chỗ đệm
+  for (let b = 0; b < B; b++) {
+    for (let i = 0; i < enc[b].ids.length; i++) {
+      inp[b * L + i] = BigInt(enc[b].ids[i]);
+      mask[b * L + i] = 1n;
+    }
+  }
+  const out = await engine.session.run({
+    input_ids: new engine.ort.Tensor('int64', inp, [B, L]),
+    attention_mask: new engine.ort.Tensor('int64', mask, [B, L]),
+  });
+  const logits = out.logits ?? out[Object.keys(out)[0]];
+  return rows.map((w, b) => decodeRow(logits.data, b * L * nTags, w, enc[b].first));
+}
+
+const N = 160;
+const rows = Array.from({ length: N }, (_, k) => cases[(k * 5 + 11) % cases.length].wrong);
+
+// --- 1. ĐÚNG trước ----------------------------------------------------------
+say('=== 1. LÔ có ra đúng kết quả của chạy lẻ không? ===\n');
+const ref = [];
+for (const w of rows) ref.push(await runOne(w));
+for (const B of [2, 4, 8, 16]) {
+  let same = 0, diff = 0, refN = 0, gotN = 0, jitter = 0;
+  for (let i = 0; i < rows.length; i += B) {
+    const slice = rows.slice(i, i + B);
+    const got = await runBatch(slice);
+    for (let j = 0; j < slice.length; j++) {
+      const a = ref[i + j], b = got[j];
+      refN += a.size; gotN += b.size;
+      const keys = new Set([...a.keys(), ...b.keys()]);
+      for (const k of keys) {
+        const x = a.get(k), y = b.get(k);
+        if (x && y && x.key === y.key) {
+          same++;
+          const d = Math.abs(x.prob - y.prob);
+          if (d > jitter) jitter = d;
+        } else diff++;
+      }
+    }
+  }
+  say(`  lô ${String(B).padStart(2)} câu: ${String(same).padStart(4)} chỗ khớp, `
+    + `${String(diff).padStart(4)} chỗ LỆCH  (lẻ báo ${refN}, lô báo ${gotN})`
+    + `  · p lệch nhiều nhất ${jitter.toExponential(1)}`, diff ? 'bad' : null);
+}
+
+// --- 2. rồi mới tới NHANH ---------------------------------------------------
+say('\n=== 2. Nhanh hơn bao nhiêu? (160 câu, tổng thời gian) ===\n');
+const timeIt = async (fn) => { const t0 = performance.now(); await fn(); return performance.now() - t0; };
+for (const w of rows.slice(0, 8)) await runOne(w);            // chạy nóng
+const tOne = await timeIt(async () => { for (const w of rows) await runOne(w); });
+say(`  chạy lẻ từng câu        : ${tOne.toFixed(0)}ms  (${(tOne / N).toFixed(1)}ms một câu)`);
+for (const B of [4, 8, 16]) {
+  const t = await timeIt(async () => {
+    for (let i = 0; i < rows.length; i += B) await runBatch(rows.slice(i, i + B));
+  });
+  say(`  gộp lô ${String(B).padStart(2)} câu         : ${t.toFixed(0)}ms  (${(t / N).toFixed(1)}ms một câu)`
+    + `  — nhanh hơn ${(tOne / t).toFixed(2)}x`);
+}
+window.__benchDone = true;
+</script>
+</body>
+</html>

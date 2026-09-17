@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Soát — một câu ĐỨNG MỘT MÌNH so với một câu trong BÀI ĐĂNG</title>
+<style>
+  body { font: 400 15px/1.6 -apple-system, "Segoe UI", Roboto, sans-serif;
+         max-width: 980px; margin: 32px auto; padding: 0 20px; }
+  h1 { font-size: 19px; font-weight: 600; }
+  pre { background: #f6f8fa; padding: 14px; border-radius: 8px; white-space: pre-wrap;
+        font: 12px/1.55 ui-monospace, Menlo, Consolas, monospace; }
+  .bad { color: #cf222e; font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>Cùng một câu, cùng một model — đứng một mình và nằm trong bài đăng</h1>
+<p>
+Mọi phép đo offline của dự án (<code>evaluate.py</code>, <code>consonant_eval.py</code>,
+<code>sentence_eval.py</code>, <code>false_alarm.py</code>) đều chấm <strong>từng
+câu một</strong>. Sản phẩm thì nhét <strong>cả ô nhập liệu</strong> vào một lượt
+chạy. Trang này chấm đúng cùng một tập câu, cùng một model, cùng một ngưỡng,
+chỉ khác mỗi thứ nằm quanh câu đó — và dùng nhãn vàng của VSEC nên ra
+precision/recall thật, không phải tỷ lệ đồng thuận.
+</p>
+<pre id="log">đang nạp model…</pre>
+<script type="module">
+const v = `?v=${Date.now()}`;
+const { OnnxEngine } = await import(`../extension/src/engine/onnxEngine.js${v}`);
+const { applicableTags } = await import(`../extension/src/engine/vi.js${v}`);
+const lines = [];
+const say = (s, cls) => { lines.push(cls ? `<span class="${cls}">${s}</span>` : s);
+  document.getElementById('log').innerHTML = lines.join('\n'); };
+
+const engine = new OnnxEngine();
+await engine.load({
+  ort: '../extension/vendor/ort.wasm.bundle.min.mjs',
+  wasmDir: '../extension/vendor/',
+  model: `../extension/models/soat.int8.onnx${v}`,
+  tokenizer: `../extension/models/tokenizer.json${v}`,
+  lexicon: `../extension/models/lexicon.json${v}`,
+  meta: `../extension/models/soat.meta.json${v}`,
+});
+const MAXLEN = engine.maxLen;
+const cases = (await (await fetch(`../extension/models/_sentence_cases.json${v}`)).json())
+  .filter((c) => c.in_scope.length > 0);
+say(`✓ model maxLen = ${MAXLEN} · ${cases.length} câu VSEC có ít nhất một lỗi TRONG TẦM\n`);
+
+const nSubOf = (words) => words.reduce((a, w) => a + engine.tokenizer.bpe(w).length, 0);
+
+async function decide(words) {
+  const { ids, wordIds } = engine.tokenizer.encodeWords(words, MAXLEN);
+  const first = engine.tokenizer.firstSubwordIndex(wordIds, words.length);
+  const n = ids.length;
+  const out = await engine.session.run({
+    input_ids: new engine.ort.Tensor('int64', BigInt64Array.from(ids, BigInt), [1, n]),
+    attention_mask: new engine.ort.Tensor('int64', new BigInt64Array(n).fill(1n), [1, n]),
+  });
+  const logits = out.logits ?? out[Object.keys(out)[0]];
+  const nTags = engine.tagNames.length;
+  const res = new Map();
+  for (let w = 0; w < words.length; w++) {
+    if (first[w] < 0) continue;
+    const allowed = applicableTags(words[w], engine.lexicon);
+    if (allowed.length <= 1) continue;
+    const r = engine._decode(logits.data, first[w] * nTags, nTags, words[w], allowed);
+    if (r) res.set(w, r.suggestion);
+  }
+  return res;
+}
+
+/** Cộng dồn TP/FP/FN CHỈ trên các từ của câu đích. */
+function score(acc, c, got, offset, key) {
+  const errs = new Set(c.errs);
+  for (let i = 0; i < c.wrong.length; i++) {
+    const s = got.get(offset + i);
+    if (errs.has(i)) {
+      if (s === c.right[i]) { acc.tp++; acc.caught.add(`${key}:${i}`); }
+      else if (s !== undefined) acc.fpWrongFix++;
+    } else if (s !== undefined) acc.fpClean++;
+  }
+  acc.inScope += c.in_scope.length;
+}
+const blank = () => ({ tp: 0, fpWrongFix: 0, fpClean: 0, inScope: 0, caught: new Set() });
+
+const N = 863;
+const picks = Array.from({ length: N }, (_, k) => cases[(k * 7 + 3) % cases.length]);
+const filler = (k) => cases[(k * 13 + 101) % cases.length].right;   // câu ĐÚNG làm nền
+
+const A = blank(), B = blank(), C = blank(), D = blank(), E = blank();
+
+for (let k = 0; k < N; k++) {
+  const c = picks[k];
+  const budget = MAXLEN - 2 - nSubOf(c.wrong);
+  if (budget < 8) continue;
+
+  // A — đứng một mình. Đúng đường mà mọi phép đo offline đang đi.
+  score(A, c, await decide(c.wrong), 0, k);
+
+  // B — có ngữ cảnh TRÁI (câu trước), vẫn nằm trọn trong cửa sổ.
+  let left = [];
+  for (let j = 1; nSubOf(left) < budget * 0.9 && j < 6; j++) {
+    const f = filler(k + j);
+    if (nSubOf([...left, ...f]) > budget) break;
+    left = [...f, ...left];
+  }
+  score(B, c, await decide([...left, ...c.wrong]), left.length, k);
+
+  // C — có ngữ cảnh HAI BÊN.
+  let half = [];
+  for (let j = 1; nSubOf(half) < budget * 0.45 && j < 6; j++) {
+    const f = filler(k + j);
+    if (nSubOf([...half, ...f]) > budget / 2) break;
+    half = [...f, ...half];
+  }
+  let right = [];
+  for (let j = 1; j < 6; j++) {
+    const f = filler(k + 40 + j);
+    if (nSubOf([...half, ...right, ...f]) > budget) break;
+    right = [...right, ...f];
+  }
+  score(C, c, await decide([...half, ...c.wrong, ...right]), half.length, k);
+
+  // E — câu đích ĐỨNG ĐẦU cửa sổ, ngữ cảnh nằm hết bên PHẢI. Cùng lượng chữ
+  //     xung quanh như B, nhưng câu đích nằm ở vị trí THẤP. Nếu E ≈ A thì thứ
+  //     làm hỏng B không phải "có câu khác bên cạnh" mà là VỊ TRÍ trong cửa sổ.
+  let after = [];
+  for (let j = 1; j < 6; j++) {
+    const f = filler(k + j);
+    if (nSubOf([...after, ...f]) > budget) break;
+    after = [...after, ...f];
+  }
+  score(E, c, await decide([...c.wrong, ...after]), 0, k);
+
+  // D — câu đích bị CHỖ NỐI cắt đôi: nửa đầu ở cuối đoạn trước, nửa sau ở đầu
+  //     đoạn sau. Đây là thứ việc chia đoạn sẽ tạo ra, chưa ai đo.
+  const cut = Math.floor(c.wrong.length / 2);
+  const headCtx = [];
+  let hc = [];
+  for (let j = 1; j < 8; j++) {
+    const f = filler(k + 200 + j);
+    if (nSubOf([...hc, ...f, ...c.wrong.slice(0, cut)]) > MAXLEN - 2) break;
+    hc = [...hc, ...f];
+  }
+  const tailCtx = [];
+  let tc = [];
+  for (let j = 1; j < 8; j++) {
+    const f = filler(k + 300 + j);
+    if (nSubOf([...c.wrong.slice(cut), ...tc, ...f]) > MAXLEN - 2) break;
+    tc = [...tc, ...f];
+  }
+  const g1 = await decide([...hc, ...c.wrong.slice(0, cut)]);
+  const g2 = await decide([...c.wrong.slice(cut), ...tc]);
+  const merged = new Map();
+  for (const [w, s] of g1) if (w >= hc.length) merged.set(w - hc.length, s);
+  for (const [w, s] of g2) if (w < c.wrong.length - cut) merged.set(cut + w, s);
+  score(D, c, merged, 0, k);
+
+  if (k % 100 === 0) say(`  … ${k}/${N}`);
+}
+
+lines.length = 2;
+say(`✓ model maxLen = ${MAXLEN} · ${cases.length} câu VSEC có lỗi trong tầm`);
+say(`✓ chấm ${N} câu ở bốn điều kiện, cùng model cùng ngưỡng\n`);
+say(`${'điều kiện'.padEnd(34)}${'đúng'.padStart(7)}${'sửa sai'.padStart(9)}`
+  + `${'báo oan'.padStart(9)}${'recall'.padStart(9)}${'precision'.padStart(11)}`);
+say('-'.repeat(79));
+const row = (name, a, cls) => {
+  const rec = a.tp / a.inScope;
+  const prec = a.tp / Math.max(1, a.tp + a.fpWrongFix + a.fpClean);
+  say(`${name.padEnd(34)}${String(a.tp).padStart(7)}${String(a.fpWrongFix).padStart(9)}`
+    + `${String(a.fpClean).padStart(9)}${rec.toFixed(4).padStart(9)}${prec.toFixed(4).padStart(11)}`, cls);
+};
+row('A. câu đứng MỘT MÌNH (mọi eval)', A);
+row('B. + ngữ cảnh trái', B, 'bad');
+row('C. + ngữ cảnh hai bên', C, 'bad');
+row('E. câu đích ĐỨNG ĐẦU, ngữ cảnh bên phải', E);
+row('D. bị CHỖ NỐI cắt đôi', D, 'bad');
+
+// So sánh CÓ CẶP với A: cùng một ca lỗi, bên nào bắt được. Sai số chuẩn tính
+// trên số ca BẤT ĐỒNG (McNemar), không phải trên tổng — vì hai cột không độc lập.
+say('');
+say(`${'so với A, theo từng ca lỗi'.padEnd(30)}${'A bắt, kia sót'.padStart(15)}`
+  + `${'kia bắt, A sót'.padStart(16)}${'chênh recall'.padStart(14)}${'± 1 SE'.padStart(9)}`);
+say('-'.repeat(84));
+for (const [name, X] of [['B. ngữ cảnh trái', B], ['C. ngữ cảnh hai bên', C],
+  ['E. đứng đầu, ngữ cảnh phải', E], ['D. chỗ nối cắt đôi', D]]) {
+  let onlyA = 0, onlyX = 0;
+  for (const key of A.caught) if (!X.caught.has(key)) onlyA++;
+  for (const key of X.caught) if (!A.caught.has(key)) onlyX++;
+  const d = (X.tp - A.tp) / A.inScope;
+  const se = Math.sqrt(onlyA + onlyX) / A.inScope;
+  say(`${name.padEnd(30)}${String(onlyA).padStart(15)}${String(onlyX).padStart(16)}`
+    + `${d.toFixed(4).padStart(14)}${se.toFixed(4).padStart(9)}`,
+    Math.abs(d) > 2 * se ? 'bad' : null);
+}
+say('');
+say('Chênh lệch lớn hơn 2 SE thì không phải nhiễu mẫu. Dòng nào KHÔNG được tô đỏ');
+say('là dòng chưa chứng minh được gì — đừng kể nó như một kết quả.');
+say('');
+say(`A là con số mọi phép đo offline của dự án báo. B và C là thứ người dùng gặp`);
+say(`khi gõ một bài đăng — vì check() nhét CẢ ô nhập liệu vào một lượt chạy.`);
+say(`D là thứ việc chia đoạn sẽ thêm vào, nếu chia mà không giữ ngữ cảnh.`);
+window.__benchDone = true;
+</script>
+</body>
+</html>

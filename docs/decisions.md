@@ -1440,3 +1440,173 @@ một đợt riêng, có ngưỡng chấp nhận viết trước.
 chứ không phải một quyết định sản phẩm có ghi lại.** Nó quyết định sản phẩm bỏ
 qua bao nhiêu phần văn bản của người dùng, và cho tới mục này thì không ai từng
 đo con số đó.
+
+
+---
+
+### 32. Câu đứng MỘT MÌNH và câu nằm trong BÀI ĐĂNG — mọi con số của dự án là số của vế đầu
+
+Yêu cầu ban đầu chỉ là "xem xét lại việc sửa model cắt cụt văn bản", tức việc
+số 4 của bàn giao. Xem xét cái giá của việc chia đoạn thì lòi ra hai chuyện lớn
+hơn cả việc cắt cụt.
+
+#### Chuyện thứ nhất: "async nên không chặn việc gõ" là sai
+
+Quyết định 31 lập luận rằng cái giá độ trễ của việc chia đoạn dễ chịu vì tầng
+model chạy async. `onnxEngine.js` cũng ghi ở đầu file là nó "Chạy trong Web
+Worker". Không có Worker nào trong repo này, và `ort.env.wasm.proxy` không được
+bật, nên `session.run` giữ luồng chính của trang suốt lượt chạy.
+
+`dev/bench-blocking.html` đo bằng nhịp đập MessageChannel — không dùng
+`requestAnimationFrame`, vì tab ở nền thì rAF không chạy và phép đo sẽ ra "đứng
+hình" ở cả trường hợp lành:
+
+| | tổng | nhịp đập nhận được | đứng hình lâu nhất |
+|---|---|---|---|
+| `sleep(300ms)` — async thật | 300,2ms | 88.103 | 3,3ms |
+| `check()` một bài 280 ký tự | 47,5ms | **0** | **47,5ms** |
+| `check()` 6.000 ký tự (cắt cụt) | 70,4ms | **0** | **70,4ms** |
+| 15 đoạn, chạy liền một mạch | 1.013,8ms | **0** | **1.013,8ms** |
+| 15 đoạn, **nhả luồng** giữa hai đoạn | 1.004,2ms | 15 | **67,8ms** |
+
+Dòng cuối là cách sửa: nhả luồng giữa hai lượt chạy gần như không tốn thêm tổng
+thời gian và cắt lần giữ luồng lâu nhất đi 15 lần. Nhưng nó phải được viết ra —
+`await` không tự nhả luồng cho ai cả.
+
+Ba chỗ trong repo cùng khai chuyện này và cả ba đều suy từ cú pháp ra hành vi:
+thấy `await` thì kết luận "không giữ luồng". Đã sửa cả ba ở `ea8c174`.
+
+#### Chuyện thứ hai, lớn hơn: khoảng cách đã có sẵn TRƯỚC khi chia đoạn
+
+Việc chia đoạn đặt ra một câu hỏi mà quyết định 31 không hỏi: một từ đứng ở
+**chỗ khác** trong cửa sổ thì model có quyết định khác không? Quyết định 31 đo
+cái giá của việc chia đoạn **chỉ bằng độ trễ**.
+
+`dev/bench-context.html` chấm 863 câu VSEC (940 lỗi trong tầm) bằng nhãn vàng,
+cùng model, cùng ngưỡng, chỉ đổi đúng một thứ: cái nằm quanh câu đó. Chữ nằm
+quanh là câu VSEC **đã sửa đúng**, nên nó không mang thêm lỗi vào.
+
+| điều kiện | đúng | sửa sai | báo oan | recall | precision |
+|---|---|---|---|---|---|
+| **A.** câu đứng một mình | 698 | 18 | 7 | **0,7426** | **0,9654** |
+| **E.** câu đứng đầu cửa sổ, ngữ cảnh bên phải | 673 | 19 | 5 | 0,7160 | 0,9656 |
+| **C.** ngữ cảnh hai bên | 665 | 17 | 9 | 0,7074 | 0,9624 |
+| **B.** ngữ cảnh trái, câu nằm cuối cửa sổ | 583 | 19 | 7 | 0,6202 | 0,9573 |
+| **D.** câu bị **chỗ nối cắt đôi** | 570 | 28 | **36** | **0,6064** | **0,8991** |
+
+So có cặp với A, sai số chuẩn tính trên số ca **bất đồng** (McNemar) chứ không
+trên tổng, vì hai cột không độc lập:
+
+| | A bắt, kia sót | kia bắt, A sót | chênh recall | ± 1 SE |
+|---|---|---|---|---|
+| B | 139 | 24 | −0,1223 | 0,0136 |
+| C | 54 | 21 | −0,0351 | 0,0092 |
+| E | 47 | 22 | −0,0266 | 0,0088 |
+| D | 156 | 28 | −0,1362 | 0,0144 |
+
+Cả bốn đều vượt 2 SE. Và A = 0,7426 khớp con số 0,7457 mà `evaluate.py` báo —
+đó là phép kiểm rằng bộ đo này không lệch khỏi bộ đo cũ.
+
+**Điều kiện A là thứ mọi phép đo offline của dự án đang đo.** Đã kiểm cả bốn:
+`evaluate.py`, `consonant_eval.py`, `sentence_eval.py`, `false_alarm.py` đều
+nhận vào **một câu** rồi chạy một lượt suy luận.
+
+**Điều kiện B và C là thứ sản phẩm đang làm.** `run()` trong `content/index.js`
+lấy **cả ô nhập liệu** rồi đưa thẳng cho `check()`. Từ câu thứ hai trở đi, mọi
+từ đều đang được chấm trong điều kiện B hoặc C.
+
+Nên recall thật khi người ta gõ một bài đăng nằm đâu đó trong khoảng **0,62 –
+0,71**, không phải 0,7426. Lại đúng họ lỗi của dự án này, lần này ở chỗ đắt
+nhất: **đo một con số hoàn toàn đúng — của một đường dẫn mà sản phẩm không đi.**
+Khác mấy lần trước ở chỗ nó không nằm trong một phép đo lẻ nào, nó nằm trong
+**hình dạng chung của cả bộ đo**.
+
+**Giới hạn của phép đo này:** "bài đăng" ở đây là các câu VSEC không liên quan
+nối với nhau, không phải một bài viết mạch lạc. Ngữ cảnh thật có thể giúp model
+nhiều hơn chữ nối ngẫu nhiên. Nhưng khoảng cách E–B dưới đây có **cùng lượng**
+chữ ngẫu nhiên ở hai bên, nên nó không giải thích được bằng giới hạn đó.
+
+#### Thủ phạm chính là VỊ TRÍ trong cửa sổ
+
+Thứ tự A > E ≈ C > B xếp theo vị trí của câu đích trong cửa sổ: E và B có cùng
+lượng ngữ cảnh, chỉ khác câu đích nằm ở đầu hay ở cuối, mà chênh nhau 9,6 điểm
+recall. Ngữ cảnh tự nó cũng tốn một ít (A so với E: 2,7 điểm), nhưng phần lớn
+cái mất nằm ở vị trí.
+
+Giải thích khớp với cách train: câu VSEC có trung vị 30 subword, `max_len` là
+96, nên trong lúc fine-tune các vị trí từ 60 tới 94 hầu như chỉ có **đệm**. Model
+ít khi học đọc chữ thật ở chỗ sâu của cửa sổ. Đây là giả thuyết khớp số liệu,
+chưa phải điều đã chứng minh — muốn chứng minh phải đếm phân bố vị trí của token
+thật trong `train.jsonl`.
+
+Đó cũng là lý do **nới `max_len`** không cứu được: model chạy được ở 192 và 256
+(`max_position_embeddings` 258, trục seq của ONNX là động), nhưng
+`dev/bench-chunking.html` đo ra lệch khỏi mốc nhiều hơn — 51,1% ở 256 so với
+45,4% ở 96. Cửa sổ rộng hơn chỉ đẩy thêm chữ vào vùng model chưa học.
+
+#### Hệ quả: chấm theo CÂU thắng ở mọi cột trừ tổng CPU
+
+Nếu chỗ tệ là vị trí sâu trong cửa sổ, thì cách chia tốt nhất là cách giữ mọi từ
+ở vị trí **nông**. Một câu một lượt chạy làm đúng thế — và nó cũng là đường mà
+mọi phép đo offline đang đi, nên lần đầu tiên số đo và sản phẩm nói cùng một thứ.
+
+Đo trên văn bản có dấu câu, cả ba chiến lược đều nhả luồng giữa hai lượt:
+
+| cỡ văn bản | chiến lược | lượt | tổng | đứng lâu nhất |
+|---|---|---|---|---|
+| 280 | hiện nay — một lượt | 1 | 48,9ms | 48,8ms |
+| 280 | **từng câu một** | 3 | 59,1ms | **30,3ms** |
+| 2.000 | hiện nay — một lượt, cắt cụt | 1 | 70,3ms | 70,3ms (phủ **20%**) |
+| 2.000 | gói nhiều câu trọn vào cửa sổ 96 | 6 | 347,0ms | 64,6ms |
+| 2.000 | **từng câu một** | 16 | 390,9ms | **37,1ms** |
+| 6.000 | hiện nay — một lượt, cắt cụt | 1 | 70,8ms | 70,8ms (phủ **7%**) |
+| 6.000 | gói nhiều câu trọn vào cửa sổ 96 | 18 | 1.093,6ms | 74,1ms |
+| 6.000 | **từng câu một** | 48 | 1.168,3ms | **42,4ms** |
+
+Chấm theo câu tốn thêm 7–13% tổng thời gian so với gói đoạn, đổi lại chất lượng
+bằng đúng điều kiện A và **lần giữ luồng lâu nhất thấp hơn cả bản đang ship**.
+Không câu nào trong 3.146 câu thử vượt nổi cửa sổ 96 (dài nhất 64 subword).
+
+#### Gộp LÔ: đã thử, đã bác
+
+Trục `batch` của ONNX cũng động, nên gộp nhiều câu vào một lượt là hướng hiển
+nhiên để bù phần tốn kém cố định. `dev/bench-batch.html` kiểm **đúng trước, nhanh
+sau**: lô cho kết quả gần như trùng chạy lẻ (3–5 chỗ lệch trên ~80, do INT8 làm
+p rung tới 3,5e-2 và đẩy ca sát ngưỡng qua lại) — nhưng **chậm hơn**: 26,7ms một
+câu khi chạy lẻ, so với 33,9 / 36,3 / 41,1ms ở lô 4 / 8 / 16. Đệm tới câu dài
+nhất trong lô tốn nhiều hơn phần tiết kiệm được.
+
+Lần chạy đầu của phép đo này báo "113 chỗ lệch trên 129" và suýt thành kết luận.
+Nguyên nhân: khoá so sánh gồm cả xác suất làm tròn tới số lẻ thứ tư, nên p rung
+ở đuôi bị đếm thành **quyết định khác**. Lỗi ở thước đo, không ở thứ được đo —
+đúng hạng mục của bẫy số 11.
+
+#### Một lỗi nhỏ nhưng thật: `bpe.js` cắt GIỮA một từ
+
+`encodeWords` kiểm tra `maxLen` **bên trong** vòng lặp subword, nên khi cửa sổ
+đầy giữa chừng một từ nhiều subword, từ đó vẫn có `firstSubwordIndex >= 0` và
+vẫn **bị chấm** — dù model chỉ thấy `nguy@@` thay vì `nguyễn`:
+
+```
+words    = [6 x 'nghiêng', 'nguyễn', 'sau', 'đó'],  maxLen = 9
+wordIds  = [-1, 0, 1, 2, 3, 4, 5, 6, -1]
+firstIdx[6] = 7   ->  'nguyễn' ĐƯỢC CHẤM, từ đúng một mảnh 'nguy@@'
+```
+
+Đo trên văn bản thật: 3% số văn bản bị cắt rơi vào chỗ này — hiếm, vì phần lớn
+âm tiết tiếng Việt là một subword. Nhưng nó hiếm **một lần cho mỗi văn bản**;
+chia đoạn ngây thơ sẽ nhân nó lên **một lần cho mỗi đoạn**. `test/bpe.test.mjs`
+chỉ canh phần đuôi trả `-1`, không canh từ cuối cùng có trọn vẹn không.
+`ml/encoding.py` có đúng cùng một dòng.
+
+#### Ba thứ phải làm hoặc đo trước khi ship, không suy ra được
+
+1. **Văn bản không có dấu câu.** Bài Facebook thường không chấm câu, và lúc đó
+   mọi chiến lược theo câu suy biến về một đoạn khổng lồ. Đường lui sẽ rơi vào
+   vùng của điều kiện B hoặc D — phải đo, không được đoán.
+2. **Chia mảng `spans`, không chia chuỗi.** Phép đo cái giá ở quyết định 31 nối
+   lại bằng `words.join(' ')`, đường đó **mất offset gốc** nên không vẽ gạch chân
+   được. Cái giá đo ra vẫn đúng, nhưng là cái giá của một đường mà bản sửa thật
+   sẽ không đi.
+3. **Bộ nhớ đệm theo câu.** Sửa một câu trong bài 6.000 ký tự thì chỉ nên chạy
+   lại một câu (~27ms) thay vì 48 câu (~1.168ms).

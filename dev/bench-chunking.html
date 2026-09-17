@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Soát — chia đoạn thì mất gì ở chỗ nối?</title>
+<style>
+  body { font: 400 15px/1.6 -apple-system, "Segoe UI", Roboto, sans-serif;
+         max-width: 980px; margin: 32px auto; padding: 0 20px; }
+  h1 { font-size: 19px; font-weight: 600; }
+  pre { background: #f6f8fa; padding: 14px; border-radius: 8px; white-space: pre-wrap;
+        font: 12px/1.55 ui-monospace, Menlo, Consolas, monospace; }
+  .bad { color: #cf222e; font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>Chia đoạn phủ hết văn bản — nhưng chỗ NỐI có mất gì không?</h1>
+<p>
+Quyết định 31 đo cái giá của việc chia đoạn bằng <strong>độ trễ</strong>, và chỉ
+bằng độ trễ. Một từ đứng ngay đầu đoạn thì mất sạch ngữ cảnh bên trái — model
+được train trên câu đủ ngữ cảnh, nên quyết định của nó ở đó có thể đổi. Trang
+này đo đúng chỗ đó, vì luật của dự án là <em>precision quan trọng hơn recall</em>.
+<br><br>
+Cách đo: chấm từng câu VSEC <em>một mình</em> (đủ ngữ cảnh — đúng đường mà mọi
+phép đo offline đang đi) làm mốc, rồi nối các câu thành bài dài, chia đoạn, chấm
+lại, và so từng từ. Xếp phần lệch theo KHOẢNG CÁCH tới mép đoạn.
+</p>
+<pre id="log">đang nạp model…</pre>
+<script type="module">
+const v = `?v=${Date.now()}`;
+const { OnnxEngine } = await import(`../extension/src/engine/onnxEngine.js${v}`);
+const { applicableTags } = await import(`../extension/src/engine/vi.js${v}`);
+const lines = [];
+const say = (s, cls) => { lines.push(cls ? `<span class="${cls}">${s}</span>` : s);
+  document.getElementById('log').innerHTML = lines.join('\n'); };
+
+const engine = new OnnxEngine();
+const ok = await engine.load({
+  ort: '../extension/vendor/ort.wasm.bundle.min.mjs',
+  wasmDir: '../extension/vendor/',
+  model: `../extension/models/soat.int8.onnx${v}`,
+  tokenizer: `../extension/models/tokenizer.json${v}`,
+  lexicon: `../extension/models/lexicon.json${v}`,
+  meta: `../extension/models/soat.meta.json${v}`,
+});
+const MAXLEN = engine.maxLen;
+say(`${ok ? '✓' : '✗'} nạp model, maxLen = ${MAXLEN}`);
+
+const cases = await (await fetch(`../extension/models/_sentence_cases.json${v}`)).json();
+say(`✓ ${cases.length} câu VSEC người thật\n`);
+
+/** Chấm một MẢNG TỪ. Trả map: chỉ số từ -> "tag:đề xuất", chỉ những từ model dám báo. */
+async function decide(words, maxLen = MAXLEN) {
+  const { ids, wordIds } = engine.tokenizer.encodeWords(words, maxLen);
+  const first = engine.tokenizer.firstSubwordIndex(wordIds, words.length);
+  const n = ids.length;
+  const out = await engine.session.run({
+    input_ids: new engine.ort.Tensor('int64', BigInt64Array.from(ids, BigInt), [1, n]),
+    attention_mask: new engine.ort.Tensor('int64', new BigInt64Array(n).fill(1n), [1, n]),
+  });
+  const logits = out.logits ?? out[Object.keys(out)[0]];
+  const nTags = engine.tagNames.length;
+  const res = new Map();
+  for (let w = 0; w < words.length; w++) {
+    if (first[w] < 0) continue;
+    const allowed = applicableTags(words[w], engine.lexicon);
+    if (allowed.length <= 1) continue;
+    const r = engine._decode(logits.data, first[w] * nTags, nTags, words[w], allowed);
+    if (r) res.set(w, `${r.tag}:${r.suggestion}`);
+  }
+  return res;
+}
+
+/** Chia mảng từ thành các đoạn <= maxLen-2 subword. Trả [{words, offset}]. */
+function chunk(words, maxLen = MAXLEN) {
+  const out = []; let acc = []; let nSub = 0; let off = 0;
+  for (const w of words) {
+    const p = engine.tokenizer.bpe(w).length;
+    if (acc.length && nSub + p > maxLen - 2) { out.push({ words: acc, offset: off }); off += acc.length; acc = []; nSub = 0; }
+    acc.push(w); nSub += p;
+  }
+  if (acc.length) out.push({ words: acc, offset: off });
+  return out;
+}
+
+const N_DOC = 40;          // số bài đăng dựng lên
+const PER_DOC = 26;        // số câu mỗi bài (~2.000 ký tự)
+let i = 0;
+const docs = [];
+for (let d = 0; d < N_DOC; d++) {
+  const sents = [];
+  for (let k = 0; k < PER_DOC; k++) sents.push(cases[(i++) % cases.length].wrong);
+  docs.push(sents);
+}
+
+// --- A. mốc: từng câu một, đủ ngữ cảnh --------------------------------------
+say('đang chấm từng câu một (mốc)…');
+const refDocs = [];
+for (const sents of docs) {
+  const ref = new Map(); let off = 0;
+  for (const s of sents) {
+    const r = await decide(s);
+    for (const [w, tag] of r) ref.set(off + w, tag);
+    off += s.length;
+  }
+  refDocs.push(ref);
+}
+
+// --- B. chia đoạn ------------------------------------------------------------
+async function run(maxLen) {
+  let same = 0, added = 0, lost = 0, changed = 0, nWords = 0;
+  const byDist = new Map();     // khoảng cách tới mép đoạn -> [lệch, tổng]
+  for (let d = 0; d < docs.length; d++) {
+    const words = docs[d].flat();
+    nWords += words.length;
+    const got = new Map();
+    const cs = chunk(words, maxLen);
+    const edge = new Map();
+    for (const c of cs) {
+      const r = await decide(c.words, maxLen);
+      for (const [w, tag] of r) got.set(c.offset + w, tag);
+      for (let w = 0; w < c.words.length; w++) {
+        edge.set(c.offset + w, Math.min(w, c.words.length - 1 - w));
+      }
+    }
+    const ref = refDocs[d];
+    const keys = new Set([...ref.keys(), ...got.keys()]);
+    for (const k of keys) {
+      const a = ref.get(k); const b = got.get(k);
+      if (a === b) same++;
+      else if (!a) added++;
+      else if (!b) lost++;
+      else changed++;
+    }
+    for (let w = 0; w < words.length; w++) {
+      const dist = Math.min(9, edge.get(w) ?? 9);
+      const rec = byDist.get(dist) || [0, 0];
+      rec[1]++;
+      if ((ref.get(w) || '') !== (got.get(w) || '')) rec[0]++;
+      byDist.set(dist, rec);
+    }
+  }
+  return { same, added, lost, changed, nWords, byDist, nChunks: 0 };
+}
+
+for (const maxLen of [MAXLEN, 192, 256]) {
+  say(`\n=== chia đoạn ở maxLen = ${maxLen} ===`);
+  let r;
+  try { r = await run(maxLen); }
+  catch (e) { say(`  ✗ model KHÔNG chạy được ở ${maxLen} subword: ${e.message}`, 'bad'); continue; }
+  const tot = r.same + r.added + r.lost + r.changed;
+  say(`  ${r.nWords} từ, ${tot} chỗ model có ý kiến ở ít nhất một bên`);
+  say(`  khớp mốc          : ${r.same}`);
+  say(`  MẤT so với mốc    : ${r.lost}`, r.lost ? 'bad' : null);
+  say(`  THÊM so với mốc   : ${r.added}`, r.added ? 'bad' : null);
+  say(`  ĐỔI đề xuất       : ${r.changed}`, r.changed ? 'bad' : null);
+  say(`  lệch / tổng ý kiến: ${((r.lost + r.added + r.changed) / Math.max(1, tot) * 100).toFixed(1)}%`);
+  say(`  ${'cách mép đoạn (từ)'.padEnd(22)}${'số từ'.padStart(9)}${'lệch'.padStart(8)}${'tỷ lệ'.padStart(9)}`);
+  for (const dist of [...r.byDist.keys()].sort((a, b) => a - b)) {
+    const [bad, n] = r.byDist.get(dist);
+    say(`  ${(dist === 9 ? '≥9 — giữa đoạn' : String(dist)).padEnd(22)}${String(n).padStart(9)}`
+      + `${String(bad).padStart(8)}${(bad / n * 100).toFixed(2).padStart(8)}%`,
+      dist <= 1 && bad / n > 0.02 ? 'bad' : null);
+  }
+}
+window.__benchDone = true;
+</script>
+</body>
+</html>
