@@ -2336,3 +2336,98 @@ Hai hệ quả:
 Khớp 607 ms của `dev/harness-content.html` — 400 ms trong đó là debounce. Cả 9 lần gạch
 đúng một chỗ dưới `cứ`, không gạch chỗ nào khác. Phép đo C trên Facebook chưa làm; giờ
 nên đo trên bản offscreen thay vì bản sắp bị thay.
+
+---
+
+### 38. Offscreen document — điều kiện chấp nhận ghi TRƯỚC khi viết code
+
+Quyết định 37 chọn offscreen vì bộ nhớ: mỗi tab thêm 279 MB. Mục này ghi thiết kế và
+điều kiện ship **trước dòng code đầu tiên**.
+
+#### Thiết kế
+
+```
+content script (mỗi tab)            service worker            offscreen document         Worker (module)
+  tầng luật, vẽ, tooltip  ──check──►  tạo offscreen nếu    ──►  chuyển tiếp, hàng đợi ──►  OnnxEngine
+  không còn onnxruntime   ◄─issues──  chưa có (lần đầu)    ◄──  huỷ lượt cũ theo ô    ◄──  y nguyên
+```
+
+* **Content script không nạp model nữa.** Nó gửi `chrome.runtime.sendMessage` với văn
+  bản của ô và nhận lại đúng mảng Issue mà `check()` trả. Tầng luật vẫn chạy và vẽ ngay
+  tại trang như cũ.
+* **Offscreen tạo lười**, lần đầu một ô đủ điều kiện được focus — không phải lúc mở
+  Chrome. Người không gõ gì trong cả phiên thì không tốn MB nào.
+* **Suy luận chạy trong một module Worker** do offscreen tạo. Lý do offscreen khai với
+  Chrome là `WORKERS` — và nó phải đúng sự thật: đội duyệt store đọc ô giải trình.
+* **Một phiên onnxruntime cho cả trình duyệt**, nên phải có **hàng đợi**; lượt chấm cũ
+  của cùng một ô bị huỷ khi có lượt mới, như `signal` hiện nay.
+* `OnnxEngine`, ngưỡng, chấm theo câu, F2, cache — **không đổi một dòng**. Cache giờ dùng
+  chung cho mọi tab.
+* `minimum_chrome_version` 105 → **116** (`chrome.runtime.getContexts` /
+  `offscreen.hasDocument`). Bỏ `models/*` và `vendor/*` khỏi `web_accessible_resources`:
+  trang offscreen là trang extension, không cần; và hiện trang web nào cũng dò được Soát
+  bằng cách fetch `chrome-extension://<id>/models/soat.int8.onnx`.
+* Giá: quyền `offscreen`; văn bản đi qua message nội bộ của extension — không rời trình
+  duyệt, nhưng chính sách riêng tư phải nói ra.
+
+#### Cách đo — `dev/measure-chrome.mjs` mở rộng, headless
+
+Ba biến thể, chín lượt xen kẽ: **tắt, A, O** × 3. **A** = bản đang ship, gói ở `31a821e`
+(`dist/soat-A-31a821e.zip`). **O** = bản offscreen. Mỗi lượt, A và O chạy y hệt nhau:
+
+1. Mở t1, đứng 10 s.
+2. **Dán lạnh** ở t1: bấm vào ô rồi dán ngay đoạn thử **có dấu câu**. Với O, đây là lần
+   đầu cả trình duyệt cần model: tạo offscreen, Worker, nạp model.
+3. t2–t4 tuần tự, 10 s mỗi tab. **S4** như quyết định 37, cộng private bytes **mọi**
+   tiến trình của Chrome.
+4. t5–t8 cùng lúc, 20 s. **S8**.
+5. **Dán ấm** ở t1: đoạn thử **không dấu câu** (cache lạnh), rồi **có dấu câu** (cache ấm).
+   Ghi long task của t1 trong lúc chấm.
+6. **Hai tab dán cùng lúc**: t2 đoạn có dấu câu, t3 đoạn không dấu câu.
+7. **Sau khi rảnh**: đợi 45 s (service worker tắt sau 30 s rảnh), dán ở t1 **đoạn biến
+   thể** — câu cuối thành *"Gần một nửa dân số cứ trú tại vùng đồng bằng ven biển."* để
+   không trúng cache. Với O, đọc số lần offscreen đã nạp model.
+
+Bộ nhớ đọc bằng **hiệu S8 − S4**, không nhận diện tiến trình: lượt thử của quyết định 37
+cho thấy cờ `--extension-process` không đáng tin khi tiến trình extension có sẵn trong
+Chrome tắt lúc rảnh. Hiệu S8 − S4 là giá của 4 tab mở thêm khi mọi thứ dùng chung đã có.
+
+#### Điều kiện
+
+| # | điều kiện | cần |
+|---|---|---|
+| 1 | **đúng**: O gạch đúng một chỗ dưới `cứ`, không chỗ nào khác, ở mọi lần dán đoạn thử (bước 2, 5, 6) | **12 / 12** |
+| 2 | **bộ nhớ mỗi tab**: [(S8 − S4) của O − (S8 − S4) của tắt] / 4, trung vị, sau GC | ≤ **30 MB** |
+| 3 | **bộ nhớ một lần**: (S4 O − S4 tắt) − 4 × số ở điều kiện 2, trung vị, sau GC | ≤ **350 MB** |
+| 4 | **đứng hình lúc mở trang**: long task dài nhất trong 10 s của t1–t4, trung vị, O | ≤ **50 ms** |
+| 5 | **đứng hình lúc chấm**: long task dài nhất của t1 trong hai lần dán ấm, lớn nhất qua 3 lượt, O | ≤ **50 ms** |
+| 6 | **dán ấm**: đổi DOM → có log, từng đoạn, trung vị O − trung vị A | ≤ **+100 ms** |
+| 7 | **dán lạnh** của O (bước 2), trung vị | ≤ **2.000 ms** |
+| 8 | **sau khi rảnh**: O gạch **giống hệt** A ở đoạn biến thể; offscreen không nạp lại model; thời gian ≤ trung vị dán ấm không dấu câu của O + 300 ms | **3 / 3** |
+| A/A | bộ nhớ ba lượt tắt: (max − min của S4 sau GC) / 4 | ≤ 10 MB |
+
+Số 30 MB và 2.000 ms lấy lại từ quyết định 37 (ngưỡng "giữ nguyên" cho bộ nhớ mọi tab,
+ngưỡng "nạp lười" cho lần dán đầu phải đợi nạp). 350 MB = 279 MB của A cộng khoảng một
+trang extension và một Worker. 50 ms là định nghĩa long task: O không được để lại long
+task nào trên trang.
+
+#### Luật
+
+* 1 hoặc 8 trượt → **lỗi cài đặt**, không phải thiết kế trượt: sửa, đo lại toàn bộ. Trượt
+  lần hai thì dừng và báo.
+* A/A trượt → chạy lại một lần; lại trượt thì dừng.
+* 2–7 trượt → **không ship O**; ghi số, cân nhắc lại.
+* Qua hết → O thành bản ship. Sửa `privacy-policy.md`, `listing.md`, `nop-store.md`, đóng
+  gói lại.
+
+#### Ghi trước để không tự lừa mình
+
+* **2 và 4 gần như chắc qua**: content script chỉ còn tầng luật. Chúng có mặt để bắt việc
+  vô tình vẫn import onnxruntime ở trang.
+* **3 là điều kiện tôi không chắc**: đoán 300–330 MB, sát ngưỡng.
+* **8 là rủi ro thật**: Chrome có đóng offscreen không, service worker ngủ rồi message có
+  còn tới offscreen không. Đó đúng là loại lỗi "không crash, chỉ mất một tầng" của quyết
+  định 24 — nên điều kiện đòi **gạch giống hệt A**, không chỉ "có gạch".
+* **7**: đoán ~1,1 s (400 ms debounce + ~500 ms tạo offscreen, Worker, nạp model + ~200 ms
+  chấm).
+* Không đo: Facebook (C của bàn giao), máy yếu, Chrome thật sự vừa khởi động lại máy.
