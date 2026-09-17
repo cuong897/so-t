@@ -58,18 +58,26 @@ viết khoá luận.
 
 ---
 
-## Trạng thái: CHẠY ĐƯỢC TRONG CHROME THẬT — nhưng code tầng model vừa đổi
+## Trạng thái: CẢ HAI TẦNG ĐÃ CHẠY TRONG CHROME THẬT — nhưng tầng model đến chậm
 
-- 68 commit, cây git sạch
+- 69 commit, cây git sạch
 - 63 test JS + 2 bộ kiểm tra Python, tất cả pass (`npm run test:all`)
 - **ĐÃ XÁC NHẬN CHẠY TRONG CHROME THẬT với tầng luật.** Chủ repo gõ trên
   Facebook câu *"mình xin chia sẽ một vãi trãi nghiệm cho mọi ngươi"* và thấy
   gạch chân đúng hai chỗ — khớp chính xác với `chia sẽ→chia sẻ` và
   `trãi→trải` mà tầng luật sinh ra. `targets.js`, `highlighter.js` và ô soạn
   Lexical của Facebook đều hoạt động.
-- **Tầng model qua `chrome-extension://` vẫn chưa có lần nào được xác nhận** — và
-  giờ `check()` đã được viết lại hoàn toàn (`afb0774`). Mọi phép đo của phiên này
-  chạy trên `http://localhost`. Xem việc số 1.
+- **ĐÃ XÁC NHẬN TẦNG MODEL CHẠY TRONG CHROME THẬT** (17/09/2026), lần đầu tiên kể
+  từ khi dự án bắt đầu. Chủ repo dán đoạn thử 494 ký tự của việc số 1 vào ô "Tạo bài
+  viết" của Facebook:
+  * **có dấu câu** → gạch đúng một chỗ, dưới `cứ` ở câu cuối — sau chỗ bản cắt cụt
+    cũ dừng, nên đây là đường chấm theo câu (`afb0774`). Sáu câu đầu không bị gạch.
+  * **không dấu câu, viết thường** → lần đầu **không** có gạch. Chạy lại đúng đoạn đó
+    trên localhost: code hiện tại bắt `cứ→cư` 100%, còn ép về đường lui `none` cũ thì
+    ra rỗng — khớp ảnh. Sau khi Reload extension **và F5 tab Facebook** thì có đề xuất.
+    Chrome giữ content script cũ trong tab đang mở; Reload extension thôi là chưa đủ.
+  * **Nhưng đề xuất "mất một lúc mới hiện"** — chưa đo là bao lâu. Nghi phạm chính:
+    mỗi trang tự nạp lại model 78MB + wasm 14MB (xem việc số 1).
 - Gói nộp store **đã đóng lại với code chấm theo câu** (58,6 MB nén), **chưa nộp**
 
 ### Số liệu chốt
@@ -137,7 +145,37 @@ dự án.
 
 ## VIỆC TIẾP THEO — theo thứ tự ưu tiên
 
-### 1. Xác nhận TẦNG MODEL chạy trong Chrome thật (5 phút)
+### 1. Tầng model đến chậm — đo trước, rồi quyết có chuyển sang offscreen không
+
+Tầng model **đã chạy** trong Chrome thật (xem Trạng thái). Việc còn lại là câu chủ
+repo hỏi khi thấy đề xuất "mất một lúc mới hiện": *mỗi lần vào trang mới có phải đợi
+model nạp không?* **Có.** `manifest.json` chèn content script vào `<all_urls>`, và dòng
+đầu tiên của `content/index.js` là `model.load(...)` — mỗi trang, mỗi tab, mỗi lần
+chuyển trang tự nạp 78MB model + 14MB wasm và tạo một phiên onnxruntime riêng, kể cả
+trang không có ô nhập liệu nào. Chưa quyết định nào trong `decisions.md` đo chuyện
+này: mọi phép đo chạy một trang, nạp một lần.
+
+**Đo trước, hai con số, trong Chrome thật:**
+
+1. **Thời gian tới đề xuất đầu tiên trên một tab MỚI.** F5 tab Facebook, mở "Tạo bài
+   viết" và dán ngay đoạn thử, bấm giờ tới lúc có gạch. Rồi xoá đi dán lại lần hai —
+   lúc đó model đã nạp xong. Chênh lệch giữa hai lần chính là giá của việc nạp lại mỗi
+   trang. (Localhost đo nạp 355–585ms với file đã nằm trong cache HTTP — không phải
+   đường của extension.)
+2. **RAM mỗi tab.** Mở 3–4 tab bất kỳ, Shift+Esc (Task Manager của Chrome), chụp cột
+   bộ nhớ. So với cùng các tab khi tắt extension.
+
+**Hướng sửa đã nghĩ tới, chưa làm:** nạp model **một lần cho cả trình duyệt** trong
+offscreen document (`chrome.offscreen`, MV3). Tab mới có model ngay, một bản trong bộ
+nhớ dù bao nhiêu tab, và suy luận **ra khỏi luồng chính của trang** — gốc của mọi con
+số đứng hình trong quyết định 32–35 biến mất. Giá: thêm quyền `offscreen` (phải sửa
+chính sách riêng tư và mô tả store), và đúng loại thay đổi từng giết tầng model hai
+tuần (quyết định 24) — kiểm trong Chrome thật trước khi tin số localhost.
+
+Nếu làm offscreen thì **xếp nó trước việc số 4**: phần lớn việc số 4 (nhả luồng, cache
+cửa sổ, đứng hình) được đo trong kiến trúc sẽ bị thay.
+
+#### Đoạn thử đã dùng — giữ để kiểm hồi quy sau mỗi thay đổi tầng model
 
 Tầng luật **đã xác nhận chạy** (xem phần Trạng thái). Còn lại đúng một câu hỏi:
 tầng model có nạp được qua `chrome-extension://` không? Quyết định 24 đã có
