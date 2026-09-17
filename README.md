@@ -118,6 +118,7 @@ npm run dev       # rồi mở hai trang dưới đây
 | `dev/bench-accept.html` | Tám điều kiện của quyết định 33, đo qua đúng `check()` — chất lượng trên bài đăng, phủ, đứng hình, cache |
 | `dev/bench-fallback.html` | Quyết định 34 — đường lui cho văn bản không dấu câu, đứng hình so bản cũ cùng lượt, kèm đối chứng A/A |
 | `dev/bench-blocking.html` | Tầng model có giữ luồng chính không — nhịp đập MessageChannel, không dùng rAF |
+| `dev/measure-chrome.mjs` | Chạy bằng `node`, không qua trang: lái **Chrome đã cài** (headless) nạp gói store thật, đo nạp model, đứng hình, **RAM mỗi tab** và dán → gạch chân (quyết định 37) |
 | `dev/bench-context.html` | Cùng một câu, đứng một mình và nằm trong cửa sổ — nhãn vàng, so có cặp |
 
 Trước khi dùng `onnx-test.html` phải có runtime và model:

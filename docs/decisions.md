@@ -2271,3 +2271,68 @@ Ba thứ sửa sau khi thử:
 Không sửa: nhận diện tiến trình extension. Cờ `--extension-process` có thật, nhưng tiến
 trình của extension có sẵn trong Chrome tắt khi rảnh, nên số renderer nhỏ (~20 MB) lệch
 một hai cái giữa các lượt. Tính ra không quá ~5 MB mỗi tab — A/A sẽ bắt nếu nó lớn hơn.
+
+#### Kết quả — lượt chính thức, headless: **OFFSCREEN**
+
+`node dev/measure-chrome.mjs`, commit `7967afe`, sáu lượt xen kẽ, máy Ryzen 9 8945HS
+(16 luồng, 15,3 GB). Không điều kiện hợp lệ nào trượt:
+
+| | kết quả | |
+|---|---|---|
+| A/A bộ nhớ | 0,5 MB/tab | cần ≤ 10 — qua |
+| trang thử sạch | long task dài nhất ở lượt tắt: **0 ms** | cần ≤ 50 — qua |
+| đủ thời gian | 24/24 tab bật `san-sang` trong thời gian đứng | qua |
+| tiền cảnh | 0 tab từng `hidden` | qua |
+| headless so lượt thử có cửa sổ | T +5% · L +9% · M −1% | cần ≤ 25% — qua |
+
+| | số | ngưỡng giữ nguyên / nạp lười |
+|---|---|---|
+| **T** nạp, tab tuần tự | **408 ms** | ≤ 1,5 s / ≤ 2 s — qua cả hai |
+| **L** long task dài nhất | **160 ms** | ≤ 100 ms **trượt** / ≤ 200 ms qua |
+| **M** bộ nhớ thêm mỗi tab, sau GC | **279 MB** | ≤ 30 **trượt** / ≤ 100 **trượt** |
+| T₁ tab đầu sau khi mở Chrome | 495 · 440 · 445 ms | — |
+| T∥ 4 tab cùng lúc | 705 ms | — |
+| M trước GC · M với 8 tab | 285 MB · 275 MB | — |
+| tổng đứng hình mỗi trang | 122 ms | — |
+
+**Luật: offscreen.** Và nó được chọn **chỉ vì bộ nhớ** — T và L qua ngưỡng nạp lười.
+
+Renderer của một tab: **~20 MB** khi tắt, **294–306 MB** khi bật, ổn định tới từng MB
+qua ba lượt. 8 tab là **2,2 GB** thêm. Người dùng mở 10 tab thì Soát ăn ~2,8 GB, kể cả
+khi không gõ chữ nào.
+
+#### Dự đoán của tôi sai một nửa
+
+Tôi đoán L vài trăm ms và offscreen sẽ thắng nhờ **đứng hình**. Sai: mỗi trang có hai
+long task, ~70 ms (nạp module) rồi **~160 ms** (tạo phiên onnxruntime) — dưới ngưỡng
+200 ms của nạp lười. Đoán M trên 80 MB thì đúng, mà thấp hơn thật tới 3,5 lần. Nếu M
+chỉ ~80 MB như tôi hình dung, luật đã chọn **nạp lười**. Tức kiến trúc được chọn bằng
+đúng con số tôi đoán sai — ghi trước là thứ duy nhất cho thấy điều đó.
+
+#### 279 MB nằm ở đâu
+
+Một lượt headless riêng, ép GC rồi đọc `Performance.getMetrics` của tab: **JS heap
+8 MB** khi bật, dưới 1 MB khi tắt. ~270 MB còn lại nằm **ngoài JS heap** — bộ nhớ wasm
+của onnxruntime, thứ không bao giờ co lại. Model 78 MB chiếm ~3,5 lần kích thước của nó
+khi đã nạp. Chưa tách tiếp (bản sao bytes model, trọng số sau đóng gói, arena).
+
+Hai hệ quả:
+* **Offscreen vẫn trả ~280 MB, chỉ là một lần.** Đó vẫn là con số lớn cho một extension
+  soát chính tả — việc số 6 (giảm dung lượng) giờ đi thẳng vào bộ nhớ, không chỉ vào
+  gói tải.
+* Chưa biết bao nhiêu phần tỷ lệ thuận với model và bao nhiêu là cố định (arena, bộ nhớ
+  wasm đã phình lúc tạo phiên). Đo trước khi hứa "model nhỏ một nửa thì RAM nhỏ một nửa".
+
+#### Dán trong extension thật (không vào luật)
+
+Đoạn thử 494 ký tự, thay DOM không bắn `input`, ba lượt bật, đổi DOM → có log:
+
+| | ms | model |
+|---|---|---|
+| có dấu câu, lạnh | 606–612 | ~200 ms, 7 lượt |
+| không dấu câu (F2), lạnh | 546–559 | ~145 ms, 3 lượt |
+| có dấu câu, cache ấm | 418–420 | 0 lượt |
+
+Khớp 607 ms của `dev/harness-content.html` — 400 ms trong đó là debounce. Cả 9 lần gạch
+đúng một chỗ dưới `cứ`, không gạch chỗ nào khác. Phép đo C trên Facebook chưa làm; giờ
+nên đo trên bản offscreen thay vì bản sắp bị thay.
