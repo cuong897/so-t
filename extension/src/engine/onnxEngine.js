@@ -46,11 +46,16 @@ const MAX_LEN = 128;
 // một đợt đo MỚI, có ngưỡng ghi trước — đừng đổi vì F2 "trông tốt hơn".
 const DEFAULT_FALLBACK = 'none';
 
-// Hai ứng viên đường lui, cố định từ quyết định 33 TRƯỚC khi đo — đừng chỉnh các
+// Các ứng viên đường lui, mỗi cái cố định TRƯỚC đợt đo của nó — đừng chỉnh các
 // số này để một phép đo đẹp lên rồi quên ghi lại.
-const F1_PIECE = 40;           // cắt cứng ở ranh giới từ, mỗi mảnh <= 40 subword
-const F2_WINDOW = 64;          // cửa sổ trượt 64 subword...
-const F2_STRIDE = 32;          // ...bước 32
+const F1_PIECE = 40;           // quyết định 33: cắt cứng ở ranh giới từ, mảnh <= 40 subword
+const SLIDING = {
+  F2: { window: 64, stride: 32 },    // quyết định 33
+  // Quyết định 34. Cửa sổ nhỏ hơn thì mỗi lượt chạy ngắn hơn (đỉnh đứng hình
+  // thấp hơn) và mọi từ nằm nông hơn trong cửa sổ — nhưng ít ngữ cảnh hơn.
+  // Chưa biết cái nào thắng; đó là lý do nó là một ứng viên chứ không phải một sửa.
+  F2s: { window: 48, stride: 24 },
+};
 
 // Ranh giới câu nằm ở KHOẢNG TRỐNG giữa hai từ liền nhau. tokenize() chỉ trả từ,
 // không trả dấu câu, nên nhìn vào khoảng trống là cách duy nhất vừa tách được câu
@@ -97,8 +102,9 @@ export function planRuns(pieceCounts, budget, fallback) {
     return out;
   }
 
-  if (fallback === 'F2') {
-    const win = Math.min(F2_WINDOW, budget);
+  if (SLIDING[fallback]) {
+    const { window: size, stride } = SLIDING[fallback];
+    const win = Math.min(size, budget);
     const offs = [0];                      // offset subword của đầu mỗi từ
     for (const c of pieceCounts) offs.push(offs[offs.length - 1] + c);
     const out = [];
@@ -108,7 +114,7 @@ export function planRuns(pieceCounts, budget, fallback) {
       while (to < n && (to === from || offs[to + 1] - offs[from] <= win)) to++;
       out.push({ from, to });
       if (to >= n) break;
-      const target = offs[from] + F2_STRIDE;
+      const target = offs[from] + stride;
       let next = from + 1;
       while (next < n && offs[next] < target) next++;
       from = Math.min(next, to);           // luôn tiến, và không bỏ sót từ nào
@@ -171,8 +177,8 @@ export class OnnxEngine {
       : opts.thresholds;
     this.maxLen = opts.maxLen ?? MAX_LEN;
     // Đường lui cho một "câu" dài quá cửa sổ — thường là văn bản không chấm câu.
-    // 'F1' cắt cứng, 'F2' cửa sổ trượt, 'none' giữ hành vi cũ (chỉ chấm cửa sổ
-    // đầu). Quyết định 33 chọn giữa ba cái này bằng phép đo, không bằng ý thích.
+    // 'F1' cắt cứng, 'F2'/'F2s' cửa sổ trượt, 'none' giữ hành vi cũ (chỉ chấm cửa
+    // sổ đầu). Quyết định 33 và 34 chọn giữa chúng bằng phép đo, không bằng ý thích.
     this.fallback = opts.fallback ?? DEFAULT_FALLBACK;
     // Bộ nhớ đệm LOGIT theo nội dung câu, không phải kết quả đã qua ngưỡng — để
     // đổi ngưỡng trên một instance đang chạy vẫn ra đúng, không phải xoá cache.
@@ -275,7 +281,7 @@ export class OnnxEngine {
     let ran = false;
     for (const [from, to] of splitSentences(text, spans)) {
       const words = spans.slice(from, to).map((s) => s.text);
-      const key = `${this.fallback} ${this.maxLen} ${words.join(' ')}`;
+      const key = `${this.fallback}\u0000${this.maxLen}\u0000${words.join(' ')}`;
 
       let rows = this._cacheGet(key);
       if (!rows) {

@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Soát — đường lui cho văn bản không dấu câu (quyết định 34)</title>
+<style>
+  body { font: 400 15px/1.6 -apple-system, "Segoe UI", Roboto, sans-serif;
+         max-width: 1000px; margin: 32px auto; padding: 0 20px; }
+  h1 { font-size: 19px; font-weight: 600; }
+  pre { background: #f6f8fa; padding: 14px; border-radius: 8px; white-space: pre-wrap;
+        font: 12px/1.55 ui-monospace, Menlo, Consolas, monospace; }
+  .bad { color: #cf222e; font-weight: 600; }
+  .ok { color: #1a7f37; font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>Đường lui cho văn bản không dấu câu — quyết định 34</h1>
+<p>
+Trang này được commit <strong>trước</strong> lần chạy đầu tiên, cùng commit với
+ngưỡng. Nó tự chấm và tự áp luật chọn; đọc dòng TỔNG KẾT, đừng đọc từng bảng rồi
+tự kết luận.
+<br><br>
+Khác quyết định 33 ở điều kiện đứng hình: một lượt <code>session.run</code> trên
+cùng một văn bản dao động gấp đôi, nên (1) mỗi ứng viên so với <strong>bản cũ đo
+cùng lượt, cùng văn bản</strong>, xen kẽ thứ tự; (2) dùng p50 và p90 trên 40 văn
+bản chứ không dùng "lâu nhất"; và (3) có <strong>đối chứng A/A</strong> — bản cũ
+so với chính nó. Nếu A/A trượt thì thước đo không đủ phân giải, và đợt đo vô hiệu
+chứ không phải ứng viên trượt.
+</p>
+<pre id="log">đang nạp model…</pre>
+<script type="module">
+const v = `?v=${Date.now()}`;
+const { OnnxEngine, planRuns } = await import(`../extension/src/engine/onnxEngine.js${v}`);
+const Old = (await import(`./baseline/onnxEngine.catcut.js${v}`)).OnnxEngine;
+const { tokenize, isWordLike } = await import(`../extension/src/engine/vi.js${v}`);
+
+const lines = [];
+const say = (s, cls) => { lines.push(cls ? `<span class="${cls}">${s}</span>` : s);
+  document.getElementById('log').innerHTML = lines.join('\n'); };
+const f4 = (x) => x.toFixed(4);
+const ms = (x) => x.toFixed(1);
+const result = { quality: {}, stall: {}, coverage: {}, punctPlanDiff: {} };
+window.__result = result;
+
+// --- ngưỡng, ghi ở ĐÂY và trong decisions.md, cùng một commit ---------------
+const CANDIDATES = ['F2', 'F2s'];
+const MIN_PRECISION = 0.95;
+const MAX_CLEAN_ALARM = 0.015;
+const N_STALL = 40;              // văn bản mỗi cỡ
+const MAX_RATIO = 1.25;          // p50 và p90 của ứng viên / của bản cũ
+const SIZES = [280, 700, 2000, 6000];
+
+const engine = new OnnxEngine();
+await engine.load({
+  ort: '../extension/vendor/ort.wasm.bundle.min.mjs',
+  wasmDir: '../extension/vendor/',
+  model: `../extension/models/soat.int8.onnx${v}`,
+  tokenizer: `../extension/models/tokenizer.json${v}`,
+  lexicon: `../extension/models/lexicon.json${v}`,
+  meta: `../extension/models/soat.meta.json${v}`,
+});
+const old = new Old();
+Object.assign(old, { ort: engine.ort, session: engine.session, tokenizer: engine.tokenizer,
+  lexicon: engine.lexicon, tagNames: engine.tagNames, maxLen: engine.maxLen, ready: true });
+// Mỗi ứng viên một instance riêng, cùng phiên model — để cache của cái này
+// không bao giờ phục vụ cái kia.
+const cand = Object.fromEntries(CANDIDATES.map((fb) => {
+  const e = new OnnxEngine({ fallback: fb });
+  Object.assign(e, { ort: engine.ort, session: engine.session, tokenizer: engine.tokenizer,
+    lexicon: engine.lexicon, tagNames: engine.tagNames, maxLen: engine.maxLen, ready: true });
+  return [fb, e];
+}));
+say(`✓ model maxLen = ${engine.maxLen} · ứng viên: ${CANDIDATES.join(', ')} · mặc định đang ship: ${engine.fallback}`);
+
+const cases = await (await fetch(`../extension/models/_sentence_cases.json${v}`)).json();
+const targets = cases.filter((c) => c.in_scope.length > 0);
+const PUNCT = /[.!?…]/;
+
+// --- bài đăng, giống hệt dev/bench-accept.html để số so được với nhau --------
+function buildDocs(punct) {
+  const docs = [];
+  let t = 0; let f = 0;
+  while (t < targets.length) {
+    const sents = [];
+    for (let k = 0; k < 4 && t < targets.length; k++) {
+      sents.push({ kind: 'clean', words: cases[(f++ * 13 + 101) % cases.length].right });
+      sents.push({ kind: 'target', c: targets[t], words: targets[t].wrong });
+      sents.push({ kind: 'clean', words: cases[(f++ * 13 + 101) % cases.length].right });
+      t++;
+    }
+    let text = '';
+    const byStart = new Map();
+    const cleanRanges = []; const targetRanges = [];
+    for (let s = 0; s < sents.length; s++) {
+      const S = sents[s];
+      if (s > 0) text += punct ? '. ' : ' ';
+      const begin = text.length;
+      S.words.forEach((w, i) => {
+        if (!punct && PUNCT.test(w)) return;
+        if (text.length > begin) text += ' ';
+        byStart.set(text.length, { S, i });
+        text += w;
+      });
+      (S.kind === 'clean' ? cleanRanges : targetRanges).push({ begin, end: text.length, alarmed: false });
+    }
+    if (punct) text += '.';
+    docs.push({ text, byStart, cleanRanges, targetRanges, sents });
+  }
+  return docs;
+}
+
+async function scoreDocs(eng, docs) {
+  const acc = { tp: 0, wrongFix: 0, fpClean: 0, inScope: 0, cleanSents: 0, cleanAlarmed: 0, unmapped: 0 };
+  for (const d of docs) {
+    for (const S of d.sents) if (S.kind === 'target') acc.inScope += S.c.in_scope.length;
+    for (const r of d.cleanRanges) r.alarmed = false;
+    for (const it of await eng.check(d.text)) {
+      const hit = d.byStart.get(it.start);
+      if (hit && hit.S.kind === 'target') {
+        const { c } = hit.S;
+        if (c.errs.includes(hit.i)) (it.suggestion === c.right[hit.i] ? acc.tp++ : acc.wrongFix++);
+        else acc.fpClean++;
+        continue;
+      }
+      const r = d.cleanRanges.find((x) => it.start >= x.begin && it.start < x.end);
+      if (r) r.alarmed = true;
+      else if (d.targetRanges.some((x) => it.start >= x.begin && it.start < x.end)) acc.fpClean++;
+      else acc.unmapped++;
+    }
+    acc.cleanSents += d.cleanRanges.length;
+    acc.cleanAlarmed += d.cleanRanges.filter((x) => x.alarmed).length;
+  }
+  if (acc.unmapped) throw new Error(`${acc.unmapped} issue không thuộc câu nào — thước đo hỏng, DỪNG`);
+  acc.recall = acc.tp / acc.inScope;
+  acc.precision = acc.tp / Math.max(1, acc.tp + acc.wrongFix + acc.fpClean);
+  acc.cleanRate = acc.cleanAlarmed / acc.cleanSents;
+  return acc;
+}
+
+let seed = 20260918;
+const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+function flatOf(n) {
+  const out = []; let k = 0; let i = Math.floor(rnd() * cases.length);
+  while (k < n) {
+    const s = cases[i % cases.length].wrong.filter((w) => !PUNCT.test(w)).join(' ');
+    out.push(s); k += s.length + 1; i++;
+  }
+  return out.join(' ').slice(0, n);
+}
+
+// ============================================================================
+say('\n=== A. CHẤT LƯỢNG trên 216 bài KHÔNG dấu câu, nhãn vàng ===');
+const flatDocs = buildDocs(false);
+for (const fb of CANDIDATES) {
+  const a = await scoreDocs(cand[fb], flatDocs);
+  result.quality[fb] = a;
+  say(`  ${fb.padEnd(5)} đúng ${String(a.tp).padStart(4)} · sửa sai ${String(a.wrongFix).padStart(3)} · báo oan ${String(a.fpClean).padStart(3)}`
+    + ` · recall ${f4(a.recall)} · precision ${f4(a.precision)} · câu sạch bị gạch ${(a.cleanRate * 100).toFixed(2)}%`);
+}
+const aOld = await scoreDocs(old, flatDocs);
+result.quality.old = aOld;
+say(`  cũ    đúng ${String(aOld.tp).padStart(4)} · sửa sai ${String(aOld.wrongFix).padStart(3)} · báo oan ${String(aOld.fpClean).padStart(3)}`
+  + ` · recall ${f4(aOld.recall)} · precision ${f4(aOld.precision)} · câu sạch bị gạch ${(aOld.cleanRate * 100).toFixed(2)}%   (đối chiếu)`);
+
+// ============================================================================
+say('\n=== B. PHỦ trên văn bản không dấu câu (20 văn bản mỗi cỡ) ===');
+function coverage(text, fb) {
+  const words = tokenize(text).filter(isWordLike).map((s) => s.text);
+  const counts = words.map((w) => engine.tokenizer.bpe(w).length);
+  const got = new Array(words.length).fill(false);
+  for (const { from, to } of planRuns(counts, engine.maxLen - 2, fb)) {
+    const part = words.slice(from, to);
+    const { wordIds } = engine.tokenizer.encodeWords(part, engine.maxLen);
+    engine.tokenizer.firstSubwordIndex(wordIds, part.length).forEach((p, i) => { if (p >= 0) got[from + i] = true; });
+  }
+  return [got.filter(Boolean).length, words.length];
+}
+for (const fb of CANDIDATES) {
+  result.coverage[fb] = {};
+  const row = [];
+  for (const L of SIZES) {
+    let s = 0; let t = 0;
+    for (let r = 0; r < 20; r++) { const [a, b] = coverage(flatOf(L), fb); s += a; t += b; }
+    result.coverage[fb][L] = 100 * s / t;
+    row.push(`${L}: ${(100 * s / t).toFixed(1)}%`);
+  }
+  say(`  ${fb.padEnd(5)} ${row.join(' · ')}`);
+}
+
+// ============================================================================
+// Đường có dấu câu đã được quyết định 33 chấm. Đổi đường lui KHÔNG được chạm vào
+// nó — kiểm bằng kế hoạch chạy, chính xác và không tốn một lượt model nào.
+say('\n=== C. Đường CÓ dấu câu có bị đụng tới không? ===');
+const punctDocs = buildDocs(true);
+for (const fb of CANDIDATES) {
+  let sents = 0; let diff = 0;
+  for (const d of punctDocs) {
+    for (const S of d.sents) {
+      // tokenize() như check(), không lọc token VSEC bằng tay: "dâng,thời" là hai từ.
+      // Tính trên cả câu VSEC — check() có thể tách câu ngắn hơn nữa (ở "3.5"),
+      // nên phép kiểm này chỉ có thể khắt khe hơn, không lỏng hơn.
+      const counts = tokenize(S.words.join(' ')).filter(isWordLike).map((s) => engine.tokenizer.bpe(s.text).length);
+      sents++;
+      if (JSON.stringify(planRuns(counts, engine.maxLen - 2, fb))
+          !== JSON.stringify(planRuns(counts, engine.maxLen - 2, 'none'))) diff++;
+    }
+  }
+  result.punctPlanDiff[fb] = diff;
+  say(`  ${fb.padEnd(5)} ${diff} / ${sents} câu có kế hoạch chạy khác 'none'`, diff ? 'bad' : null);
+}
+
+// ============================================================================
+say(`\n=== D. ĐỨNG HÌNH — ${N_STALL} văn bản mỗi cỡ, mọi cấu hình chạy CÙNG văn bản, xoay vòng thứ tự ===`);
+const mc = new MessageChannel();
+let ticks = 0, worstGap = 0, last = performance.now(), watching = false;
+mc.port1.onmessage = () => {
+  const now = performance.now();
+  if (watching) { ticks++; worstGap = Math.max(worstGap, now - last); }
+  last = now; mc.port2.postMessage(0);
+};
+mc.port2.postMessage(0);
+async function stallOf(fn) {
+  await new Promise((r) => setTimeout(r, 15));
+  ticks = 0; worstGap = 0; watching = true; last = performance.now();
+  const t0 = performance.now();
+  await fn();
+  const end = performance.now();
+  worstGap = Math.max(worstGap, end - last);
+  watching = false;
+  return ticks === 0 ? end - t0 : worstGap;
+}
+// Phân vị theo hạng gần nhất: 40 mẫu thì p50 là mẫu thứ 20, p90 là mẫu thứ 36.
+const pct = (xs, q) => { const a = [...xs].sort((x, y) => x - y); return a[Math.ceil(q * a.length) - 1]; };
+
+const CONFIGS = [
+  ['cũ', () => old],
+  ['cũ-A/A', () => old],                 // đối chứng: đúng bản cũ, đo lần nữa
+  ...CANDIDATES.map((fb) => [fb, () => cand[fb]]),
+];
+for (const L of SIZES) {
+  const samples = Object.fromEntries(CONFIGS.map(([name]) => [name, []]));
+  for (let i = 0; i < N_STALL; i++) {
+    const text = flatOf(L);
+    for (let j = 0; j < CONFIGS.length; j++) {
+      const [name, get] = CONFIGS[(i + j) % CONFIGS.length];   // xoay vòng ai chạy trước
+      const eng = get();
+      if (eng.clearCache) eng.clearCache();
+      samples[name].push(await stallOf(() => eng.check(text)));
+    }
+  }
+  result.stall[L] = {};
+  for (const [name] of CONFIGS) {
+    if (samples[name].length !== N_STALL) throw new Error(`thiếu mẫu ${name} @${L} — DỪNG`);
+    result.stall[L][name] = { p50: pct(samples[name], 0.5), p90: pct(samples[name], 0.9), max: Math.max(...samples[name]) };
+  }
+  const base = result.stall[L]['cũ'];
+  say(`  ${String(L).padStart(5)} ký tự`);
+  for (const [name] of CONFIGS) {
+    const s = result.stall[L][name];
+    const r50 = s.p50 / base.p50; const r90 = s.p90 / base.p90;
+    s.r50 = r50; s.r90 = r90;
+    const bad = name !== 'cũ' && (r50 > MAX_RATIO || r90 > MAX_RATIO);
+    say(`    ${name.padEnd(7)} p50 ${ms(s.p50).padStart(7)}ms (x${r50.toFixed(2)}) · p90 ${ms(s.p90).padStart(7)}ms (x${r90.toFixed(2)}) · lâu nhất ${ms(s.max).padStart(7)}ms`,
+      bad ? 'bad' : null);
+  }
+}
+
+// ============================================================================
+say('\n=== TỔNG KẾT — ngưỡng và luật chọn đã commit cùng trang này ===\n');
+const aaOk = SIZES.every((L) => result.stall[L]['cũ-A/A'].r50 <= MAX_RATIO && result.stall[L]['cũ-A/A'].r90 <= MAX_RATIO);
+result.aaOk = aaOk;
+say(`  ${aaOk ? 'QUA ' : 'TRƯỢT'}  đối chứng A/A (bản cũ so với chính nó, mọi cỡ, x ≤ ${MAX_RATIO})`, aaOk ? 'ok' : 'bad');
+if (!aaOk) {
+  say('\n  THƯỚC ĐO KHÔNG ĐỦ PHÂN GIẢI. Theo luật: đợt đo vô hiệu, chạy lại MỘT lần.', 'bad');
+  say('  Lại trượt thì dừng và ghi lại — không kết luận gì về ứng viên.', 'bad');
+  result.verdict = 'vô hiệu';
+  window.__benchDone = true;
+} else {
+  const passing = [];
+  for (const fb of CANDIDATES) {
+    const q = result.quality[fb];
+    const checks = [
+      ['precision không dấu câu', f4(q.precision), `≥ ${MIN_PRECISION}`, q.precision >= MIN_PRECISION],
+      ['câu sạch bị gạch oan', `${(q.cleanRate * 100).toFixed(2)}%`, `≤ ${MAX_CLEAN_ALARM * 100}%`, q.cleanRate <= MAX_CLEAN_ALARM],
+      ['phủ mọi cỡ', `${Math.min(...SIZES.map((L) => result.coverage[fb][L])).toFixed(1)}%`, '100%',
+        SIZES.every((L) => result.coverage[fb][L] >= 99.999)],
+      ['không đụng đường có dấu câu', `${result.punctPlanDiff[fb]} câu`, '0', result.punctPlanDiff[fb] === 0],
+      ...SIZES.map((L) => {
+        const s = result.stall[L][fb];
+        return [`đứng hình ${L} ký tự, p50 / p90 so bản cũ`, `x${s.r50.toFixed(2)} / x${s.r90.toFixed(2)}`, `≤ x${MAX_RATIO}`,
+          s.r50 <= MAX_RATIO && s.r90 <= MAX_RATIO];
+      }),
+    ];
+    say(`  --- ${fb} ---`);
+    for (const [name, got, need, ok] of checks) {
+      say(`  ${ok ? 'QUA ' : 'TRƯỢT'}  ${name.padEnd(40)} ${String(got).padStart(14)}   cần ${need}`, ok ? 'ok' : 'bad');
+    }
+    if (checks.every((c) => c[3])) passing.push(fb);
+  }
+  // Luật chọn: trong các ứng viên qua hết, ít câu sạch bị gạch oan nhất; hoà
+  // tuyệt đối thì lấy cái ít báo oan trên câu đích hơn; vẫn hoà thì F2 (ít lượt hơn).
+  passing.sort((a, b) => (result.quality[a].cleanAlarmed - result.quality[b].cleanAlarmed)
+    || (result.quality[a].fpClean - result.quality[b].fpClean)
+    || (CANDIDATES.indexOf(a) - CANDIDATES.indexOf(b)));
+  result.verdict = passing.length ? passing[0] : 'none';
+  say('');
+  say(passing.length
+    ? `  CHỌN: ${passing[0]}   (qua hết: ${passing.join(', ')})`
+    : "  KHÔNG ỨNG VIÊN NÀO QUA — giữ 'none'", passing.length ? 'ok' : 'bad');
+  window.__benchDone = true;
+}
+</script>
+</body>
+</html>

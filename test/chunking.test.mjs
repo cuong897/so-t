@@ -53,7 +53,7 @@ test('văn bản rỗng hay không có từ nào thì không có câu nào', () 
 });
 
 test('câu vừa cửa sổ thì chạy đúng một lượt, bất kể đường lui', () => {
-  for (const fb of ['F1', 'F2', 'none']) {
+  for (const fb of ['F1', 'F2', 'F2s', 'none']) {
     assert.deepEqual(planRuns([1, 2, 1, 1], 94, fb), [{ from: 0, to: 4 }]);
   }
 });
@@ -87,8 +87,24 @@ test('F2 cửa sổ <= 64 subword, chồng lấn, phủ hết', () => {
   }
 });
 
+test('F2s cửa sổ <= 48 subword, chồng lấn, phủ hết (quyết định 34)', () => {
+  const counts = Array.from({ length: 150 }, (_, i) => 1 + (i % 4 === 0));
+  const runs = planRuns(counts, 94, 'F2s');
+  assertCovers(runs, counts.length);
+  for (const { from, to } of runs) {
+    const sub = counts.slice(from, to).reduce((a, b) => a + b, 0);
+    assert.ok(sub <= 48, `cửa sổ [${from}, ${to}) dài ${sub} subword`);
+  }
+  for (let i = 1; i < runs.length; i++) {
+    assert.ok(runs[i].from > runs[i - 1].from, 'F2s phải tiến lên');
+    assert.ok(runs[i].from < runs[i - 1].to, 'F2s phải chồng lấn với cửa sổ trước');
+  }
+  // cửa sổ nhỏ hơn thì nhiều lượt hơn F2 trên cùng câu
+  assert.ok(runs.length > planRuns(counts, 94, 'F2').length);
+});
+
 test('một từ dài quá cả mảnh vẫn được phủ, không lặp vô hạn', () => {
-  for (const fb of ['F1', 'F2']) {
+  for (const fb of ['F1', 'F2', 'F2s']) {
     const counts = [1, 1, 70, 1, 1, ...new Array(60).fill(1)];
     assertCovers(planRuns(counts, 94, fb), counts.length);
   }

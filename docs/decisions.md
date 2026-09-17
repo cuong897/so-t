@@ -1765,3 +1765,93 @@ lượt nên không sao; nhưng bật F1/F2 cho bài 6.000 ký tự không dấu
 kết quả dở dang không vào cache. Không đổi gì khi không huỷ — kiểm bằng model thật:
 câu ngắn 60/60 giống bản cũ, F2 có và không có tín hiệu ra y hệt từng issue, huỷ
 sau lượt 2 thì dừng đúng ở 2 lượt (105ms) và cache trống.
+
+---
+
+### 34. Đường lui cho văn bản KHÔNG dấu câu — ngưỡng ghi TRƯỚC, lần này có đối chứng A/A
+
+Việc số 4 của bàn giao sau quyết định 33. Bài đăng viết liền không chấm câu vẫn bị
+cắt cụt ở 96 subword, vì không đường lui nào qua đủ ngưỡng của quyết định 33.
+
+#### Cái gì đã biết trước, nói ra để không giả vờ là không biết
+
+* **Chất lượng của F2 đã đo rồi**: precision 0,9671, câu sạch bị gạch 0,87% trên
+  216 bài không dấu câu (quyết định 33). Hai điều kiện chất lượng dưới đây vì thế
+  không che được gì cho F2 — chúng có mặt vì F2s thì chưa ai đo, và vì mọi thứ
+  phải chạy lại trong cùng một trang.
+* **F2 trượt quyết định 33 chỉ ở điều kiện đứng hình**, và điều kiện đó đặt sai:
+  bản cũ đo cùng lượt cũng trượt. Nên đợt này về thực chất là đặt lại **đúng một
+  phép đo**, rồi áp nó cho mọi ứng viên.
+* **Về cấu trúc, F2 nên thắng**: mỗi lượt chạy của nó dài 64 subword, của bản cũ
+  96. Nếu thước đo dưới đây nói ngược lại thì phải nghi thước đo trước.
+
+#### Hai ứng viên, cố định trong code ở commit này
+
+* **F2** — cửa sổ trượt 64 subword, bước 32. Y hệt quyết định 33.
+* **F2s** — cửa sổ trượt 48 subword, bước 24. Lượt chạy ngắn hơn, mọi từ nằm nông
+  hơn (quyết định 32 nói vị trí nông tốt hơn), nhưng ít ngữ cảnh hơn. Không đoán
+  được cái nào thắng.
+
+F1 không vào đợt này: nó trượt precision (0,9465), và đó là thước đo không có vấn
+đề gì.
+
+#### Thước đo đứng hình mới — và vì sao nó phải tự chứng minh được
+
+Quyết định 33 lấy "lâu nhất trong 3 lần" của một đại lượng dao động gấp đôi trên
+cùng một văn bản. Ba sửa, cả ba nằm trong `dev/bench-fallback.html` commit cùng
+lúc với đoạn này:
+
+1. **Mốc cùng lượt, cùng văn bản.** Mỗi văn bản được chạy qua bản cũ và mọi ứng
+   viên, **xoay vòng** ai chạy trước — để rác bộ nhớ của lượt trước không luôn đổ
+   lên cùng một cấu hình.
+2. **p50 và p90 trên 40 văn bản mỗi cỡ**, không dùng "lâu nhất". Phân vị theo hạng
+   gần nhất: p50 là mẫu thứ 20, p90 là mẫu thứ 36.
+3. **Đối chứng A/A.** Bản cũ được đo **hai lần** như hai cấu hình riêng. Hai cấu
+   hình giống hệt nhau thì tỷ số phải quanh 1. Nếu A/A vượt ngưỡng ở bất kỳ cỡ
+   nào, thước đo không đủ phân giải để phân biệt ai với ai — **đợt đo vô hiệu**,
+   không phải ứng viên trượt. Chạy lại đúng một lần; lại vô hiệu thì dừng, ghi lại,
+   và hướng tiếp theo là `ort.env.wasm.proxy` chứ không phải nới ngưỡng.
+
+Đây là thứ quyết định 33 thiếu: một cách để thước đo nói "tôi không biết" thay vì
+nói "trượt".
+
+#### Điều kiện — mỗi ứng viên, trên văn bản không dấu câu
+
+| # | điều kiện | cần |
+|---|---|---|
+| Q1 | precision, 216 bài dựng như quyết định 33 | ≥ 0,9500 |
+| Q2 | câu sạch bị gạch oan | ≤ 1,50% |
+| P | phủ, 280 / 700 / 2.000 / 6.000 ký tự | 100% |
+| R | số câu có dấu câu có kế hoạch chạy khác `none` | 0 |
+| S | đứng hình, **mỗi cỡ**: p50 ứng viên / p50 bản cũ, và p90 / p90 | cả hai ≤ **1,25** |
+
+Không có sàn recall, và nói rõ vì sao: mọi ứng viên đọc hết văn bản còn `none` chỉ
+đọc 96 subword đầu, nên recall hơn `none` là hiển nhiên. Recall được **báo**, không
+dùng để **chọn**.
+
+1,25 chứ không phải 1,0: F2 chạy nhiều lượt hơn bản cũ, mỗi lượt có một lần nhả
+luồng, và đỉnh của lượt ngắn vẫn dính nhiễu như lượt dài. Ngưỡng cho phép tệ hơn
+bản cũ tới 25% ở cái người dùng cảm thấy, không hơn.
+
+#### Luật
+
+* **A/A trượt** → vô hiệu, chạy lại một lần, lại trượt thì dừng.
+* **Trong các ứng viên qua hết**: chọn ít câu sạch bị gạch oan nhất; hoà tuyệt đối
+  thì ít báo oan trên câu đích hơn; vẫn hoà thì F2 (ít lượt hơn). Đổi
+  `DEFAULT_FALLBACK` sang ứng viên đó.
+* **Không ứng viên nào qua** → giữ `none`, ghi lại.
+* Trang đo tự chấm và tự áp luật ở dòng TỔNG KẾT. Nó chưa từng được chạy lúc
+  commit. Nếu nó đổ khi chạy thật thì sửa chỗ đổ — không sửa ngưỡng, không sửa
+  luật — và ghi lại đã sửa gì.
+
+#### Kèm theo trong commit này, không đổi hành vi
+
+`onnxEngine.js` có hai byte NUL thật trong mã nguồn — khoá cache ở `afb0774` viết
+`\u0000` nhưng công cụ sửa file ghi thành ký tự NUL. Chạy vẫn đúng, nhưng `grep`
+coi cả file là nhị phân và chỉ in "Binary file matches" — người sau tìm trong
+file sẽ không thấy gì. Đã thay bằng chuỗi thoát; khoá cache vẫn y hệt.
+
+Và nó lặp lại ngay lúc viết đoạn này: chuỗi ` ` trong chính đoạn trên và
+trong commit message cũng bị ghi thành byte NUL. Git từ chối commit ("a NUL byte
+in commit log message not allowed") — chỉ nhờ thế mà lộ. Trước khi commit
+bất cứ thứ gì có chuỗi thoát, đếm byte NUL trong file.
