@@ -147,7 +147,10 @@ Chép từ mục "Giải trình quyền" trong [listing.md](listing.md):
 
 - `storage` → đoạn thứ nhất
 - `activeTab` → đoạn thứ hai
-- **Host permission / match patterns** → đoạn thứ ba.
+- `offscreen` → đoạn thứ ba. Nói đúng lý do đã đo: model nạp riêng từng tab tốn
+  ~280 MB mỗi tab và giữ luồng chính của trang ~160 ms; một trang ẩn dùng chung
+  cho cả trình duyệt đưa con số đó về dưới 2 MB (quyết định 37 và 38).
+- **Host permission / match patterns** → đoạn thứ tư.
   *Lưu ý:* manifest **không** có khoá `host_permissions`, nhưng devconsole vẫn
   hỏi vì content script khớp `<all_urls>`. Chính chỗ này phải nói rõ khác biệt
   giữa "khớp mọi trang để đọc ô nhập liệu tại chỗ" và "có quyền gọi mạng tới
@@ -165,7 +168,8 @@ Chép từ mục "Giải trình quyền" trong [listing.md](listing.md):
 Nếu người duyệt hỏi vặn về mục *Website content*: extension có **đọc** văn bản
 trong ô nhập liệu để kiểm tra, nhưng không **thu thập** — Chrome định nghĩa
 "collect" là truyền ra khỏi máy người dùng. Xử lý tại chỗ rồi bỏ thì không phải
-thu thập. Bằng chứng: không có `host_permissions`.
+thu thập. Bằng chứng: trong mã không có lệnh gọi mạng nào, không xin
+`host_permissions`, và Manifest V3 cấm tải mã từ xa.
 
 **Privacy policy URL** → dán URL từ bước 2.
 

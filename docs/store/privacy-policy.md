@@ -1,6 +1,6 @@
 # Chính sách quyền riêng tư — Soát
 
-**Cập nhật lần cuối: 12/09/2026**
+**Cập nhật lần cuối: 18/09/2026**
 
 ## Tóm tắt trong một câu
 
@@ -39,9 +39,31 @@ Model nhận diện lỗi (75 MB) được **đóng gói sẵn trong extension**
 WebAssembly ngay trên máy bạn. Không có lệnh gọi mạng nào để tải model, để chấm
 câu, hay để làm bất cứ việc gì khác.
 
-Extension **không xin quyền `host_permissions`**, nghĩa là về mặt kỹ thuật nó
-**không thể** gửi dữ liệu tới bất kỳ máy chủ nào — kể cả nếu chúng tôi muốn.
-Đây là ràng buộc do chính Chrome thi hành, không phải lời hứa suông.
+Model chạy trong một **trang ẩn của chính extension** (offscreen document) — đó là
+lý do extension xin quyền `offscreen`. Trang ẩn này không hiện ra, không truy cập
+được trang web nào, và tồn tại vì một lý do kỹ thuật thuần tuý: nếu model được nạp
+riêng cho từng tab thì mỗi tab bạn mở sẽ tốn thêm khoảng 280 MB bộ nhớ, kể cả tab
+bạn không gõ gì. Nạp một lần cho cả trình duyệt thì con số đó còn khoảng 2 MB mỗi
+tab.
+
+Hệ quả bạn nên biết: văn bản trong ô bạn đang gõ được gửi từ trang sang trang ẩn đó
+bằng cơ chế nhắn tin **nội bộ của Chrome giữa các phần của chính extension này**. Nó
+không đi qua mạng, không rời khỏi máy bạn, và không trang web nào đọc được. Chúng tôi
+nói ra vì "xử lý tại chỗ" phải đúng tới từng chặng, không chỉ đúng ở câu tóm tắt.
+
+## Vì sao extension không thể lén gửi dữ liệu đi
+
+Ba lớp, nói cho đúng từng lớp một:
+
+1. **Không có mã gọi mạng.** Trong toàn bộ extension không có `fetch` hay
+   `XMLHttpRequest` nào trỏ ra ngoài — chỉ có các lệnh đọc file nằm sẵn trong gói cài
+   (model, từ điển). Mã nguồn mở, kiểm được bằng một lệnh tìm kiếm.
+2. **Không xin `host_permissions`.** Nói cho chính xác: điều này khiến Chrome chặn
+   extension **đọc** dữ liệu từ máy chủ khác (không có CORS). Nó **không** phải một
+   bức tường tuyệt đối — một extension có ác ý vẫn bắn được request đi mà không đọc
+   phản hồi. Bức tường thật nằm ở lớp 1 và lớp 3.
+3. **Manifest V3 cấm tải mã từ xa.** Extension không thể tự cập nhật hành vi sau khi
+   bạn cài; mọi thay đổi đều phải qua một bản mới trên Chrome Web Store.
 
 ## Nơi Soát tự động im lặng
 
@@ -66,9 +88,10 @@ Một công cụ hỗ trợ viết chỉ có ích khi nó có mặt ở nơi b�
 khắp nơi. Vì vậy content script khớp với mọi trang.
 
 Nhưng hãy để ý phần quan trọng: Soát khớp mọi trang để **đọc ô nhập liệu tại
-chỗ**, và **không xin `host_permissions`** nên không thể gọi mạng tới bất kỳ
-trang nào. Hai điều đó khác hẳn nhau, và sự khác biệt chính là ranh giới quyền
-riêng tư của bạn.
+chỗ**, chứ không phải để gọi mạng tới các trang đó — nó không xin
+`host_permissions`. Hai điều đó khác hẳn nhau, và sự khác biệt chính là ranh giới
+quyền riêng tư của bạn. Phần "Vì sao extension không thể lén gửi dữ liệu đi" ở trên
+nói rõ từng lớp một.
 
 ## Bên thứ ba
 

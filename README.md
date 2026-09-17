@@ -54,7 +54,24 @@ dưới 0,90. Phải xuống 0,80 mới bắt, mà mức đó trượt luật ch
 ```
 văn bản  ─►  ① tra từ điển   ─►  ② sinh ứng viên  ─►  ③ chấm ngữ cảnh  ─►  ④ lọc & ngưỡng  ─►  gạch chân
               0,05ms, JS          <0,01ms            ~20ms, ONNX INT8     <0,01ms
+              ——— trong trang ———                    ——— trong offscreen document ———
 ```
+
+**Model không nằm trong trang.** Tầng ① ② chạy ngay trong content script của tab và vẽ
+gạch chân tức thì; tầng ③ ④ chạy trong một **offscreen document** — một trang ẩn của
+chính extension — bên trong một Web Worker, **một bản duy nhất cho cả trình duyệt**,
+dựng lần đầu khi người dùng focus vào một ô đủ điều kiện. Trang gửi văn bản của ô qua
+message nội bộ của extension và nhận lại đúng mảng `Issue`.
+
+Lý do là số đo, không phải sở thích (quyết định 37 và 38, đo trong Chrome thật):
+
+| | model nạp trong mỗi tab | model trong offscreen |
+|---|---|---|
+| bộ nhớ thêm **mỗi tab** | **279 MB** | **1,8 MB** |
+| 8 tab | +2,2 GB | +320 MB |
+| long task trên trang lúc mở | 150 ms | **0** |
+| long task trên trang lúc chấm | 53–135 ms | **0** |
+| dán → gạch chân, cache ấm | mốc | +4…+10 ms |
 
 Con số ở ①+② đo bằng `dev/bench-rules.html` trên một bài đăng 280 ký tự, văn bản
 người thật lấy từ VSEC. **Tầng luật nhanh hơn tầng model khoảng 400 lần**, và
@@ -118,7 +135,7 @@ npm run dev       # rồi mở hai trang dưới đây
 | `dev/bench-accept.html` | Tám điều kiện của quyết định 33, đo qua đúng `check()` — chất lượng trên bài đăng, phủ, đứng hình, cache |
 | `dev/bench-fallback.html` | Quyết định 34 — đường lui cho văn bản không dấu câu, đứng hình so bản cũ cùng lượt, kèm đối chứng A/A |
 | `dev/bench-blocking.html` | Tầng model có giữ luồng chính không — nhịp đập MessageChannel, không dùng rAF |
-| `dev/measure-chrome.mjs` | Chạy bằng `node`, không qua trang: lái **Chrome đã cài** (headless) nạp gói store thật, đo nạp model, đứng hình, **RAM mỗi tab** và dán → gạch chân (quyết định 37) |
+| `dev/measure-chrome.mjs` | Chạy bằng `node`, không qua trang: lái **Chrome đã cài** (headless) nạp gói store thật, đo nạp model, đứng hình, **RAM mỗi tab** và dán → gạch chân. `--plan 37` so có/không extension; `--plan 38` so bản trước offscreen với bản offscreen, chấm tám điều kiện ghi trước |
 | `dev/bench-context.html` | Cùng một câu, đứng một mình và nằm trong cửa sổ — nhãn vàng, so có cặp |
 
 Trước khi dùng `onnx-test.html` phải có runtime và model:
@@ -258,9 +275,12 @@ dùng thật sự gặp — **với một điều kiện phải đọc trước 
 Độ trễ ghi thành **khoảng** chứ không một con số: đo lại bốn lần trên cùng máy
 được 18,4 / 23,1 / 23,8ms. Một con số lẻ là một lần bốc thăm.
 
-**Tầng model chạy trên LUỒNG CHÍNH của trang** — không có Web Worker nào, dù tài
-liệu từng khai như vậy (quyết định 32). Nên có hai con số độ trễ, và con số người
-dùng cảm thấy là cột "đứng hình", không phải cột tổng:
+Các con số đứng hình dưới đây đo **bản trước offscreen**, khi `session.run` chạy
+trên luồng chính của trang (quyết định 32). Từ quyết định 38, suy luận nằm trong Worker
+của offscreen document: cột "đứng hình" **không còn rơi vào trang nào** — đo trong Chrome
+thật, 12/12 tab không có long task nào lúc mở trang lẫn lúc chấm. Giữ bảng lại vì nó vẫn
+là hình dạng chi phí CPU của một lượt chấm, và vì cột "model xét" là chuyện của quyết
+định 33, không phải của offscreen:
 
 | Độ dài, có dấu câu | tổng CPU | **đứng hình lâu nhất** | model xét | bản cắt cụt trước đây xét |
 |---|---|---|---|---|
@@ -286,8 +306,9 @@ Hai giới hạn phải nói cạnh các con số này:
   đỉnh đứng hình là một khoảng, không phải một con số. "Lâu nhất" của chính bản
   cắt cụt cũ ra 101–156ms. So hai cấu hình thì so p50/p90 **đo cùng lượt**, và đối
   chứng A/A cho thấy chênh dưới ~25% ở p50 là không phân biệt được.
-* Model **vẫn giữ luồng chính**. Nhả luồng giữa các lượt chỉ chia nhỏ việc chặn,
-  không bỏ được nó.
+* Model **giữ luồng của nơi nó chạy**. Nhả luồng giữa các lượt chỉ chia nhỏ việc chặn,
+  không bỏ được nó — nhưng từ quyết định 38, nơi đó là Worker của offscreen chứ không
+  còn là trang người dùng đang đọc.
 
 Phân rã một lượt `check()`: `session.run` chiếm **98,8%**, `bpe.js` 0,2%, giải mã
 1,0%. Không có gì để tối ưu ngoài chính model. Lượt suy luận **đầu tiên 55–126ms**,
@@ -460,6 +481,13 @@ trúc vừa là lời hứa với người dùng, nên hai ràng buộc sau là 
 
 - `background.js` **chỉ đếm** — số lỗi theo nhóm, theo tuần. Không câu văn,
   không tên miền, không thời điểm chính xác.
+- Văn bản có đi từ trang sang **offscreen document của chính extension** (quyết định 38).
+  Nó không rời khỏi trình duyệt, nhưng chính sách riêng tư phải **nói ra** chặng đó —
+  "xử lý tại chỗ" phải đúng tới từng chặng, không chỉ đúng ở câu tóm tắt.
+- Nói cho chính xác về `host_permissions`: không xin nó khiến Chrome chặn extension
+  **đọc** dữ liệu từ máy chủ khác, chứ **không** khiến việc gửi đi trở thành bất khả.
+  Bảo đảm thật nằm ở chỗ trong mã không có lệnh gọi mạng nào, và MV3 cấm tải mã từ xa.
+  Tài liệu store từng khai mạnh hơn sự thật ở chỗ này; đã sửa.
 - Nếu sau này gắn analytics từ xa thì **không dùng Firebase/Google Analytics**:
   nó mâu thuẫn trực tiếp với lời hứa và là đúng thứ người dùng đang sợ.
 
@@ -480,8 +508,11 @@ Tiếp quản dự án: đọc [HANDOFF.md](HANDOFF.md) trước — trạng th�
 ```
 extension/src/engine/   vi.js (âm tiết + 23 nhãn), rules.js, ruleEngine.js,
                         bpe.js (BPE tự viết), onnxEngine.js (tầng 3)
-extension/src/content/  targets.js (lọc ô), highlighter.js (gạch chân),
+extension/src/content/  index.js (điểm vào; chỉ tầng luật + gửi văn bản sang offscreen),
+                        targets.js (lọc ô), highlighter.js (gạch chân),
                         replace.js (thay chuỗi an toàn với React/Lexical), tooltip.js
+extension/src/offscreen/  offscreen.html/js (trang ẩn), worker.js (OnnxEngine, một bản
+                        cho cả trình duyệt), checkService.js (hàng đợi + huỷ lượt cũ)
 ml/                     vi.py (bản song song của vi.js), noise.py, encoding.py,
                         build_corpus.py, dataset.py, mix_datasets.py,
                         train.py, export_onnx.py, export_tokenizer.py

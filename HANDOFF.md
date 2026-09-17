@@ -1,8 +1,8 @@
 # Bàn giao — dự án Soát
 
-Đọc file này trước, rồi `README.md` (tổng quan) và `docs/decisions.md` (37 quyết
-định, kèm lý do và mọi lỗi đã mắc). Phiên mới bắt đầu từ **việc số 1: offscreen
-document** — quyết định 37 đã đo trong Chrome thật và luật ghi trước chọn nó.
+Đọc file này trước, rồi `README.md` (tổng quan) và `docs/decisions.md` (38 quyết
+định, kèm lý do và mọi lỗi đã mắc). Phiên mới bắt đầu từ **việc số 1: thử bản
+offscreen trên Facebook thật**, rồi nộp store.
 
 ---
 
@@ -20,7 +20,7 @@ viết khoá luận.
 
 ---
 
-## Trạng thái: CẢ HAI TẦNG CHẠY TRONG CHROME THẬT, trên Facebook
+## Trạng thái: MODEL ĐÃ RA KHỎI TRANG — offscreen document, đo xong, chưa thử trên Facebook
 
 - cây git sạch (số commit: `git rev-list --count HEAD` — ghi con số vào đây thì nó lỗi thời ngay commit sau)
 - 63 test JS + 2 bộ kiểm tra Python, tất cả pass (`npm run test:all`)
@@ -32,8 +32,14 @@ viết khoá luận.
     dừng, nên đây là đường **chấm theo câu**. Sáu câu đầu không bị gạch oan.
   * **không dấu câu, viết thường** → gạch `cứ→cư` qua đường lui **F2**.
   * **dán vào là có gạch**, không phải gõ thêm — sau khi sửa lỗi dán (quyết định 36).
+- **Quyết định 38 (18/09/2026): tầng model chuyển sang offscreen document** — một bản
+  model cho cả trình duyệt, chạy trong Worker, content script chỉ còn tầng luật. Qua
+  **tám / tám** điều kiện ghi trước, đo bằng `dev/measure-chrome.mjs --plan 38` trong
+  Chrome thật (headless): bộ nhớ mỗi tab **279 MB → 1,8 MB**, 8 tab **2,2 GB → 320 MB**,
+  long task trên trang **150 ms → 0**, dán ấm chậm hơn 4–10 ms. **Chưa thử trên Facebook
+  thật** — đó là việc số 1.
 - Gói nộp store `dist/soat-1.0.0.zip` đã đóng lại với code hiện tại (58,6 MB nén),
-  **chưa nộp**. Trước khi nộp phải **gỡ chế độ đo** (xem việc số 1).
+  **chưa nộp**. Trước khi nộp phải **gỡ chế độ đo** (xem việc số 2).
 
 **Hai điều người sau hay vấp khi thử trên Chrome thật:**
 
@@ -47,7 +53,7 @@ viết khoá luận.
 ## Phiên vừa rồi làm gì (15–18/09/2026)
 
 Các commit `ea8c174..HEAD` (`git log --oneline ea8c174~1..HEAD`). Bắt đầu từ "xem xét kỹ việc sửa
-model cắt cụt văn bản", kết thúc bằng lần đầu tầng model chạy thật trên Facebook.
+model cắt cụt văn bản"; phần cuối (37, 38) là đo trong Chrome thật rồi đưa model ra khỏi trang.
 
 | quyết định | chuyện gì | kết quả |
 |---|---|---|
@@ -57,6 +63,7 @@ model cắt cụt văn bản", kết thúc bằng lần đầu tầng model ch�
 | 35 | **Cache theo cửa sổ** khi sửa bài dài | **trượt** ở kiểu sửa *xoá từ* — code nằm sẵn, **tắt** |
 | 36 | "Model chậm" hoá ra là **dán vào không soát** — Lexical không bắn sự kiện `input` | sửa bằng `MutationObserver`; xác nhận trên Facebook |
 | 37 | Mỗi trang tự nạp model — **đo trong Chrome thật** (`dev/measure-chrome.mjs`), luật ghi trước | **279 MB mỗi tab**, nạp 408 ms, long task 160 ms → luật chọn **offscreen** (18/09) |
+| 38 | **Offscreen document**: một bản model cho cả trình duyệt, chạy trong Worker; điều kiện ghi trước | qua **8/8**: mỗi tab 1,8 MB, một lần 305 MB, long task trên trang **0**, dán ấm +4…+10 ms (18/09) |
 
 Kèm theo: `bpe.js`/`encoding.py` không còn chấm một từ bị cắt dở ở mép cửa sổ; byte
 NUL thật trong mã nguồn (có từ commit đầu tiên, làm `grep` coi `bpe.js` là file nhị
@@ -83,15 +90,18 @@ lui F2 cho câu dài quá cửa sổ.
 | Đứng hình, bài 2.000 ký tự có dấu câu | ≤ 82ms (tổng CPU 525–600ms, nhả luồng giữa các câu) | `dev/bench-accept.html` |
 | Gói cài | 95,3 MB thô → **58,6 MB nén** | `package_extension.py` |
 
-**Chrome thật, extension thật** (`dev/measure-chrome.mjs`, quyết định 37, headless):
+**Chrome thật, extension thật** (`dev/measure-chrome.mjs`, headless; A = bản trước
+offscreen, quyết định 37; O = bản đang ship, quyết định 38):
 
-| Thước đo | Số |
-|---|---|
-| Bộ nhớ thêm **mỗi tab** — kể cả tab không gõ gì | **279 MB** (renderer ~20 MB → ~300 MB); 8 tab = 2,2 GB |
-| trong đó JS heap | 8 MB — phần còn lại là bộ nhớ wasm của onnxruntime, không co lại |
-| Nạp model mỗi tab | 408 ms (tab đầu sau khi mở Chrome ~450 ms, 4 tab cùng lúc 705 ms) |
-| Long task dài nhất khi nạp | 160 ms (cộng một cái ~70 ms trước đó) |
-| Dán 494 ký tự → gạch chân | 606–612 ms lạnh, 418 ms cache ấm |
+| Thước đo | A | **O (đang ship)** |
+|---|---|---|
+| Bộ nhớ thêm **mỗi tab** — kể cả tab không gõ gì | 279 MB | **1,8 MB** |
+| Bộ nhớ với 8 tab | +2,2 GB | **+320 MB** |
+| Bộ nhớ một lần cho cả trình duyệt | — | **305 MB** (JS heap 8 MB; phần còn lại là bộ nhớ wasm của onnxruntime, không co lại) |
+| Nạp model | 408 ms **mỗi tab** | 404–418 ms **một lần** |
+| Long task trên trang lúc mở | 150 ms | **0** |
+| Long task trên trang lúc chấm | 53–135 ms | **0** |
+| Dán 494 ký tự → gạch chân | 616 ms lạnh · 422 ms cache ấm | 642 ms lạnh (gồm dựng offscreen + nạp model) · 426 ms cache ấm |
 
 **Bốn lưu ý khi đọc bảng:**
 
@@ -109,50 +119,29 @@ lui F2 cho câu dài quá cửa sổ.
 
 ## VIỆC TIẾP THEO — theo thứ tự ưu tiên
 
-### 1. Offscreen document — ghi điều kiện chấp nhận TRƯỚC, rồi mới viết code
+### 1. Thử bản offscreen trên Facebook thật — 15 phút, và không thay được bằng gì khác
 
-Quyết định 37 đo xong câu chủ repo hỏi (*"mỗi trang mới phải đợi model nạp?"*). Đúng,
-nhưng thời gian không phải vấn đề — **bộ nhớ** mới là: mỗi tab, kể cả tab không có ô
-nhập liệu nào, thêm **279 MB**. Luật ghi trước (`1a8d9cb`) chọn **offscreen**; nạp lười
-qua ngưỡng thời gian và đứng hình nhưng trượt bộ nhớ (≤ 100 MB).
+Quyết định 24 mất hai tuần vì một tầng chết im lặng mà mọi phép đo đều xanh; quyết định
+36 lộ ra sau mười phút dùng thật. Bản offscreen **chưa ai dùng như người dùng**: mọi số
+của quyết định 38 đo trên trang thử của chính mình, trong Chrome headless.
 
-Trong phiên đó tôi đoán offscreen thắng nhờ đứng hình — **sai**: L chỉ 160 ms. Offscreen
-thắng nhờ bộ nhớ. Đọc phần "Dự đoán của tôi sai một nửa" trong quyết định 37.
+Cài `dist/soat-1.0.0.zip` (giải nén, `chrome://extensions` → "Tải tiện ích đã giải nén"),
+rồi **dán** đoạn thử ở dưới vào ô "Tạo bài viết" của Facebook. Phải có đúng một gạch dưới
+`cứ`. Kiểm cả hai bản (có và không dấu câu), và:
 
-**Việc tiếp theo, theo thứ tự:**
+| kiểm gì | vì sao |
+|---|---|
+| **dán** rồi gõ thêm, sửa, xoá | đường người dùng thật đi; Lexical không bắn `input` (quyết định 36) |
+| mở 3–4 tab Facebook/Gmail cùng lúc, gõ ở nhiều tab | một phiên onnxruntime dùng chung, có hàng đợi — đã đo trên trang thử, chưa đo ở trang thật |
+| để yên 5 phút rồi gõ lại | service worker bị tắt sau 30 giây rảnh; offscreen phải còn sống (đo được 45 giây, chưa đo 5 phút) |
+| Shift+Esc (Task Manager của Chrome) | phải thấy **một** dòng của Soát giữ ~300 MB, không phải mỗi tab một dòng |
+| gõ tiếng Việt bằng bộ gõ (Unikey/EVKey) | chưa bao giờ kiểm; bộ gõ và `MutationObserver` có thể đá nhau |
 
-1. **Ghi điều kiện chấp nhận của bản offscreen vào `docs/decisions.md` và commit — trước
-   khi viết code.** Tối thiểu: bộ nhớ thêm mỗi tab gần bằng tắt; một bản model cho cả
-   trình duyệt; không long task nào trên trang lúc nạp và lúc chấm; dán → gạch chân không
-   chậm hơn bản hiện tại quá một mức ghi trước; **đoạn thử (dưới) gạch đúng `cứ`** cả hai
-   bản; nhiều tab chấm cùng lúc vẫn đúng (một phiên onnxruntime không chạy song song —
-   cần hàng đợi); offscreen còn sống sau khi service worker bị tắt vì rảnh (30 s).
-2. Làm. `dev/measure-chrome.mjs` đo được bản mới bằng đúng cách cũ — thêm pha nếu cần,
-   **headless** (chủ repo không muốn cửa sổ Chrome bật lên).
-3. **Giá phải trả, đừng quên:** quyền `offscreen` → sửa `docs/store/privacy-policy.md`,
-   `listing.md` (ô giải trình quyền), `nop-store.md`. Văn bản đi qua message nội bộ của
-   extension — vẫn không rời trình duyệt, nhưng phải nói ra. Kiểm trong Chrome thật: đúng
-   loại thay đổi từng giết tầng model hai tuần (quyết định 24). Ngược lại, `models/*` và
-   `vendor/*` có thể **bỏ khỏi `web_accessible_resources`** — hiện trang nào cũng dò được
-   Soát bằng cách fetch `chrome-extension://<id>/models/soat.int8.onnx`.
-4. **~280 MB vẫn trả một lần.** Bộ nhớ wasm gấp ~3,5 lần model — xem việc số 6.
+Chế độ đo vẫn tắt mặc định — bật như hướng dẫn ở việc số 2 nếu cần số.
 
-**Phép đo C của bàn giao cũ (dán trên Facebook) chưa làm** — giờ làm trên bản offscreen.
-Chế độ đo vẫn tắt mặc định, phải gỡ trước khi nộp store:
-
-```
-Bật:  chrome://extensions → Soát → link "service worker" → Console:
-        chrome.storage.local.set({ soatDebug: true })
-      rồi F5 trang cần đo.
-Đọc:  Console của trang, ngữ cảnh "top":
-        ({ ...document.documentElement.dataset })
-      soatModel = "san-sang sau Xms"   (thời gian nạp của trang đó)
-      soatLog   = 8 lượt chấm gần nhất, tách: input đầu→chấm · tầng luật · model ·
-                  số lượt model · câu trúng cache · TỔNG từ input đầu
-Tắt:  chrome.storage.local.remove('soatDebug')
-```
-
-"TỔNG từ input đầu" từng tính từ cú bấm vào ô thay vì từ lúc dán — đã sửa ở `7967afe`.
+Nếu hỏng thì triệu chứng gần như chắc chắn là **im lặng** (tầng luật vẫn gạch, tầng model
+biến mất). Chỗ đọc đầu tiên: `chrome://extensions` → Soát → "service worker" → Console, và
+`soatLog` trên trang.
 
 #### Đoạn thử — dùng lại sau mỗi thay đổi tầng model
 
@@ -196,24 +185,26 @@ khoản của chủ repo. **Trước bước 1: gỡ chế độ đo khỏi `con
 |---|---|
 | Gói cài | `dist/soat-1.0.0.zip` (58,6 MB) |
 | 3 ảnh 1280×800 | `dist/store/*.png` |
-| Nội dung từng ô devconsole | `docs/store/listing.md` |
+| Nội dung từng ô devconsole | `docs/store/listing.md` (đã có ô `offscreen`) |
 | Chính sách riêng tư | `docs/store/privacy-policy.md` |
 
-Việc số 1 chọn offscreen, nên chính sách riêng tư và mô tả phải nói tới quyền mới.
+Hồ sơ store **đã cập nhật** cho quyền `offscreen` (ô giải trình quyền trong
+`listing.md`, mục "Model chạy ở đâu" trong `privacy-policy.md`, thứ tự các ô trong
+`nop-store.md`).
 
-**Chính sách riêng tư đang khai một điều sai kỹ thuật:** *"không xin `host_permissions`,
-nghĩa là về mặt kỹ thuật nó không thể gửi dữ liệu tới bất kỳ máy chủ nào"*. Không đúng —
-không có `host_permissions` thì extension không **đọc** được phản hồi cross-origin thiếu
-CORS, nhưng vẫn **gửi** được request (POST `text/plain` không cần preflight), từ content
-script lẫn trang extension. Câu đó cũng nằm ở `listing.md`. Sửa thành lời hứa đúng
-(không có mã gọi mạng nào — đọc được, kiểm được) trước khi nộp.
+Cùng lúc đã sửa một câu **sai kỹ thuật** nằm ở cả ba file: *"không xin `host_permissions`
+nghĩa là về mặt kỹ thuật không thể gửi dữ liệu đi đâu"*. Không đúng — thiếu
+`host_permissions` chỉ chặn **đọc** phản hồi cross-origin thiếu CORS; request vẫn gửi
+được. Lời hứa đúng, và vẫn đủ mạnh: trong mã không có lệnh gọi mạng nào, MV3 cấm tải mã
+từ xa, mã nguồn mở nên kiểm được.
 
-### 4. Sửa bài dài không dấu câu — một lỗi bộ nhớ và hai hướng tối ưu
+### 4. Sửa bài dài không dấu câu — một lỗi bộ nhớ và một hướng tối ưu
 
-1. **Lỗi bộ nhớ đang ship — nhỏ, nên làm trước.** Cache theo câu lưu cả bài dài cho
-   mọi phiên bản: 60 lần sửa bài 2.000 ký tự không dấu câu giữ 26.460 dòng logit, trần
-   400 phiên bản (~536.000 dòng với bài 6.000 ký tự). Chặn theo **số dòng** thay vì số
-   mục. Không đổi issue nào.
+1. **Lỗi bộ nhớ đang ship — nhỏ, nên làm trước, và giờ NẶNG HƠN.** Cache theo câu lưu
+   cả bài dài cho mọi phiên bản: 60 lần sửa bài 2.000 ký tự không dấu câu giữ 26.460 dòng
+   logit, trần 400 phiên bản (~536.000 dòng với bài 6.000 ký tự). Chặn theo **số dòng**
+   thay vì số mục. Không đổi issue nào. Từ quyết định 38, cache **dùng chung mọi tab** —
+   nó không còn chết theo tab nữa mà sống cùng offscreen.
 2. **Ứng viên `F2c`: cửa sổ cắt theo nội dung + cache cửa sổ.** Cache cửa sổ với F2
    trượt vì F2 chỉ tự khớp lại khi **số từ** không đổi — xoá một từ giữa bài 6.000 ký tự
    phải chạy lại 17,2/42,8 cửa sổ; cắt theo nội dung chỉ 2,5/58,4 (quyết định 35). Code
@@ -233,11 +224,12 @@ nhưng luật ghi trước ưu tiên precision). Sửa bằng cue đã bác: th�
 `giành` thì gạch oan `chị dành phần quà cho em` (quyết định 26). Train thêm thì nhớ v4
 đã lấy 30 ca của các nhóm phụ âm khác (`l/n` 45,4% → 39,6%) để được 64 ca cho d/gi/r.
 
-### 6. Giảm dung lượng — liên quan trực tiếp tới việc số 1
+### 6. Giảm dung lượng — giờ là việc BỘ NHỚ, không chỉ việc gói tải
 
 Quyết định 37: model 78 MB chiếm **~270 MB bộ nhớ wasm** khi đã nạp (JS heap chỉ 8 MB).
-Offscreen trả nó một lần thay vì mỗi tab, nhưng 280 MB vẫn là nhiều cho một extension
-soát chính tả. Chưa biết phần nào tỷ lệ thuận với model, phần nào cố định (arena, bộ nhớ
+Offscreen trả nó một lần thay vì mỗi tab (quyết định 38: 305 MB một lần), nhưng 300 MB
+vẫn là nhiều cho một extension soát chính tả — và giờ nó là con số người dùng thấy ở
+Task Manager của Chrome, một dòng duy nhất. Chưa biết phần nào tỷ lệ thuận với model, phần nào cố định (arena, bộ nhớ
 wasm phình lúc tạo phiên và không co lại) — **đo trước khi hứa** "model nhỏ một nửa thì
 RAM nhỏ một nửa". Thử cả tuỳ chọn phiên của onnxruntime (`enableCpuMemArena`, …).
 
@@ -256,9 +248,15 @@ extension/          MV3, không cần build
   src/engine/       vi.js (âm tiết + 23 nhãn), rules.js, ruleEngine.js,
                     bpe.js (BPE tự viết), onnxEngine.js (tầng 3: chấm theo câu,
                     đường lui F2, cache cửa sổ có sẵn nhưng TẮT)
-  src/content/      index.js (điểm vào; MutationObserver cho ô contenteditable;
-                    CHẾ ĐỘ ĐO tắt mặc định — gỡ trước khi nộp store),
+  src/content/      index.js (điểm vào; CHỈ tầng luật + gửi văn bản sang offscreen;
+                    MutationObserver cho ô contenteditable; CHẾ ĐỘ ĐO tắt mặc định —
+                    gỡ trước khi nộp store),
                     targets.js (lọc ô), highlighter.js, replace.js, tooltip.js
+  src/offscreen/    offscreen.html + offscreen.js (trang ẩn, cầu nối message),
+                    worker.js (OnnxEngine — MỘT bản cho cả trình duyệt),
+                    checkService.js (hàng đợi một phiên, huỷ lượt cũ theo ô)
+  src/background.js service worker: đếm thống kê + dựng offscreen và chuyển tiếp
+                    lượt chấm (content script KHÔNG nói thẳng với offscreen)
   models/           artifact sinh ra, KHÔNG commit
   vendor/           onnxruntime-web 14MB, tải bằng ml/fetch_vendor.sh
 ml/                 vi.py, noise.py, mine_errors.py, build_corpus.py, dataset.py,

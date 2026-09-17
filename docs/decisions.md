@@ -2467,3 +2467,52 @@ A ở cùng các lượt: long task lúc mở trang 149–166 ms, lúc chấm 50
    khi còn nghĩ theo kiến trúc cũ, mỗi tab một cache. Thêm **bước 6b, không vào luật**: hai
    tab cùng lúc dán hai đoạn chưa ai chấm (đổi "Tuần trước" và "Hơn một nửa"), so gạch với
    A. Điều kiện 1 vẫn đếm đúng 15 lần dán như đã ghi.
+
+#### Kết quả — lượt chính thức, headless: **qua tám / tám, ship O**
+
+`node dev/measure-chrome.mjs --plan 38`, công cụ ở `a3bf0d2`, bản O ở `a673e7d`, A ở
+`31a821e`. Chín lượt: tắt / A / O × 3. A/A bộ nhớ ba lượt tắt: **2,3 MB/tab** (cần ≤ 10).
+
+| # | điều kiện | O | A | cần |
+|---|---|---|---|---|
+| 1 | dán đúng một gạch dưới `cứ` | **15 / 15** | 15 / 15 | 15 / 15 |
+| 2 | bộ nhớ mỗi tab | **1,8 MB** | 269,7 MB | ≤ 30 MB |
+| 3 | bộ nhớ một lần | **305,5 MB** (trước GC 306,8) | — | ≤ 350 MB |
+| 4 | long task lúc mở trang | **0 ms** (12/12 tab) | 150,5 ms | ≤ 50 ms |
+| 5 | long task lúc chấm | **0 ms** | 59 ms | ≤ 50 ms |
+| 6 | dán ấm so A | **+10 ms** / **+4 ms** | mốc | ≤ +100 ms |
+| 7 | dán lạnh | **642 ms** | 616 ms | ≤ 2.000 ms |
+| 8 | sau 45 s rảnh | **3 / 3** | mốc | 3 / 3 |
+
+Private bytes của **toàn bộ Chrome**, sau GC, trung vị ba lượt:
+
+| | 4 tab | 8 tab | thêm so với tắt, 8 tab |
+|---|---|---|---|
+| tắt | 477 MB | 562 MB | — |
+| **A** (đang ship) | 1.575 MB | 2.739 MB | **+2.177 MB** |
+| **O** (offscreen) | 790 MB | 882 MB | **+320 MB** |
+
+Tám tab: **2,2 GB → 320 MB**, và phần lớn số còn lại là một bản model duy nhất. Tab thứ
+chín trở đi gần như miễn phí — 1,8 MB, trong đó có cả tầng luật và lớp vẽ.
+
+**Long task trên trang biến mất hẳn**: 12/12 tab của O không có long task nào lúc mở
+trang (A: 129–173 ms), và không có long task nào lúc chấm (A: 53–59 ms khi một tab chấm,
+**69–135 ms** ở bước hai tab chấm cùng lúc — mỗi tab một engine, mỗi engine giữ luồng
+của trang mình). Suy luận giờ nằm trong Worker của offscreen, không trang nào chịu.
+
+**Sau 45 giây rảnh** (service worker đã bị Chrome tắt): 3/3 lượt gạch **giống hệt A** ở
+đoạn biến thể, **1 lượt model** thật (không trúng cache), **cùng mã offscreen** với lần
+dán lạnh đầu lượt — offscreen sống, model không nạp lại, và message vẫn tới nơi sau khi
+service worker ngủ rồi thức. Đây là điều kiện tôi ghi là rủi ro thật; nó qua.
+
+**Cái giá, đo được:** dán lạnh 642 ms so 616 ms của A — nhưng hai con số không cùng nghĩa.
+Ở A, model đã nạp sẵn trong tab từ lúc mở trang (và mỗi tab trả 270 MB cho việc đó). Ở O,
+642 ms **đã bao gồm** dựng offscreen, dựng Worker và nạp model lần đầu cho cả trình duyệt
+(404–418 ms, chạy song song với 400 ms debounce). Từ lần dán thứ hai trở đi, chênh lệch
+là +4 đến +10 ms — hai chặng message.
+
+**6b (không vào luật):** hai tab dán cùng lúc hai đoạn chưa ai chấm — 6/6 gạch giống hệt
+A, mỗi tab 2–3 lượt model thật. Hàng đợi chạy đúng dưới tranh chấp thật.
+
+**Không đo:** Facebook (C của bàn giao), máy yếu, Chrome vừa khởi động lại máy, và tình
+huống người dùng mở hàng chục tab rồi gõ ở nhiều tab cùng lúc.

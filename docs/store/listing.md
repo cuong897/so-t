@@ -52,9 +52,8 @@ tiếng Việt chạy ngay trong trình duyệt để làm việc đó.
 
 QUYỀN RIÊNG TƯ — KHÔNG PHẢI LỜI HỨA, MÀ LÀ KIẾN TRÚC
 
-Soát không xin quyền truy cập mạng (host_permissions). Nghĩa là về mặt kỹ
-thuật extension KHÔNG THỂ gửi dữ liệu đi đâu — ràng buộc này do chính Chrome
-thi hành, không phụ thuộc vào việc bạn có tin chúng tôi hay không.
+Trong toàn bộ mã nguồn của Soát không có một lệnh gọi mạng nào, và extension
+không xin quyền truy cập mạng (host_permissions). Mã nguồn mở — kiểm được.
 
 Model nhận diện lỗi được đóng gói sẵn trong extension và chạy bằng
 WebAssembly trên máy bạn. Không có lệnh gọi mạng nào, kể cả lúc khởi động.
@@ -98,9 +97,8 @@ Stores the user's own settings and counters entirely on their device via
 chrome.storage.local: the on/off state, the list of words the user chose to
 ignore, the list of sites where they turned the extension off, and weekly
 counts of how many suggestions were shown and accepted (numbers only — no
-text content, no URLs, no timestamps). Nothing is ever transmitted; the
-extension requests no host permissions and therefore cannot make network
-requests to any site.
+text content, no URLs, no timestamps). Nothing is ever transmitted: the
+extension contains no network calls at all, and requests no host permissions.
 ```
 
 ### `activeTab`
@@ -111,6 +109,21 @@ single message to the active tab to apply the on/off toggle the user just
 changed. No page content is read or collected through this permission.
 ```
 
+### `offscreen`
+
+```
+The spell-checking model (an ONNX file bundled in the package) runs in a single
+offscreen document shared by the whole browser, inside a Web Worker it creates.
+This is purely a resource decision, measured rather than assumed: loading the
+model separately in every tab costs about 280 MB of memory per tab and blocks
+each page's main thread for ~160 ms while the inference session is created,
+even on pages the user never types in. With one shared offscreen document, the
+per-tab cost drops to under 2 MB and pages are never blocked. The offscreen
+document has no UI, no access to any web page, and makes no network requests;
+the text of the focused input field is passed to it over the extension's own
+internal message channel and never leaves the device.
+```
+
 ### Content script khớp `<all_urls>`
 
 ```
@@ -119,21 +132,24 @@ across arbitrary sites (social networks, webmail, CMS editors, forums). The
 content script reads the text of the input field the user is focused on,
 checks it locally, and draws an underline. The text never leaves the browser.
 
-Importantly, the extension does NOT request host_permissions, so it has no
-ability to send network requests to any origin. It also deliberately ignores
-password fields, payment-card fields, one-time-code fields, search boxes and
-code editors (see src/content/targets.js).
+The extension contains no network calls anywhere in its code and requests no
+host permissions. It also deliberately ignores password fields, payment-card
+fields, one-time-code fields, search boxes and code editors (see
+src/content/targets.js).
 ```
 
 ### `web_accessible_resources`
 
 ```
 Manifest V3 does not allow content scripts to be declared as ES modules, so
-the content script loads its engine modules via dynamic import() from
-chrome.runtime.getURL(), which requires those files to be web-accessible. The
-same applies to the bundled model files, which are fetched by the engine
-running in the content script's isolated world. All of these are static assets
-shipped inside the extension package; none of them execute remote code.
+the content script loads its rule-engine modules via dynamic import() from
+chrome.runtime.getURL(), which requires those files to be web-accessible. Only
+those small script files are listed. The model and the WebAssembly runtime are
+deliberately NOT web-accessible: they are loaded by the extension's own
+offscreen document, which does not need that declaration, and keeping them out
+of the list means a web page cannot fetch them to detect that the user has this
+extension installed. All of these are static assets shipped inside the
+extension package; none of them execute remote code.
 ```
 
 ---
@@ -161,8 +177,9 @@ Và tick cả ba lời chứng thực:
 **Lưu ý về ô "Website content":** extension có *đọc* văn bản trong ô nhập liệu
 để kiểm tra, nhưng không **thu thập** (collect) — Chrome định nghĩa "collect"
 là truyền ra khỏi máy người dùng. Xử lý tại chỗ rồi bỏ thì không phải thu thập.
-Nếu đội duyệt hỏi, trả lời đúng ý này và chỉ vào việc extension không xin
-`host_permissions`.
+Nếu đội duyệt hỏi, trả lời đúng ý này và chỉ vào việc trong mã không có lệnh
+gọi mạng nào, extension không xin `host_permissions`, và Manifest V3 cấm tải mã
+từ xa.
 
 ---
 
