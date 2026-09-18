@@ -6,7 +6,7 @@ cột mình đang mong nó đẹp. File này ghép sẵn và **tự chấm** the
 nhận đã ghi trong `docs/decisions.md`, để câu trả lời "qua hay trượt" không phụ
 thuộc vào việc ai đang đọc.
 
-Ngưỡng chấp nhận lấy từ quyết định 29, commit cec4dfe — ghi TRƯỚC khi có số.
+Ngưỡng chấp nhận lấy từ quyết định 29, commit 821229d — ghi TRƯỚC khi có số.
 
     python threshold_report.py
 """

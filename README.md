@@ -257,7 +257,7 @@ thanh điệu **0,95**, phụ âm **0,90** (quyết định 29). Đây là nhữ
 dùng thật sự gặp — **với một điều kiện phải đọc trước bảng**:
 
 > Mọi phép đo chất lượng dưới đây chấm **từng câu đứng một mình**. Cho tới
-> `cf6ad59`, sản phẩm lại nhét **cả ô nhập liệu** vào một lượt chạy, và từ nằm sâu
+> `86d9eb4`, sản phẩm lại nhét **cả ô nhập liệu** vào một lượt chạy, và từ nằm sâu
 > trong cửa sổ bị chấm tệ hơn hẳn: recall 0,7426 khi câu đứng một mình, 0,6202
 > khi câu nằm cuối cửa sổ (quyết định 32). Giờ sản phẩm chấm theo câu, nên trên
 > **văn bản có dấu câu** các con số này là thật — đo lại qua đúng `check()` trên
@@ -334,7 +334,7 @@ năm rổ (`dev/sentence-eval.html` chạy lại cùng phép đo với **cả ha
 **Một nửa số câu có lỗi thì sản phẩm im lặng hoàn toàn.** Đó là con số phải nói
 cạnh mọi con số recall, vì nó mới là thứ người dùng gặp.
 
-Bảng này đo từng câu đứng một mình. Trước `cf6ad59` nó **đẹp hơn** thứ người dùng
+Bảng này đo từng câu đứng một mình. Trước `86d9eb4` nó **đẹp hơn** thứ người dùng
 gặp trong một bài đăng nhiều câu; giờ sản phẩm chấm theo câu nên nó khớp — trên
 văn bản có dấu câu.
 

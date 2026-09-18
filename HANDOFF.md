@@ -54,7 +54,7 @@ viết khoá luận.
 
 ## Phiên vừa rồi làm gì (15–18/09/2026)
 
-Các commit `c57d0ff..HEAD` (`git log --oneline c57d0ff~1..HEAD`). Bắt đầu từ "xem xét kỹ việc sửa
+Các commit `13d385f..HEAD` (`git log --oneline 13d385f~1..HEAD`). Bắt đầu từ "xem xét kỹ việc sửa
 model cắt cụt văn bản"; phần cuối (37, 38) là đo trong Chrome thật rồi đưa model ra khỏi trang.
 
 | quyết định | chuyện gì | kết quả |

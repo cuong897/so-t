@@ -39,7 +39,7 @@ const DEFAULT_THRESHOLD = 0.95;
 const DEFAULT_MARGIN = 0.25;   // phải hơn KEEP ít nhất chừng này
 const MAX_LEN = 128;
 // 'F2' — cửa sổ trượt 64 subword, bước 32, cho câu dài quá cửa sổ (thường là văn
-// bản không chấm câu). Chọn bằng luật ghi trước ở quyết định 34 (632678a), trên
+// bản không chấm câu). Chọn bằng luật ghi trước ở quyết định 34 (c6bc27e), trên
 // 216 bài không dấu câu và 40 văn bản mỗi cỡ, so bản cũ đo cùng lượt:
 //   F2   precision 0,9671 · câu sạch bị gạch 0,87% · đứng hình p90 x0,75–1,09
 //   F2s  precision 0,9586 · câu sạch bị gạch 1,16% · đứng hình p90 x0,63–1,04

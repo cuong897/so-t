@@ -1111,7 +1111,7 @@ Nếu kết quả vẫn ra hình dạng của 28 — recall được tí chút, 
 
 #### Việc phải làm trước: gộp cổng về một bản
 
-Đã làm ở `65a0419`. Luật quyết định từng có **bốn** bản chép tay; đổi ngưỡng
+Đã làm ở `9c31587`. Luật quyết định từng có **bốn** bản chép tay; đổi ngưỡng
 trên bốn bản là cách chắc chắn nhất để phép đo và sản phẩm tách nhau ra. Giờ
 phía Python có `gate.py`, phía JS có `onnxEngine.js`, và `test/gate.test.mjs`
 canh hai bên bằng 1.200 ca — đã kiểm là test **thật sự đổ** khi cố tình làm lệch
@@ -1474,7 +1474,7 @@ thời gian và cắt lần giữ luồng lâu nhất đi 15 lần. Nhưng nó p
 `await` không tự nhả luồng cho ai cả.
 
 Ba chỗ trong repo cùng khai chuyện này và cả ba đều suy từ cú pháp ra hành vi:
-thấy `await` thì kết luận "không giữ luồng". Đã sửa cả ba ở `c57d0ff`.
+thấy `await` thì kết luận "không giữ luồng". Đã sửa cả ba ở `13d385f`.
 
 #### Chuyện thứ hai, lớn hơn: khoảng cách đã có sẵn TRƯỚC khi chia đoạn
 
@@ -1615,7 +1615,7 @@ chỉ canh phần đuôi trả `-1`, không canh từ cuối cùng có trọn v�
 
 ### 33. Chấm theo CÂU thay cho cắt cụt — ngưỡng chấp nhận ghi TRƯỚC khi viết code
 
-Lần thứ ba theo nếp của `9c640df` và `cec4dfe`. Nhưng lần này phải nói thẳng một
+Lần thứ ba theo nếp của `ae3aec0` và `821229d`. Nhưng lần này phải nói thẳng một
 chỗ khác hai lần trước: **phép đo thăm dò đã chạy rồi** (quyết định 32), và chính
 nó chọn ra hướng chấm theo câu. Nên ngưỡng dưới đây không che được việc chọn
 hướng sau khi nhìn số. Thứ nó che được là bước tiếp theo: **bản cài đặt thật**,
@@ -1846,7 +1846,7 @@ bản cũ tới 25% ở cái người dùng cảm thấy, không hơn.
 
 #### Kèm theo trong commit này, không đổi hành vi
 
-`onnxEngine.js` có hai byte NUL thật trong mã nguồn — khoá cache ở `cf6ad59` viết
+`onnxEngine.js` có hai byte NUL thật trong mã nguồn — khoá cache ở `86d9eb4` viết
 `\u0000` nhưng công cụ sửa file ghi thành ký tự NUL. Chạy vẫn đúng, nhưng `grep`
 coi cả file là nhị phân và chỉ in "Binary file matches" — người sau tìm trong
 file sẽ không thấy gì. Đã thay bằng chuỗi thoát; khoá cache vẫn y hệt.
@@ -1862,7 +1862,7 @@ thấy nó — nên sửa bằng một script có chứa chuỗi thoát cũng l�
 an toàn là dựng dấu gạch ngược bằng `chr(92)`.
 
 Quét toàn bộ file văn bản được theo dõi thì lòi thêm một chỗ **có từ commit đầu
-tiên** (`5cf20f0`): `bpe.js` dùng byte NUL thật làm dấu ngăn trong khoá bảng
+tiên** (`5cb2df9`): `bpe.js` dùng byte NUL thật làm dấu ngăn trong khoá bảng
 merge, ở cả chỗ ghi lẫn chỗ đọc. Chạy đúng từ đầu tới giờ, nhưng đó chính là lý
 do `grep` luôn báo "Binary file ./extension/src/engine/bpe.js matches" thay vì
 in dòng khớp. Đã thay; test parity `bpe.js` ↔ PhoBERT Python vẫn xanh.
@@ -1958,7 +1958,7 @@ một issue nào**. Rủi ro thật duy nhất là cache trả nhầm — nên �
 
 #### Và một lỗi bộ nhớ lộ ra trên đường
 
-Cache theo câu (`cf6ad59`) lưu **cả câu** cho mọi phiên bản. Với bài dài không dấu
+Cache theo câu (`86d9eb4`) lưu **cả câu** cho mọi phiên bản. Với bài dài không dấu
 câu, mỗi lần sửa thêm một mục ~1.340 dòng logit, trần 400 mục — cỡ nửa triệu dòng,
 tăng theo số lần sửa. Khi bật cache cửa sổ, câu nhiều cửa sổ **không** được lưu ở
 mức câu nữa; bộ nhớ chặn bởi 256 cửa sổ × ≤ 64 từ.
@@ -1969,7 +1969,7 @@ mức câu nữa; bộ nhớ chặn bởi 256 cửa sổ × ≤ 64 từ.
   trí; 36 phiên bản văn bản qua 5 kiểu sửa (thêm cuối, thay giữa, xoá giữa, chèn
   đầu, quay về bản cũ) — có cache giống hệt chạy lạnh. Làm hỏng khoá cache (chỉ còn
   độ dài + từ đầu) thì test trượt.
-* Code mới với cache **tắt** cho y hệt `ececedb` trên 120 văn bản, cùng số lượt
+* Code mới với cache **tắt** cho y hệt `6dc20b2` trên 120 văn bản, cùng số lượt
   model — phần tái cấu trúc không đụng hành vi đang ship. Kiểm điều này riêng vì
   trang đo dưới đây so W với F2 **của code mới**, nên không nhìn thấy nó.
 
@@ -2274,7 +2274,7 @@ một hai cái giữa các lượt. Tính ra không quá ~5 MB mỗi tab — A/A
 
 #### Kết quả — lượt chính thức, headless: **OFFSCREEN**
 
-`node dev/measure-chrome.mjs`, commit `e424506`, sáu lượt xen kẽ, máy Ryzen 9 8945HS
+`node dev/measure-chrome.mjs`, commit `b44e1d0`, sáu lượt xen kẽ, máy Ryzen 9 8945HS
 (16 luồng, 15,3 GB). Không điều kiện hợp lệ nào trượt:
 
 | | kết quả | |
@@ -2372,8 +2372,8 @@ content script (mỗi tab)            service worker            offscreen docume
 
 #### Cách đo — `dev/measure-chrome.mjs` mở rộng, headless
 
-Ba biến thể, chín lượt xen kẽ: **tắt, A, O** × 3. **A** = bản đang ship, gói ở `a7328ea`
-(`dist/soat-A-a7328ea.zip`). **O** = bản offscreen. Mỗi lượt, A và O chạy y hệt nhau:
+Ba biến thể, chín lượt xen kẽ: **tắt, A, O** × 3. **A** = bản đang ship, gói ở `5ae8e90`
+(`dist/soat-A-5ae8e90.zip`). **O** = bản offscreen. Mỗi lượt, A và O chạy y hệt nhau:
 
 1. Mở t1, đứng 10 s.
 2. **Dán lạnh** ở t1: bấm vào ô rồi dán ngay đoạn thử **có dấu câu**. Với O, đây là lần
@@ -2434,7 +2434,7 @@ task nào trên trang.
 
 #### Cài đặt, và một lỗi chỉ Chrome thật mới thấy
 
-`29eae6c`. Lần chạy đầu trong Chrome headless: offscreen được tạo, Worker chạy, message
+`fe61fc5`. Lần chạy đầu trong Chrome headless: offscreen được tạo, Worker chạy, message
 đi về đủ — và log ghi `LỖI model không nạp được`, không gạch nào. CSP mặc định của trang
 extension MV3 là `script-src 'self'`, **không cho biên dịch WebAssembly**. Content script
 cũ không vướng vì nó không chạy dưới CSP đó. Không crash; tầng luật vẫn gạch; tầng model
@@ -2470,8 +2470,8 @@ A ở cùng các lượt: long task lúc mở trang 149–166 ms, lúc chấm 50
 
 #### Kết quả — lượt chính thức, headless: **qua tám / tám, ship O**
 
-`node dev/measure-chrome.mjs --plan 38`, công cụ ở `4704075`, bản O ở `29eae6c`, A ở
-`a7328ea`. Chín lượt: tắt / A / O × 3. A/A bộ nhớ ba lượt tắt: **2,3 MB/tab** (cần ≤ 10).
+`node dev/measure-chrome.mjs --plan 38`, công cụ ở `2c1c36a`, bản O ở `fe61fc5`, A ở
+`5ae8e90`. Chín lượt: tắt / A / O × 3. A/A bộ nhớ ba lượt tắt: **2,3 MB/tab** (cần ≤ 10).
 
 | # | điều kiện | O | A | cần |
 |---|---|---|---|---|
@@ -2711,7 +2711,7 @@ sửa lại cho khớp sự thật thay vì để một test xanh nói điều s
 ### 40. Xoá blob 311MB khỏi lịch sử git — và ba cái bẫy của việc viết lại lịch sử
 
 `.git` nặng **627 MB** vì hai phiên bản của `extension/models/soat.fp32.onnx.data` (296,5 MB
-mỗi bản, thêm ở `3dd35c3`, đổi ở `ac757e7`, gỡ khỏi HEAD ở `fc332e5`). GitHub từ chối file
+mỗi bản, thêm ở `16865d6`, đổi ở `40c8111`, gỡ khỏi HEAD ở `c06a09d`). GitHub từ chối file
 trên 100 MB, mà bước 2 của `docs/store/nop-store.md` cần repo trên GitHub để có URL chính
 sách riêng tư. Tức một file chết chặn việc nộp store.
 
@@ -2727,7 +2727,7 @@ rồi bỏ `refs/original`, `reflog expire`, `gc --prune=now`.
 | blob trên 20 MB | 2 | **0** |
 | `npm run test:all` | xanh | xanh (80 test JS + 2 bộ Python) |
 
-Không dùng `--prune-empty`: commit `fc332e5` ("Blob 311MB vẫn nằm trong HEAD — commit trước
+Không dùng `--prune-empty`: commit `c06a09d` ("Blob 311MB vẫn nằm trong HEAD — commit trước
 chỉ sửa .gitignore") chỉ gỡ file, nên nó sẽ rỗng và biến mất. Thông điệp đó là bằng chứng
 của một lần vấp; giữ commit rỗng còn hơn mất nó.
 
@@ -2747,7 +2747,7 @@ Lưới an toàn thật là một **bản chép nguyên thư mục `.git`** ra n
 #### Bẫy 2 — lịch sử là bằng chứng, mà viết lại lịch sử đổi hết hash
 
 Đây là chỗ đắt nhất, và suýt bỏ sót. Repo này **trích hash commit làm bằng chứng**: "ngưỡng
-ghi ở `4f79e07`, trước khi viết một dòng code". Rewrite đổi hash của mọi commit từ `3dd35c3`
+ghi ở `9dd0d51`, trước khi viết một dòng code". Rewrite đổi hash của mọi commit từ `16865d6`
 trở đi — tức mọi trích dẫn ấy thành sai, và **chính cơ chế chứng minh tính trung thực của dự
 án bị hỏng**, một cách im lặng.
 
