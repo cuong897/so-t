@@ -4,6 +4,34 @@ Làm theo thứ tự. Bước 0 là bước hay bị bỏ nhất và cũng là b
 
 ---
 
+## Bước −1 — Ba việc phải xong TRƯỚC khi mở devconsole
+
+Không có việc nào trong đây làm ở devconsole được, và thiếu bất kỳ cái nào thì
+bước sau tắc.
+
+| # | việc | ai làm | tình trạng |
+|---|---|---|---|
+| a | **Gỡ chế độ đo** khỏi `src/content/index.js` rồi đóng gói lại | Claude | xem ghi chú dưới |
+| b | **Đẩy repo lên GitHub công khai** — bước 2 cần một URL chính sách riêng tư mà người duyệt mở được khi chưa đăng nhập | chủ repo (cần tài khoản GitHub) | `.git` đã gọn còn 3 MB sau quyết định 40, đẩy được |
+| c | **Tài khoản nhà phát triển + 5 USD** | chủ repo | bước 1 |
+
+**Về (a) — chế độ đo.** `src/content/index.js` ghi `data-soat-*` lên thẻ `<html>`
+của trang khi bật cờ `soatDebug`. Cờ mặc định tắt và chỉ bật được từ Console của
+service worker, nên người dùng thường không bao giờ chạm tới. Nhưng khi bật thì
+**trang web đọc được** — cả việc người dùng có cài Soát lẫn độ dài văn bản họ vừa
+gõ. Đó là thứ không nên tồn tại trong bản phát hành.
+
+Hai cách, chọn một:
+
+* **Xoá hẳn** — đơn giản nhất. Cái giá: `dev/measure-chrome.mjs` và
+  `dev/lexical-check.mjs` đọc chính các dấu đó, nên mất khả năng đo thời gian
+  từng khâu và mã phiên offscreen; muốn đo lại phải revert tạm.
+* **Dời vào trong extension** — content script gửi số đo cho service worker qua
+  message nội bộ, không đụng DOM của trang. Trang mất đường đọc hoàn toàn, công cụ
+  đo vẫn chạy (chúng đã gắn vào service worker qua CDP sẵn để bật cờ).
+
+---
+
 ## Bước 0 — Thử bản 1.0.0 trên Chrome thật (15 phút)
 
 Bản 1.0.0 vừa đổi `manifest.json` (version, `minimum_chrome_version`,
@@ -37,12 +65,18 @@ Rồi thử thật:
 
 **Kiểm tra tầng model có chạy không** (quan trọng — nó hỏng im lặng):
 
-- [ ] Mở DevTools **của chính trang web đang gõ** (F12 → Console). Tầng model
-      chạy trong content script nên log của nó ra console của TRANG, không phải
-      console của service worker.
-- [ ] Nếu thấy `[soát] không nạp được model, chỉ dùng tầng luật` thì model
-      KHÔNG chạy — kiểm tra `extension/models/soat.int8.onnx` và
-      `extension/vendor/` có đủ file không
+- [ ] Từ quyết định 38, tầng model **không chạy trong trang nữa**. Nó chạy trong
+      offscreen document, nên log của nó KHÔNG ra console của trang và cũng không
+      ra console của service worker. Xem nó ở `chrome://extensions` → Soát → mục
+      **Inspect views** → dòng `offscreen.html`.
+- [ ] Nếu thấy `[soát] không nạp được model, chỉ dùng tầng luật` ở đó thì model
+      KHÔNG chạy — kiểm tra `extension/models/soat.int8.onnx`, `extension/vendor/`,
+      và khoá `content_security_policy.extension_pages` trong manifest có
+      `'wasm-unsafe-eval'` không (thiếu nó là wasm không biên dịch được và tầng
+      model chết im lặng — quyết định 38).
+- [ ] Không thấy dòng `offscreen.html` nào trong Inspect views nghĩa là offscreen
+      chưa được dựng: nó chỉ dựng khi bạn focus vào một ô soạn thảo đủ điều kiện
+      lần đầu.
 - [ ] **Tải lại trang và đợi khoảng 5 giây** trước khi gõ. Model nặng 47 MB
       cộng 14 MB wasm nên mất vài giây mới sẵn sàng; gõ ngay lúc trang vừa mở
       thì tầng model chưa kịp sống.
@@ -101,7 +135,8 @@ Cách gọn hơn nếu muốn có trang đẹp — GitHub Pages:
 ## Bước 3 — Tải gói lên
 
 1. Trong devconsole bấm **Items** → **Add new item**
-2. Kéo thả `dist/soat-1.0.0.zip` vào
+2. Kéo thả `dist/soat-1.0.0.zip` vào (40,0 MB sau khi cắt vocab — quyết định 41;
+   giới hạn của store là 2 GB nên thoải mái)
 3. Đợi xử lý. Nếu báo lỗi manifest thì sửa rồi chạy lại
    `python ml/package_extension.py` và tải lại
 
@@ -204,7 +239,7 @@ Chuyện xảy ra tiếp:
 
 | Lý do | Cách né |
 |---|---|
-| Quyền xin rộng hơn mức cần | Đã né sẵn: không xin `host_permissions`, chỉ `storage` + `activeTab` |
+| Quyền xin rộng hơn mức cần | Đã né sẵn: không xin `host_permissions`; chỉ `storage`, `activeTab`, `offscreen` — và `offscreen` có giải trình bằng số đo (quyết định 37, 38) |
 | Khai báo dữ liệu không khớp hành vi thật | Tick đúng như bước 5. Khai "không thu thập" mà code có gửi đi là bị gỡ vĩnh viễn |
 | Mô tả nhồi từ khoá | Mô tả trong `listing.md` viết bằng câu thường, không nhồi |
 | Ảnh chụp không phản ánh sản phẩm thật | Đã né: ảnh chụp từ engine thật, không phải mockup |
