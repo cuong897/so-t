@@ -292,7 +292,11 @@ ml/                 vi.py, noise.py, mine_errors.py, build_corpus.py, dataset.py
   test_evaluate.py, test_encoding.py
 dev/                playground.html, onnx-test.html, shots.html (ảnh store)
   measure-chrome.mjs    quyết định 37 — lái chrome.exe thật (headless) qua CDP pipe,
-                    nạp gói store, đo nạp/đứng hình/RAM mỗi tab/dán, tự chấm
+                    nạp gói store, đo nạp/đứng hình/RAM mỗi tab/dán, tự chấm.
+                    `--plan 38` so hai gói: mặc định `--a dist/soat-A-31a821e.zip` đã
+                    XOÁ để lấy lại chỗ. Cần so với một bản cũ thì dựng lại: checkout
+                    commit ấy, chép model tương ứng vào extension/models, đóng gói ra
+                    một tên khác, rồi truyền `--a <đường dẫn>`.
   lexical-check.mjs     quyết định 38 — gói store thật trên playground.lexical.dev:
                     dán kiểu Lexical, kiểm gạch `cứ` sống qua lần dựng lại DOM
   bench-cachecap.mjs    quyết định 39 — trần cache theo số dòng, session giả, chạy
