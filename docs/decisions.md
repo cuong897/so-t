@@ -2732,7 +2732,7 @@ chỉ sửa .gitignore") chỉ gỡ file, nên nó sẽ rỗng và biến mất.
 của một lần vấp; giữ commit rỗng còn hơn mất nó.
 
 File 311 MB vẫn nằm nguyên trên đĩa, chỉ là không được theo dõi (`.gitignore` đã chặn từ
-`a8fa30c` cũ) — bản fp32 vẫn dùng để xuất lại ONNX được.
+`c06a09d`) — bản fp32 vẫn dùng để xuất lại ONNX được.
 
 #### Bẫy 1 — tag KHÔNG phải lưới an toàn
 
