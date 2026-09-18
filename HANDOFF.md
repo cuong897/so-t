@@ -129,7 +129,7 @@ chỉ tốn vài phút:
 
 | còn thiếu | vì sao đáng làm |
 |---|---|
-| **Shift+Esc** — Task Manager của Chrome | Con số "một bản model cho cả trình duyệt" mới chỉ đo bằng private bytes qua CDP. Nhìn tận mắt một dòng ~300 MB thay vì mỗi tab một dòng là bằng chứng rẻ nhất, và là ảnh chụp đáng đưa vào blog/CV. |
+| **Shift+Esc** — Task Manager của Chrome | Nhìn tận mắt: **hai** dòng của Soát (service worker ~20 MB, trang offscreen ~310 MB), không phải mỗi tab một dòng ~300 MB. Đợi một phút sau khi gõ rồi hãy đọc — phút đầu nó hiện ~390 MB, vì bộ đệm 78 MB tải model chưa được thu hồi (quyết định 38). Ảnh chụp đáng đưa vào blog/CV. |
 | **Bộ gõ tiếng Việt** (Unikey/EVKey) | Chưa thử lần nào, ở bất kỳ bản nào. Bộ gõ sửa chữ ngay trong lúc gõ; nó và `MutationObserver` có thể đá nhau. Người dùng mục tiêu ai cũng dùng bộ gõ. |
 
 Cách kiểm còn lại (dán, nhiều tab, để yên lâu) giữ ở đây cho lần sửa tầng model sau:

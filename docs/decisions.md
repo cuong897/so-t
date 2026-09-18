@@ -2556,6 +2556,36 @@ Ba điều rút ra, và điều thứ ba mới là điều đắt:
 4 lượt, 19 câu trúng cache · TỔNG 611 ms`, gạch đúng `cứ`. Cache còn ấm nghĩa là **vẫn
 đúng offscreen cũ** — Chrome không đóng nó sau khi service worker chết từ lâu.
 
+#### Dựng lại "Task Manager của Chrome" bằng số — một tiến trình, và nó phình rồi xẹp
+
+Chủ repo bảo kiểm lại chỗ này, và đúng là có một câu tôi nói sai. Đo lại, headless, 3 tab
+khác site, dán ở cả ba (cả ba đều gạch đúng `cứ`):
+
+```
+   396 MB  renderer CỦA EXTENSION   <- offscreen + Worker, DUY NHẤT một cái
+   240 MB  gpu-process              <- tiến trình 296 MB mà lượt đo trên Lexical chưa tách được
+    66 MB  browser
+ 15-22 MB  mỗi renderer tab web     <- tab không giữ model nữa
+```
+
+Và nó **phình rồi xẹp**, không ép GC gì cả:
+
+| lúc nào | tiến trình offscreen |
+|---|---|
+| ngay sau khi nạp model và dán ở 3 tab | **396 MB** |
+| để yên 60 giây | **308 MB** |
+| để yên 120 giây | 308 MB — đứng yên |
+
+Bộ đệm 78 MB tải model tự được V8 thu hồi trong vòng một phút. Nên **305 MB của điều kiện
+3 là con số đúng cho trạng thái ổn định** — ép GC chỉ làm sớm điều sẽ tự xảy ra. Nhưng câu
+tôi nói với chủ repo, "Task Manager sẽ hiện một dòng ~300 MB", **sai ở phút đầu**: nó hiện
+~390 MB rồi mới xuống. Người dùng mở Task Manager đúng lúc vừa gõ chữ đầu tiên sẽ thấy con
+số cao hơn mọi con số trong tài liệu này.
+
+Hai chi tiết nữa cho lần nhìn tận mắt: Chrome liệt kê **hai** dòng của Soát (service worker
+~20 MB và trang offscreen ~310 MB), và những renderer extension 19–26 MB khác trong danh
+sách là extension có sẵn của Chrome, không phải Soát.
+
 #### Facebook thật — chủ repo xác nhận (18/09/2026)
 
 Bản offscreen cài vào Chrome của chủ repo, dán đoạn thử vào ô "Tạo bài viết":
