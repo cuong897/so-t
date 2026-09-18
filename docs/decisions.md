@@ -2775,3 +2775,94 @@ việc dọn dẹp sau đó.
 
 `dev/xoa-blob.sh` giữ lại trong repo: nó ghi rõ đã kiểm những gì, và lần sau có file nặng
 lọt vào lịch sử thì sửa đường dẫn là chạy được.
+
+---
+
+### 41. Cắt vocab — KHÔNG train lại, và ngưỡng ≥20 của bàn giao là sai hướng
+
+Việc số 6. Bàn giao viết: *"chỉ 23.669/64.001 token PhoBERT xuất hiện; giữ token gặp ≥20 lần
+phủ 99,69% số lượt, model về ~40MB. **Nguy hiểm:** `bpe.js` phải dùng đúng id mới"* — và nói
+việc này **phải train lại**.
+
+#### Hai chỗ bàn giao sai, đếm trước khi thiết kế
+
+**Một: không phải train lại.** Vocab chỉ đi vào model qua đúng một phép `Gather` trên ma
+trận embedding. Đo trên file đang ship: **46,9 MB trên tổng 74,2 MB initializer** là
+`word_embeddings.weight_quantized [64001, 768]`. Cắt dòng và đánh số lại id là **phẫu
+thuật**, không phải huấn luyện. Đầu ra là 23 nhãn, không dính gì tới vocab.
+
+**Hai: ngưỡng ≥20 mua 7,7 MB bằng một cái giá không ai đo.** "Phủ 99,69% số lượt" đếm theo
+**lượt xuất hiện**, mà lượt thì bị thống trị bởi vài trăm token phổ biến. Thứ người dùng
+cảm nhận là **câu của họ có dính token bị cắt hay không**. Đếm trên tập train của v4
+(11,9 triệu vị trí, 400.000 câu) và đo cái giá trên tập dev — văn bản model chưa hề train:
+
+| ngưỡng | token giữ | phủ lượt | model ước tính | **câu dính `<unk>` (văn bản chưa thấy)** |
+|---|---|---|---|---|
+| **≥ 1** | **23.132** | 100% | **~44 MB** | **0,43%** |
+| ≥ 2 | 21.992 | 99,990% | 43,4 MB | 0,83% |
+| ≥ 5 | 19.053 | 99,919% | 41,3 MB | 2,95% |
+| ≥ 10 | 16.087 | 99,749% | 39,1 MB | 6,22% |
+| ≥ 20 | 12.532 | 99,334% | 36,5 MB | **12,78%** |
+| ≥ 100 | 6.013 | 96,789% | 31,7 MB | 41,52% |
+
+Từ ≥1 xuống ≥20 tiết kiệm thêm **7,7 MB** và đổi lấy **gấp 30 lần** số câu dính `<unk>`.
+Chọn **≥ 1**: giữ mọi token từng xuất hiện trong tập train của v4, bỏ 40.869 token chưa bao
+giờ xuất hiện.
+
+**Rủi ro phải nói thẳng:** token không xuất hiện trong tập train **không** có nghĩa là vô
+dụng lúc chạy — embedding của nó do PhoBERT huấn luyện trước, và encoder vẫn đọc được nó
+trên văn bản mới. Thay nó bằng `<unk>` là mất phần đó. 0,43% số câu dev dính chuyện này;
+điều kiện 1–3 dưới đây đo hậu quả thật.
+
+Chọn ngưỡng bằng **tập train**, không bằng dev hay test — chọn theo tập đánh giá là rò rỉ.
+
+#### Cách làm — đi qua đúng pipeline đang có
+
+PhoBERT đánh số id = 4 + thứ tự dòng trong `vocab.txt` (fairseq dict), bốn token đặc biệt
+giữ id 0–3, `<mask>` cuối cùng. Nên:
+
+1. `ml/trim_vocab.py`: đếm token từ `data_ft_dgir/train.tok96.npz`, ghi `vocab.txt` mới (lọc
+   dòng, giữ nguyên thứ tự) + `bpe.codes` nguyên vẹn → thư mục tokenizer mới; cắt đúng thứ
+   tự ấy các dòng của `word_embeddings.weight` trong checkpoint, `config.vocab_size` mới.
+2. `export_onnx.py` trên checkpoint mới → fp32 + int8 (vẫn `per_channel=True`).
+3. `export_tokenizer.py --model <thư mục mới>` → `tokenizer.json` mới cho `bpe.js`; nó đọc
+   thẳng `tok.get_vocab()` nên id không thể lệch giữa hai phía.
+
+`bpe.js` không đổi một dòng: nó tra id từ `tokenizer.json`, và token nào không còn trong
+vocab sẽ rơi về `<unk>` đúng như phía Python.
+
+#### Điều kiện
+
+Mốc so sánh là bản đang ship (`student768_v4` INT8, ngưỡng sản phẩm 0,95 / biên 0,25 / phụ
+âm 0,90): P **0,9709** · R **0,7457**, báo oan **1,35% / 1,05%**, recall phụ âm **48,2%**,
+riêng d/gi/r **33,9%**, model **78,5 MB**, gói nén **58,6 MB**, bộ nhớ một lần trong Chrome
+**305,5 MB**.
+
+| # | điều kiện | cần |
+|---|---|---|
+| 1 | **precision** VSEC giữ kín | ≥ **0,9679** (giảm ≤ 0,003) |
+| 2 | **recall** VSEC giữ kín | ≥ **0,7407** (giảm ≤ 0,005) |
+| 3 | **báo động giả** trên văn bản đúng | ≤ **1,45%** và ≤ **1,15%** |
+| 4 | **recall phụ âm** / riêng **d/gi/r** | ≥ **47,2%** / ≥ **32,9%** |
+| 5 | **kích thước**: model int8 · gói nén | ≤ **50 MB** · ≤ **45 MB** |
+| 6 | **bộ nhớ một lần trong Chrome thật** (điều kiện 3 của quyết định 38, cùng công cụ) | ≤ **275 MB** |
+| 7 | **parity và đường thật**: `npm run test:all` xanh với fixture sinh lại; `dev/lexical-check.mjs` gạch đúng `cứ` | tất cả |
+
+#### Luật
+
+* Trượt 1, 2, 3 hoặc 4 → **không ship**, giữ vocab đầy đủ. Đây là đánh đổi chất lượng lấy
+  dung lượng, mà nguyên tắc của dự án là precision trước.
+* Trượt 5 hoặc 6 → không ship: thay đổi này chỉ tồn tại để lấy lại bộ nhớ; không lấy được
+  thì nó chỉ là rủi ro không công.
+* Trượt 7 → **lỗi cài đặt** (gần như chắc là id lệch): sửa, đo lại toàn bộ.
+
+#### Ghi trước để không tự lừa mình
+
+* **Dự đoán:** model 78,5 → **~44 MB**, gói nén ~35 MB, bộ nhớ một lần 305 → **~265 MB**.
+  Chất lượng gần như không đổi, nhưng **không phải không đổi hoàn toàn**: lượng tử hoá chạy
+  lại trên ma trận nhỏ hơn nên hệ số tỷ lệ đổi, và 0,43% số câu mất một token. Nếu P hay R
+  nhích lên thì đó là nhiễu lượng tử hoá, không phải "cắt vocab làm model tốt hơn".
+* **Điều kiện 7 là điều kiện đáng lo nhất**, đúng như bàn giao cảnh báo: sai id thì model
+  vẫn chạy, không lỗi nào bật ra, chỉ đọc nhầm embedding và cho kết quả vô nghĩa. Nó phải
+  được bắt bởi parity fixture, không phải bởi cảm giác "kết quả trông vẫn ổn".
+* Không đụng: ngưỡng, bộ nhãn, chấm theo câu, F2, trần cache, kiến trúc offscreen.
