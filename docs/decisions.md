@@ -2603,3 +2603,63 @@ chưa được thử lần nào, ở bất kỳ bản nào.
 **`dev/lexical-check.mjs` không thay được việc thử trên Facebook thật**: trang nhẹ, không
 React của Facebook, không bộ gõ tiếng Việt, và extension nạp qua CDP chứ không cài như
 người dùng.
+
+---
+
+### 39. Cache theo câu chặn nhầm ĐƠN VỊ — ngưỡng ghi TRƯỚC
+
+Quyết định 35 phát hiện ra nó rồi để nguyên vì cache cửa sổ không ship: `_cache` giữ logit
+theo câu, trần là **400 MỤC**, mà một mục có thể là một từ hoặc cả một bài 6.000 ký tự
+không dấu câu (~1.340 dòng logit). Đo được: 60 lần sửa một bài 2.000 ký tự không dấu câu
+giữ **26.460 dòng**; trần lý thuyết 400 × 1.340 ≈ **536.000 dòng**.
+
+Quyết định 38 làm nó nặng hơn theo hai hướng:
+
+* cache giờ **dùng chung cả trình duyệt** và sống trong offscreen — nó không còn chết theo
+  tab nữa, mà tích lại suốt phiên làm việc;
+* bộ nhớ của offscreen giờ là con số người dùng nhìn thấy ở Task Manager, một dòng duy nhất.
+
+Đây là **lần thứ hai** dự án chặn nhầm đơn vị ở đúng chỗ này. Lần trước (quyết định 35)
+ngưỡng ghi trước bắt được; lần này sửa hẳn.
+
+#### Sửa
+
+`OnnxEngine` thêm `maxCacheRows`, mặc định **16.384 dòng** — cùng con số làm trần cho cache
+cửa sổ ở quyết định 35. `_cachePut` đuổi LRU cho tới khi cả số mục lẫn **số dòng** nằm dưới
+trần. Không đụng ngưỡng, không đụng chấm theo câu, không đụng F2, không bật cache cửa sổ.
+
+#### Cách đo — node, session giả, không cần model
+
+`dev/bench-cachecap.mjs`, viết cùng đoạn này. Session giả của `test/windowcache.test.mjs`
+đã đủ: thứ đang đo là **kế toán cache**, không phải chất lượng model. Bốn kịch bản — 2.000
+và 6.000 ký tự, có và không dấu câu — mỗi kịch bản 60 lần sửa liên tiếp xoay vòng đủ **năm
+kiểu**: thêm cuối, thay một từ, đổi dấu một từ, **xoá một từ**, **chèn một từ** (hai kiểu
+cuối là hai kiểu quyết định 35 đã bỏ sót lúc thiết kế).
+
+#### Điều kiện
+
+| # | điều kiện | cần |
+|---|---|---|
+| 1 | **đồng nhất**: mọi issue, kể cả confidence, giống hệt bản không chặn, cả bốn kịch bản × 60 phiên bản | **240 / 240** |
+| 2 | **trần**: số dòng logit cao nhất giữ trong cache, mọi kịch bản | ≤ **16.384** |
+| 3 | **chi phí**: tổng số lượt model của bản chặn / bản không chặn, từng kịch bản | ≤ **1,10** |
+| 4 | bộ nhớ thật mỗi dòng (đo bằng `process.memoryUsage`), để biết 16.384 dòng là bao nhiêu MB | ghi lại, không gate |
+
+#### Luật
+
+* Điều kiện 1 lệch dù một issue → **lỗi cài đặt**: sửa, đo lại toàn bộ.
+* 2 hoặc 3 trượt → không ship, ghi số, nghĩ lại trần.
+* Qua hết → `maxCacheRows = 16.384` thành mặc định.
+
+#### Ghi trước để không tự lừa mình
+
+* **Điều kiện 3 là điều kiện đáng lo duy nhất**, và chỉ đáng lo ở bài dài không dấu câu:
+  ở đó một mục là cả bài, nên chặn theo dòng đuổi mục nhanh hơn hẳn chặn theo mục. Dự
+  đoán: vẫn qua, vì sau mỗi lần sửa thì văn bản mới **không** nằm trong cache ở cả hai bản
+  (cả bài là một "câu", đổi một chữ là khoá đổi) — cache theo câu vốn đã gần như vô dụng ở
+  ca đó. Nếu dự đoán này sai thì tỷ số sẽ nhảy vọt chứ không nhích, và đó là tín hiệu trần
+  16.384 đặt quá thấp.
+* **Điều kiện 1 gần như chắc qua** — đuổi cache chỉ được phép làm chậm, không được đổi kết
+  quả. Nó có mặt vì đó đúng là thứ hỏng thì im lặng.
+* Bài 6.000 ký tự **có dấu câu** sẽ không chạm trần (mỗi câu ~20 dòng), nên điều kiện 2 ở
+  kịch bản đó chỉ để đối chứng.
