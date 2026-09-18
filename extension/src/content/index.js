@@ -15,28 +15,25 @@
   window.__soatLoaded = true;
 
   // -------------------------------------------------------------------------
-  // CHẾ ĐỘ ĐO — TẮT MẶC ĐỊNH. Chỉ bật khi chrome.storage.local có soatDebug: true.
+  // CHẾ ĐỘ ĐO — TẮT MẶC ĐỊNH, và KHÔNG ĐỂ LẠI GÌ TRÊN TRANG.
   //
-  // Nó ghi data-soat-* lên thẻ <html> của trang: trang nào cũng đọc được, tức
-  // phát hiện được người dùng cài Soát và thấy độ dài văn bản họ gõ. Trái lời
-  // hứa riêng tư — nên KHÔNG BAO GIỜ được bật cho người dùng thật, và phải gỡ
-  // hẳn trước khi nộp store. Giữ lại vì đây là công cụ duy nhất đo được thời
-  // gian thật trong Chrome thật: Console của content script bị lọc theo ngữ
-  // cảnh (đã mất một lượt thử vì thế), còn DOM thì mọi ngữ cảnh đều đọc được.
+  // Bản trước ghi `data-soat-*` lên thẻ <html>: trang nào cũng đọc được, tức dò ra
+  // được người dùng có cài Soát và thấy cả độ dài văn bản họ vừa gõ. Vì thế bản đó
+  // phải gỡ trước khi nộp store — mà gỡ xong thì hết đo được trong Chrome thật.
   //
-  // Bật: chrome://extensions -> Soát -> "service worker" -> Console:
-  //        chrome.storage.local.set({ soatDebug: true })
-  //      rồi F5 trang cần đo. Đọc: Console của trang, ngữ cảnh top:
-  //        ({ ...document.documentElement.dataset })
+  // Giờ số đo đi ngược vào trong extension: content script gửi cho service worker,
+  // service worker giữ trong `chrome.storage.session` (bộ nhớ, không ghi đĩa, trang
+  // web không với tới). Không còn gì để gỡ trước khi nộp, và vẫn đo được.
+  //
+  // Bật:  chrome://extensions -> Soát -> "service worker" -> Console:
+  //         chrome.storage.local.set({ soatDebug: true })
+  //       rồi F5 trang cần đo.
+  // Đọc:  cũng ở Console đó:
+  //         chrome.storage.session.get('soatDo').then(x => console.log(x.soatDo))
+  // Tắt:  chrome.storage.local.remove('soatDebug')
   // -------------------------------------------------------------------------
   let debug = false;
-  let debugKnown = false;     // đã đọc xong cờ từ storage chưa
-  const pendingMarks = [];
-  const mark = (k, v) => {
-    if (!debug) { if (!debugKnown) pendingMarks.push([k, v]); return; }
-    try { document.documentElement.dataset[k] = v; } catch {}
-  };
-  mark('soatBuild', 'do-4-offscreen');
+  const BUILD = 'do-5-trong-extension';
 
   const base = chrome.runtime.getURL('');
   const [engine, targets, hl, replacer, tip] = await Promise.all([
@@ -101,12 +98,10 @@
     return;
   }
   enabled = settings.enabled !== false;
-  // CHẾ ĐỘ ĐO: chỉ bật khi đặt cờ tay. Dấu ghi trước lúc đọc được settings thì
-  // xả ra bây giờ; không bật thì vứt, không để lại gì trên trang.
+  // CHẾ ĐỘ ĐO: chỉ bật khi đặt cờ tay, và mọi số đo đi vào trong extension chứ không
+  // ra trang. Lượt chấm nào xảy ra TRƯỚC khi đọc xong cờ thì không được ghi — chấp nhận
+  // mất một dòng đầu, đổi lấy việc không phải giữ hàng đợi chờ cờ.
   debug = settings.soatDebug === true;
-  debugKnown = true;
-  if (debug) for (const [k, v] of pendingMarks.splice(0)) mark(k, v);
-  else pendingMarks.length = 0;
   ignored = new Set(settings.ignored || []);
   if ((settings.disabledHosts || []).includes(location.hostname)) enabled = false;
 
@@ -132,6 +127,15 @@
     } catch (err) {
       dead = /context invalidated/i.test(err?.message || '');
     }
+  }
+
+  /** Gửi một dòng đo về service worker. Im lặng tuyệt đối khi cờ tắt. */
+  function ghiDo(line) {
+    if (!debug || dead) return;
+    try {
+      const p = chrome.runtime.sendMessage({ type: 'soat:do', line: `[${BUILD}] ${line}` });
+      if (p && p.catch) p.catch(() => {});
+    } catch { /* context chết — đo là việc phụ, không được làm hỏng việc soát */ }
   }
 
   // -------------------------------------------------------------------------
@@ -190,10 +194,10 @@
   function run(el) {
     if (!enabled || !targets.isEligible(el)) return;
     const s = sessionFor(el);
-    const tRun = performance.now();   // ĐO TẠM THỜI
-    // ĐO TẠM THỜI — lấy đợt input NGAY, kể cả khi lượt này thoát sớm (ô ngắn, model
-    // chưa nạp). Trước đây chỉ timing.start() mới xoá đợt, nên bấm vào ô soạn bài rồi
-    // vài giây sau mới dán thì "TỔNG từ input đầu" tính từ cú bấm (quyết định 37).
+    const tRun = performance.now();
+    // Lấy đợt input NGAY, kể cả khi lượt này thoát sớm (ô ngắn, model chưa nạp). Trước
+    // đây chỉ timing.start() mới xoá đợt, nên bấm vào ô soạn bài rồi vài giây sau mới
+    // dán thì "TỔNG từ input đầu" tính từ cú bấm (quyết định 37).
     const burst = timing.take(s);
 
     let text, map = null;
@@ -225,9 +229,7 @@
     // đi. Offscreen làm việc đó: lượt mới của cùng ô (cùng s.id, seq lớn hơn) làm lượt
     // cũ dừng ở lần nhả luồng kế tiếp, hoặc không chạy nếu còn xếp hàng.
     const token = ++s.seq;
-    // --- ĐO TẠM THỜI, GỠ TRƯỚC KHI NỘP STORE ----------------------------------
     const d = timing.start(burst, s, text, tRun);
-    // ---------------------------------------------------------------------------
     modelCheck(s, text).then((res) => {
       timing.remote(res);
       if (!res.ok) { timing.end(d, res.aborted ? 'BỎ — offscreen huỷ lượt cũ' : `LỖI ${res.error}`, 0); return; }
@@ -254,10 +256,9 @@
   }
 
   // -------------------------------------------------------------------------
-  // ĐO TẠM THỜI — chủ repo thấy đề xuất của model "mất một lúc mới hiện" trên
-  // Facebook, kể cả khi model đã nạp xong, trong khi localhost chấm cùng đoạn
-  // mất ~300ms. Mỗi lượt model in MỘT dòng vào Console của trang, lọc "soát:đo".
-  // GỠ TOÀN BỘ khối này và các dòng timing.* trước khi nộp store.
+  // ĐO — mỗi lượt chấm một dòng, gửi về service worker khi cờ soatDebug bật.
+  // Khi cờ tắt thì khối này chỉ cộng vài con số trong bộ nhớ rồi vứt: không message,
+  // không DOM, không console. Không phải gỡ gì trước khi nộp store.
   // -------------------------------------------------------------------------
   const timing = {
     inFlight: 0,
@@ -281,7 +282,6 @@
     // mã phiên đổi nghĩa là offscreen đã bị tạo lại và model nạp lại (quyết định 38).
     remote(res) {
       this.last = res;
-      if (res && res.instance) mark('soatModel', `offscreen ${res.instance} · nap ${res.loadMs ?? '?'}ms`);
     },
     end(d, outcome, n) {
       this.inFlight--;
@@ -293,11 +293,8 @@
         + ` · ${this.last?.runs ?? 0} lượt model, ${this.last?.cacheHits ?? 0} câu trúng cache`
         + ` · ${n} đề xuất · TỔNG từ input đầu ${f(now - d.b.first)}`
         + (d.overlap ? ` · CHỒNG ${d.overlap} lượt đang chạy` : '');
-      if (!debug) return;
-      console.info(`[soát:đo] ${line}`);
-      // 8 dòng gần nhất, nối bằng " || " — đọc bằng dataset.soatLog từ ngữ cảnh top
-      this.log = [...(this.log || []), line].slice(-8);
-      mark('soatLog', this.log.join(' || '));
+      ghiDo(line + (this.last?.instance
+        ? ` · offscreen ${this.last.instance} nạp ${this.last.loadMs ?? '?'}ms` : ''));
     },
   };
 

@@ -83,7 +83,35 @@ async function forwardCheck(msg, sender) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Vòng đệm số đo (chế độ đo, tắt mặc định).
+//
+// Nằm ở `chrome.storage.session`: bộ nhớ, không ghi xuống đĩa, sống qua những lần
+// service worker bị tắt vì rảnh, và TRANG WEB KHÔNG VỚI TỚI. Bản trước ghi lên
+// `data-soat-*` của thẻ <html> nên trang nào cũng đọc được — vừa lộ việc người dùng
+// có cài Soát, vừa lộ độ dài văn bản họ gõ.
+//
+// Đọc: Console của service worker ->
+//   chrome.storage.session.get('soatDo').then(x => console.log(x.soatDo))
+// ---------------------------------------------------------------------------
+
+const DO_TOI_DA = 40;
+
+async function ghiDo(line) {
+  const { soatDo = [] } = await chrome.storage.session.get('soatDo');
+  soatDo.push(`${new Date().toISOString().slice(11, 23)} ${line}`);
+  await chrome.storage.session.set({ soatDo: soatDo.slice(-DO_TOI_DA) });
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg?.type === 'soat:do') {
+    // Chỉ nhận khi cờ đang bật — content script cũ trong tab chưa tải lại có thể vẫn
+    // gửi sau khi người dùng đã tắt cờ.
+    chrome.storage.local.get('soatDebug').then(({ soatDebug }) => {
+      if (soatDebug === true) return ghiDo(String(msg.line ?? '').slice(0, 500));
+    }).catch(() => {});
+    return false;
+  }
   if (msg?.type === 'soat:warm') {
     ensureOffscreen().then(() => sendResponse({ ok: true }), (err) => sendResponse({ ok: false, error: err.message }));
     return true;

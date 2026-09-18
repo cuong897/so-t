@@ -11,24 +11,14 @@ bước sau tắc.
 
 | # | việc | ai làm | tình trạng |
 |---|---|---|---|
-| a | **Gỡ chế độ đo** khỏi `src/content/index.js` rồi đóng gói lại | việc code, không cần tài khoản gì | xem ghi chú dưới |
-| b | **Đẩy repo lên GitHub công khai** — bước 2 cần một URL chính sách riêng tư mà người duyệt mở được khi chưa đăng nhập | chủ repo (cần tài khoản GitHub) | `.git` đã gọn còn 3 MB sau quyết định 40, đẩy được |
+| a | ~~Gỡ chế độ đo khỏi `src/content/index.js`~~ | — | **không cần nữa** (quyết định 42) |
+| b | **Đẩy repo lên GitHub công khai** — bước 2 cần một URL chính sách riêng tư mà người duyệt mở được khi chưa đăng nhập | chủ repo | **xong** |
 | c | **Tài khoản nhà phát triển + 5 USD** | chủ repo | bước 1 |
 
-**Về (a) — chế độ đo.** `src/content/index.js` ghi `data-soat-*` lên thẻ `<html>`
-của trang khi bật cờ `soatDebug`. Cờ mặc định tắt và chỉ bật được từ Console của
-service worker, nên người dùng thường không bao giờ chạm tới. Nhưng khi bật thì
-**trang web đọc được** — cả việc người dùng có cài Soát lẫn độ dài văn bản họ vừa
-gõ. Đó là thứ không nên tồn tại trong bản phát hành.
-
-Hai cách, chọn một:
-
-* **Xoá hẳn** — đơn giản nhất. Cái giá: `dev/measure-chrome.mjs` và
-  `dev/lexical-check.mjs` đọc chính các dấu đó, nên mất khả năng đo thời gian
-  từng khâu và mã phiên offscreen; muốn đo lại phải revert tạm.
-* **Dời vào trong extension** — content script gửi số đo cho service worker qua
-  message nội bộ, không đụng DOM của trang. Trang mất đường đọc hoàn toàn, công cụ
-  đo vẫn chạy (chúng đã gắn vào service worker qua CDP sẵn để bật cờ).
+**Về (a).** Chế độ đo từng ghi `data-soat-*` lên thẻ `<html>`, tức trang web nào cũng đọc
+được — vì thế mới phải gỡ trước khi nộp. Quyết định 42 dời nó vào trong extension
+(`chrome.storage.session`, trang không với tới), nên **gói đem đo và gói đem nộp giờ là
+một**. Không còn việc tay nào ở đây, và không còn chỗ để quên.
 
 ---
 

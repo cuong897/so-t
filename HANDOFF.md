@@ -41,7 +41,8 @@ viết khoá luận.
   cùng gõ vẫn đúng; để yên một lúc rồi gõ lại vẫn đúng. **Chưa kiểm:** Shift+Esc để nhìn
   tận mắt một dòng ~300 MB, và bộ gõ tiếng Việt.
 - Gói nộp store `dist/soat-1.0.0.zip` đã đóng lại với code hiện tại (40,0 MB nén),
-  **chưa nộp**. Trước khi nộp phải **gỡ chế độ đo** (xem việc số 2).
+  **chưa nộp**. Không còn việc tay nào trước khi nộp: chế độ đo đã dời vào trong
+  extension (quyết định 42), nên gói đem đo và gói đem nộp là một.
 
 **Hai điều người sau hay vấp khi thử trên Chrome thật:**
 
@@ -142,7 +143,19 @@ Cách kiểm còn lại (dán, nhiều tab, để yên lâu) giữ ở đây cho
 | Shift+Esc (Task Manager của Chrome) | phải thấy **một** dòng của Soát giữ ~300 MB, không phải mỗi tab một dòng |
 | gõ tiếng Việt bằng bộ gõ (Unikey/EVKey) | chưa bao giờ kiểm; bộ gõ và `MutationObserver` có thể đá nhau |
 
-Chế độ đo vẫn tắt mặc định — bật như hướng dẫn ở việc số 2 nếu cần số.
+Chế độ đo vẫn tắt mặc định, và từ quyết định 42 nó **không để lại gì trên trang** — số đo
+đi vào `chrome.storage.session` của chính extension:
+
+```
+Bật:  chrome://extensions → Soát → link "service worker" → Console:
+        chrome.storage.local.set({ soatDebug: true })
+      rồi F5 trang cần đo.
+Đọc:  cũng ở Console đó:
+        chrome.storage.session.get('soatDo').then(x => console.log(x.soatDo))
+      mỗi dòng: input đầu→chấm · tầng luật · model · số lượt model · câu trúng cache ·
+                TỔNG từ input đầu · mã offscreen và thời gian nạp
+Tắt:  chrome.storage.local.remove('soatDebug')
+```
 
 Đã thử được tới đâu mà không cần tài khoản: `node dev/lexical-check.mjs` chạy gói store
 thật trên `playground.lexical.dev` (cùng Lexical Facebook dùng) — dán 494 ký tự, 0 sự kiện
@@ -151,8 +164,8 @@ thật trên `playground.lexical.dev` (cùng Lexical Facebook dùng) — dán 49
 cài như người dùng chứ không nạp qua CDP.
 
 Nếu hỏng thì triệu chứng gần như chắc chắn là **im lặng** (tầng luật vẫn gạch, tầng model
-biến mất). Chỗ đọc đầu tiên: `chrome://extensions` → Soát → "service worker" → Console, và
-`soatLog` trên trang.
+biến mất). Ba chỗ đọc, theo thứ tự: Console của **service worker**, Console của
+**offscreen.html** (ở mục Inspect views — nơi model chạy), và vòng đệm `soatDo` ở trên.
 
 #### Đoạn thử — dùng lại sau mỗi thay đổi tầng model
 
@@ -189,7 +202,7 @@ Ba thứ cần biết nếu phải làm lại chuyện tương tự:
 ### 3. Nộp Chrome Web Store
 
 Làm theo **[docs/store/nop-store.md](docs/store/nop-store.md)** — 8 bước, cần tài
-khoản của chủ repo. **Trước bước 1: gỡ chế độ đo khỏi `content/index.js`**, chạy lại
+khoản của chủ repo. Không cần gỡ gì trước nữa (quyết định 42); nếu có sửa code thì chạy lại
 `python ml/package_extension.py`, rồi thử lại đoạn thử ở việc số 1.
 
 | Thứ | Ở đâu |
@@ -271,7 +284,7 @@ extension/          MV3, không cần build
                     đường lui F2, cache cửa sổ có sẵn nhưng TẮT)
   src/content/      index.js (điểm vào; CHỈ tầng luật + gửi văn bản sang offscreen;
                     MutationObserver cho ô contenteditable; CHẾ ĐỘ ĐO tắt mặc định —
-                    gỡ trước khi nộp store),
+                    chế độ đo gửi số về service worker, không đụng DOM trang),
                     targets.js (lọc ô), highlighter.js, replace.js, tooltip.js
   src/offscreen/    offscreen.html + offscreen.js (trang ẩn, cầu nối message),
                     worker.js (OnnxEngine — MỘT bản cho cả trình duyệt),

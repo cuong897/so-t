@@ -2963,3 +2963,49 @@ Sửa hai đầu, vì một đầu là chưa đủ:
 làm gì đổ, không có test nào đỏ — `npm run test:all` xanh 80/80 suốt thời gian sản phẩm mất
 gạch — và chỉ lộ ra khi đo **đường thật trong trình duyệt thật**, đúng thứ quyết định 24 đã
 nói và quyết định 37–38 đã dựng công cụ để làm.
+
+---
+
+### 42. Chế độ đo dời vào TRONG extension — hết phải gỡ trước khi nộp
+
+Quy trình nộp store có một việc phải làm bằng tay ở bước cuối: **gỡ chế độ đo** khỏi
+`content/index.js`. Lý do chính đáng — nó ghi `data-soat-*` lên thẻ `<html>`, mà thẻ đó
+thì **trang web nào cũng đọc được**: dò ra người dùng có cài Soát, và đọc luôn độ dài văn
+bản họ vừa gõ (`soatLog` ghi rõ "1.357 ký tự").
+
+Nhưng "gỡ bằng tay trước mỗi lần nộp" là một việc **chỉ hỏng theo một chiều**: quên gỡ thì
+ship ra một bề mặt vân tay, còn gỡ rồi thì mất luôn khả năng đo trong Chrome thật —
+`dev/measure-chrome.mjs` và `dev/lexical-check.mjs` đều đọc đúng các dấu đó. Và đo trong
+Chrome thật chính là thứ đã bắt được ba lỗi im lặng của hai quyết định gần nhất.
+
+#### Sửa: số đo đi ngược vào trong, không ra trang
+
+```
+trước:  content script  ──ghi──>  data-soat-* trên <html>   (trang web đọc được)
+sau:    content script  ──message──>  service worker  ──>  chrome.storage.session
+```
+
+`chrome.storage.session` nằm trong bộ nhớ, không ghi xuống đĩa, sống qua những lần service
+worker bị tắt vì rảnh, và **content script lẫn trang web đều không với tới**. Công cụ đo
+đọc nó qua CDP bằng chính phiên service worker mà chúng vẫn dùng để bật cờ.
+
+Khi cờ tắt — tức mọi người dùng thật — khối đo chỉ cộng vài con số trong bộ nhớ rồi vứt:
+không message, không DOM, không console.
+
+#### Kiểm
+
+| | |
+|---|---|
+| Cờ đo **BẬT**, dán đoạn thử trong Chrome thật | gạch đúng `cứ`; `document.documentElement.dataset` **rỗng**; **0** thuộc tính nào của `<html>` chứa chữ "soat" |
+| Công cụ đo còn đủ số | `lexical-check` và `measure-chrome --plan 38` đọc được model ms, số lượt chạy, câu trúng cache, mã phiên offscreen — tất cả từ trong extension |
+| 15/15 lần dán ở lượt đo | gạch đúng, không gạch oan |
+| `npm run test:all` | 80/80 |
+
+#### Cái được, ngoài chuyện riêng tư
+
+* **Hồ sơ store bớt một việc tay.** Không còn "nhớ gỡ trước khi đóng gói", tức không còn
+  chỗ để quên.
+* **Đo được trên đúng gói sắp nộp.** Trước đây gói nộp store và gói đem đo là hai thứ khác
+  nhau — đúng cái họ lỗi mà cả dự án này sưu tầm: đo một đường dẫn mà sản phẩm không đi qua.
+* Vòng đệm 40 dòng, mỗi dòng cắt ở 500 ký tự, và service worker chỉ nhận khi cờ còn bật —
+  content script cũ trong tab chưa tải lại không ghi lén được sau khi người dùng đã tắt cờ.

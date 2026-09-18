@@ -82,6 +82,20 @@ const send = (method, params = {}, sessionId) => new Promise((resolve, reject) =
 });
 
 let sessionId;
+let swSession;
+
+/** Vòng đệm số đo, đọc từ service worker của extension. */
+async function docDo() {
+  if (!swSession) return [];
+  try {
+    const r = await send('Runtime.evaluate', {
+      expression: `chrome.storage.session.get('soatDo').then((x) => JSON.stringify(x.soatDo || []))`,
+      awaitPromise: true, returnByValue: true,
+    }, swSession);
+    return JSON.parse(r.result.value || '[]');
+  } catch { return []; }
+}
+
 const ev = async (expression, awaitPromise = false) => {
   const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise }, sessionId);
   if (r.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails).slice(0, 300));
@@ -100,7 +114,6 @@ async function paste(text, label) {
     if (document.activeElement === ed) ed.blur();
     ed.focus();
     await new Promise((r) => setTimeout(r, 600));
-    const before = document.documentElement.dataset.soatLog || '';
     let inputs = 0;
     const count = () => inputs++;
     ed.addEventListener('input', count);
@@ -112,12 +125,11 @@ async function paste(text, label) {
       const rect = r.getBoundingClientRect();
       return { name: n, text: r.toString(), w: Math.round(rect.width) };
     }));
-    let marks = [], log = before;
+    let marks = [];
     for (let i = 0; i < 300; i++) {
       await new Promise((r) => setTimeout(r, 50));
-      log = document.documentElement.dataset.soatLog || '';
       marks = read();
-      if (log !== before && marks.length) break;
+      if (marks.length) break;
     }
     await new Promise((r) => setTimeout(r, 2000));
     ed.removeEventListener('input', count);
@@ -126,17 +138,16 @@ async function paste(text, label) {
       // Ô KHÔNG được xoá giữa hai lần dán — nội dung dồn lại, nên số chỗ đáng gạch là số
       // lần "cứ trú" xuất hiện, không phải một. Tiêu chí "đúng một gạch" từng làm công cụ
       // này báo SAI cho một sản phẩm đang chạy đúng.
-      soCuTru: (txt.match(/cứ trú/g) || []).length, marks, marksSau: read(),
-      lastLog: (log.split(' || ').pop() || '').slice(0, 220),
-      soatModel: document.documentElement.dataset.soatModel || null });
+      soCuTru: (txt.match(/cứ trú/g) || []).length, marks, marksSau: read() });
   })()`, true));
+  const dong = await docDo();
+  out.lastLog = (dong[dong.length - 1] || '').slice(0, 240);
   const cu = out.marksSau.filter((m) => m.text === 'cứ');
   const khac = out.marksSau.filter((m) => m.text !== 'cứ');
   const ok = out.soCuTru > 0 && cu.length === out.soCuTru && cu.every((m) => m.w > 0) && khac.length === 0;
   console.log(`${ok ? 'ĐÚNG' : 'SAI '} ${label}: ${out.chars} ký tự · ${out.soCuTru} chỗ "cứ trú" · ${out.inputs} sự kiện input · ${out.ms}ms`);
   console.log(`      gạch sau 2 giây: ${JSON.stringify(out.marksSau)}`);
   console.log(`      ${out.lastLog}`);
-  console.log(`      ${out.soatModel}`);
   return { ...out, ok };
 }
 
@@ -156,7 +167,9 @@ try {
   const sw = targetInfos.find((t) => t.type === 'service_worker' && t.url.includes(id));
   const { sessionId: swS } = await send('Target.attachToTarget', { targetId: sw.targetId, flatten: true });
   await send('Runtime.evaluate', { expression: `chrome.storage.local.set({ soatDebug: true })`, awaitPromise: true, returnByValue: true }, swS);
-  await send('Target.detachFromTarget', { sessionId: swS });
+  // Giữ phiên này: từ quyết định 42 số đo nằm trong storage.session của extension,
+  // không còn trên DOM của trang.
+  swSession = swS;
 
   const { targetId } = await send('Target.createTarget', { url: OPT.url });
   ({ sessionId } = await send('Target.attachToTarget', { targetId, flatten: true }));

@@ -191,7 +191,13 @@ async function launch(withExtension, extDir) {
   return browser;
 }
 
-/** Đặt soatDebug qua service worker của extension — đúng cách bàn giao ghi. */
+/**
+ * Đặt soatDebug qua service worker, và GIỮ phiên đó lại.
+ *
+ * Từ quyết định 42, số đo không còn nằm trên DOM của trang mà nằm trong
+ * `chrome.storage.session` của extension — chỉ đọc được từ ngữ cảnh extension. Phiên
+ * này là đường đọc duy nhất, nên không detach nữa.
+ */
 async function setDebugFlag(b) {
   const prefix = `chrome-extension://${b.extId}/`;
   for (let i = 0; i < 40; i++) {
@@ -204,12 +210,38 @@ async function setDebugFlag(b) {
         awaitPromise: true, returnByValue: true,
       }, sessionId);
       if (r.result.value !== '{"soatDebug":true}') throw new Error(`không đặt được soatDebug: ${JSON.stringify(r)}`);
-      await b.send('Target.detachFromTarget', { sessionId });
+      b.swSession = sessionId;
       return;
     }
     await sleep(250);
   }
   throw new Error('không thấy service worker của extension');
+}
+
+/**
+ * Đọc vòng đệm số đo từ `chrome.storage.session` của extension.
+ *
+ * Service worker bị tắt khi rảnh, nhưng storage.session sống tiếp; phiên CDP cũ vẫn
+ * dùng lại được vì Chrome đánh thức service worker khi có lệnh gửi tới.
+ */
+async function docDo(b) {
+  if (!b.swSession) return [];
+  for (let i = 0; i < 3; i++) {
+    try {
+      const r = await b.send('Runtime.evaluate', {
+        expression: `chrome.storage.session.get('soatDo').then((x) => JSON.stringify(x.soatDo || []))`,
+        awaitPromise: true, returnByValue: true,
+      }, b.swSession);
+      return JSON.parse(r.result.value || '[]');
+    } catch {
+      // Service worker vừa bị tắt: phiên cũ chết, gắn lại rồi thử tiếp.
+      const { targetInfos } = await b.send('Target.getTargets');
+      const sw = targetInfos.find((t) => t.type === 'service_worker' && t.url.startsWith(`chrome-extension://${b.extId}/`));
+      if (!sw) { await sleep(300); continue; }
+      ({ sessionId: b.swSession } = await b.send('Target.attachToTarget', { targetId: sw.targetId, flatten: true }));
+    }
+  }
+  return [];
 }
 
 async function close(b) {
@@ -237,10 +269,11 @@ async function evalIn(b, tab, expression, awaitPromise = false) {
 /** Đọc đầu dò của một tab: long task, LoAF, lúc soatModel đổi, trạng thái hiển thị. */
 async function readProbe(b, tab, windowMs) {
   const raw = await evalIn(b, tab, `JSON.stringify({ ...window.__probe,
-    soatModel: document.documentElement.dataset.soatModel ?? null,
     visibility: document.visibilityState, now: Math.round(performance.now()) })`);
   const p = JSON.parse(raw);
   const inWin = p.longtasks.filter(([start]) => start < windowMs);
+  // Bản trước offscreen ghi "san-sang sau Xms" lên DOM của trang; từ quyết định 38 tầng
+  // model không còn ở trang, và từ 42 không còn dấu vết nào trên trang cả.
   const m = /san-sang sau ([0-9]+)ms/.exec(p.soatModel || '');
   const worstLoaf = [...p.loaf].sort((a, c) => c.blocking - a.blocking)[0] || null;
   return {
@@ -350,40 +383,44 @@ async function focusEd(b, tab) {
 
 /** Dán ngay vào ô đang focus, đợi tới khi có dòng log không phải "BỎ", đọc gạch chân. */
 async function pasteNow(b, tab, text, label) {
+  // Số đo nằm trong extension (quyết định 42), nên trang chỉ còn báo được hai thứ:
+  // gạch chân và long task. Dòng log đọc riêng từ service worker sau đó.
+  const truoc = (await docDo(b)).length;
   const result = await evalIn(b, tab, `(async () => {
     const ed = document.getElementById('ed');
     if (document.activeElement !== ed) return JSON.stringify({ error: 'ô soạn bài không được focus' });
-    const logBefore = document.documentElement.dataset.soatLog || '';
     const p = document.createElement('p');
     const span = document.createElement('span');
     span.textContent = ${JSON.stringify(text)};
     p.appendChild(span);
     const t0 = performance.now();
     ed.replaceChildren(p);
+    // Đợi tới khi gạch chân đứng yên hai lần đọc liên tiếp, hoặc hết giờ.
+    const doc = () => ['soat-high', 'soat-low'].flatMap((n) => [...(CSS.highlights.get(n) || [])].map((r) => n + ':' + r.toString()));
     const deadline = t0 + 10000;
+    let truoc = null, yen = 0, marked = [];
     for (;;) {
-      await new Promise((r) => setTimeout(r, 10));
-      const log = document.documentElement.dataset.soatLog || '';
-      const marked = [];
-      for (const name of ['soat-high', 'soat-low']) {
-        const h = CSS.highlights.get(name);
-        if (h) for (const r of h) marked.push(name + ':' + r.toString());
-      }
-      const last = log.split(' || ').pop();
-      const settled = log !== logBefore && !/ BỎ — /.test(last);
-      if (settled || performance.now() > deadline) {
+      await new Promise((r) => setTimeout(r, 25));
+      marked = doc();
+      const khoa = marked.join('|');
+      yen = (khoa === truoc && marked.length) ? yen + 1 : 0;
+      truoc = khoa;
+      if (yen >= 4 || performance.now() > deadline) {
         const during = window.__probe.longtasks.filter(([s0]) => s0 >= t0 - 5);
-        return JSON.stringify({ seenAfterMs: Math.round(performance.now() - t0), marked,
-          lastLog: last, timedOut: !settled,
-          longestTaskDuring: during.reduce((a, [, d]) => Math.max(a, d), 0),
-          soatModel: document.documentElement.dataset.soatModel ?? null });
+        return JSON.stringify({ seenAfterMs: Math.round(performance.now() - t0 - 100), marked,
+          timedOut: !marked.length,
+          longestTaskDuring: during.reduce((a, [, d]) => Math.max(a, d), 0) });
       }
     }
   })()`, true);
   const r = JSON.parse(result);
+  // Dòng log của lượt vừa rồi, lấy từ trong extension.
+  const dong = await docDo(b);
+  r.lastLog = dong.length > truoc ? dong[dong.length - 1] : '';
+  r.soatModel = /offscreen ([a-z0-9]+) nạp/.exec(r.lastLog)?.[0] ?? null;
   const tot = /TỔNG từ input đầu ([0-9]+)ms/.exec(r.lastLog || '');
   const model = /model ([0-9]+)ms · ([0-9]+) lượt model/.exec(r.lastLog || '');
-  const inst = /offscreen ([a-z0-9]+) /.exec(r.soatModel || '');
+  const inst = /offscreen ([a-z0-9]+) nạp/.exec(r.lastLog || '');
   return {
     label, host: tab.host, ...r,
     totalMs: tot ? Number(tot[1]) : null,
