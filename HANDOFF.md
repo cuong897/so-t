@@ -20,7 +20,7 @@ viết khoá luận.
 
 ---
 
-## Trạng thái: MODEL ĐÃ RA KHỎI TRANG — offscreen document, đo xong, chưa thử trên Facebook
+## Trạng thái: MODEL ĐÃ RA KHỎI TRANG — offscreen document, đo xong, CHẠY THẬT trên Facebook
 
 - cây git sạch (số commit: `git rev-list --count HEAD` — ghi con số vào đây thì nó lỗi thời ngay commit sau)
 - 63 test JS + 2 bộ kiểm tra Python, tất cả pass (`npm run test:all`)
@@ -36,8 +36,10 @@ viết khoá luận.
   model cho cả trình duyệt, chạy trong Worker, content script chỉ còn tầng luật. Qua
   **tám / tám** điều kiện ghi trước, đo bằng `dev/measure-chrome.mjs --plan 38` trong
   Chrome thật (headless): bộ nhớ mỗi tab **279 MB → 1,8 MB**, 8 tab **2,2 GB → 320 MB**,
-  long task trên trang **150 ms → 0**, dán ấm chậm hơn 4–10 ms. **Chưa thử trên Facebook
-  thật** — đó là việc số 1.
+  long task trên trang **150 ms → 0**, dán ấm chậm hơn 4–10 ms.
+- **Facebook thật, chủ repo xác nhận (18/09/2026):** dán là có gạch đúng `cứ`; nhiều tab
+  cùng gõ vẫn đúng; để yên một lúc rồi gõ lại vẫn đúng. **Chưa kiểm:** Shift+Esc để nhìn
+  tận mắt một dòng ~300 MB, và bộ gõ tiếng Việt.
 - Gói nộp store `dist/soat-1.0.0.zip` đã đóng lại với code hiện tại (58,6 MB nén),
   **chưa nộp**. Trước khi nộp phải **gỡ chế độ đo** (xem việc số 2).
 
@@ -119,15 +121,18 @@ offscreen, quyết định 37; O = bản đang ship, quyết định 38):
 
 ## VIỆC TIẾP THEO — theo thứ tự ưu tiên
 
-### 1. Thử bản offscreen trên Facebook thật — 15 phút, và không thay được bằng gì khác
+### 1. Hai chỗ trên Facebook CHƯA ai nhìn tận mắt
 
-Quyết định 24 mất hai tuần vì một tầng chết im lặng mà mọi phép đo đều xanh; quyết định
-36 lộ ra sau mười phút dùng thật. Bản offscreen **chưa ai dùng như người dùng**: mọi số
-của quyết định 38 đo trên trang thử của chính mình, trong Chrome headless.
+Bản offscreen **đã chạy thật trên Facebook** (18/09): dán là có gạch đúng `cứ`, nhiều tab
+cùng gõ vẫn đúng, để yên một lúc rồi gõ lại vẫn đúng. Còn hai chỗ chưa kiểm, và cả hai đều
+chỉ tốn vài phút:
 
-Cài `dist/soat-1.0.0.zip` (giải nén, `chrome://extensions` → "Tải tiện ích đã giải nén"),
-rồi **dán** đoạn thử ở dưới vào ô "Tạo bài viết" của Facebook. Phải có đúng một gạch dưới
-`cứ`. Kiểm cả hai bản (có và không dấu câu), và:
+| còn thiếu | vì sao đáng làm |
+|---|---|
+| **Shift+Esc** — Task Manager của Chrome | Con số "một bản model cho cả trình duyệt" mới chỉ đo bằng private bytes qua CDP. Nhìn tận mắt một dòng ~300 MB thay vì mỗi tab một dòng là bằng chứng rẻ nhất, và là ảnh chụp đáng đưa vào blog/CV. |
+| **Bộ gõ tiếng Việt** (Unikey/EVKey) | Chưa thử lần nào, ở bất kỳ bản nào. Bộ gõ sửa chữ ngay trong lúc gõ; nó và `MutationObserver` có thể đá nhau. Người dùng mục tiêu ai cũng dùng bộ gõ. |
+
+Cách kiểm còn lại (dán, nhiều tab, để yên lâu) giữ ở đây cho lần sửa tầng model sau:
 
 | kiểm gì | vì sao |
 |---|---|

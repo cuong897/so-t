@@ -2556,6 +2556,20 @@ Ba điều rút ra, và điều thứ ba mới là điều đắt:
 4 lượt, 19 câu trúng cache · TỔNG 611 ms`, gạch đúng `cứ`. Cache còn ấm nghĩa là **vẫn
 đúng offscreen cũ** — Chrome không đóng nó sau khi service worker chết từ lâu.
 
+#### Facebook thật — chủ repo xác nhận (18/09/2026)
+
+Bản offscreen cài vào Chrome của chủ repo, dán đoạn thử vào ô "Tạo bài viết":
+
+* **dán là có gạch, đúng một chỗ dưới `cứ`** — tầng model chạy, và chạy từ offscreen;
+* **nhiều tab cùng gõ** — hàng đợi một phiên chịu được tranh chấp ngoài đời, không chỉ
+  trên trang thử;
+* **để yên một lúc rồi gõ lại** — offscreen sống qua lần service worker bị tắt.
+
+**Chưa kiểm:** Task Manager của Chrome (Shift+Esc) để thấy tận mắt Soát chỉ còn **một**
+dòng ~300 MB thay vì mỗi tab một dòng — con số đó mới chỉ đo bằng private bytes từ CDP,
+chưa ai nhìn thấy nó trong giao diện Chrome. Và **bộ gõ tiếng Việt** (Unikey/EVKey) vẫn
+chưa được thử lần nào, ở bất kỳ bản nào.
+
 **`dev/lexical-check.mjs` không thay được việc thử trên Facebook thật**: trang nhẹ, không
 React của Facebook, không bộ gõ tiếng Việt, và extension nạp qua CDP chứ không cài như
 người dùng.
