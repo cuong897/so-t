@@ -96,8 +96,10 @@ test('câu nhiều cửa sổ không nằm trong cache theo câu khi đã bật 
     await on.check(edited.join(' '));
     await off.check(edited.join(' '));
   }
-  // bản tắt giữ nguyên cả bài cho MỖI phiên bản — tăng theo số lần sửa, tới 400 bản
-  assert.ok(off.cacheRows() > 25 * words.length * 0.9, `bản tắt giữ ${off.cacheRows()} dòng`);
+  // Bản tắt cache cửa sổ giữ nguyên CẢ BÀI cho mỗi phiên bản, nên nó chạm trần theo dòng
+  // của quyết định 39 (trước quyết định đó, nó tăng không chặn tới 400 bản).
+  assert.ok(off.cacheRows() > 10 * words.length, `bản tắt giữ ${off.cacheRows()} dòng`);
+  assert.ok(off.cacheRows() <= off.maxCacheRows, `bản tắt vượt trần: ${off.cacheRows()} dòng`);
   // bản bật không lưu câu nhiều cửa sổ ở mức câu...
   assert.equal(on._cache.size, 0, 'câu dài vẫn bị lưu cả câu');
   // ...và cửa sổ có trần: <= windowCacheSize cửa sổ, mỗi cửa sổ <= 64 subword nên <= 64 từ
@@ -109,4 +111,43 @@ test('cache cửa sổ có trần: không vượt windowCacheSize cửa sổ', {
   const e = fakeEngine({ windowCacheSize: 8 });
   for (const words of flatTexts()) await e.check(words.join(' '));
   assert.ok(e._wcache.size <= 8, `${e._wcache.size} cửa sổ trong cache`);
+});
+
+// ---------------------------------------------------------------------------
+// Trần theo SỐ DÒNG cho cache theo câu (quyết định 39). Chặn theo số mục là chặn nhầm
+// đơn vị: một mục có thể là một câu năm từ, cũng có thể là cả bài 6.000 ký tự không dấu
+// câu. Từ quyết định 38 cache sống trong offscreen, dùng chung cả trình duyệt.
+// ---------------------------------------------------------------------------
+
+test('cache theo câu có trần theo SỐ DÒNG, không phải số mục', { skip: !hasFixtures }, async () => {
+  const words = flatTexts()[5];
+  const e = fakeEngine({ maxCacheRows: 2048 });
+  for (let k = 0; k < 20; k++) {
+    await e.check([...words.slice(0, 100 + k), 'bàn', ...words.slice(101 + k)].join(' '));
+    assert.ok(e.cacheRows() <= 2048, `vượt trần sau ${k + 1} phiên bản: ${e.cacheRows()} dòng`);
+  }
+  assert.ok(e._cache.size < 20, `trần theo mục (400) đáng lẽ chưa chạm, mà cache giữ ${e._cache.size} mục`);
+});
+
+test('đuổi cache KHÔNG được đổi kết quả', { skip: !hasFixtures }, async () => {
+  const words = flatTexts()[2];
+  const text = words.join(' ');
+  const tight = fakeEngine({ maxCacheRows: 64 });    // đuổi gần như mọi thứ
+  const loose = fakeEngine({ maxCacheRows: Infinity });
+  const first = key(await tight.check(text));
+  for (const w of flatTexts()) await tight.check(w.join(' '));   // đẩy `text` ra khỏi cache
+  assert.equal(key(await tight.check(text)), first, 'kết quả đổi sau khi bị đuổi khỏi cache');
+  assert.equal(first, key(await loose.check(text)), 'bản có trần chặt khác bản không trần');
+});
+
+test('một mục dài hơn cả trần vẫn được giữ', { skip: !hasFixtures }, async () => {
+  // Vứt nó đi là chấm lại cả bài ngay lượt sau, mà lượt sau gần như chắc chắn cần đúng nó.
+  const words = flatTexts()[5];
+  const e = fakeEngine({ maxCacheRows: 10 });
+  const text = words.join(' ');
+  await e.check(text);
+  assert.equal(e._cache.size, 1, 'mục dài hơn trần bị vứt mất');
+  const runs = e.stats.runs;
+  await e.check(text);
+  assert.equal(e.stats.runs, runs, 'lượt sau phải trúng cache, không chạy lại model');
 });

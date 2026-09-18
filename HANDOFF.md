@@ -211,11 +211,10 @@ từ xa, mã nguồn mở nên kiểm được.
 
 ### 4. Sửa bài dài không dấu câu — một lỗi bộ nhớ và một hướng tối ưu
 
-1. **Lỗi bộ nhớ đang ship — nhỏ, nên làm trước, và giờ NẶNG HƠN.** Cache theo câu lưu
-   cả bài dài cho mọi phiên bản: 60 lần sửa bài 2.000 ký tự không dấu câu giữ 26.460 dòng
-   logit, trần 400 phiên bản (~536.000 dòng với bài 6.000 ký tự). Chặn theo **số dòng**
-   thay vì số mục. Không đổi issue nào. Từ quyết định 38, cache **dùng chung mọi tab** —
-   nó không còn chết theo tab nữa mà sống cùng offscreen.
+1. ~~Lỗi bộ nhớ cache theo câu~~ — **XONG** (quyết định 39): trần theo **số dòng logit**,
+   16.384 dòng ≈ 4,1 MB, thay cho trần 400 mục ≈ 135 MB ở ca xấu nhất. Qua cả ba điều kiện
+   ghi trước, 240/240 phiên bản giống hệt, và **không tốn thêm một lượt model nào** (x1,000)
+   — vì ở bài dài không dấu câu, cache theo câu vốn đã gần như không bao giờ trúng.
 2. **Ứng viên `F2c`: cửa sổ cắt theo nội dung + cache cửa sổ.** Cache cửa sổ với F2
    trượt vì F2 chỉ tự khớp lại khi **số từ** không đổi — xoá một từ giữa bài 6.000 ký tự
    phải chạy lại 17,2/42,8 cửa sổ; cắt theo nội dung chỉ 2,5/58,4 (quyết định 35). Code
@@ -283,6 +282,8 @@ dev/                playground.html, onnx-test.html, shots.html (ảnh store)
                     nạp gói store, đo nạp/đứng hình/RAM mỗi tab/dán, tự chấm
   lexical-check.mjs     quyết định 38 — gói store thật trên playground.lexical.dev:
                     dán kiểu Lexical, kiểm gạch `cứ` sống qua lần dựng lại DOM
+  bench-cachecap.mjs    quyết định 39 — trần cache theo số dòng, session giả, chạy
+                    bằng node, không cần model
   harness-content.html  nạp NGUYÊN content/index.js với chrome.* giả lập — kiểm
                     đường dán; tab ẩn thì phải bắn focusin bằng tay
   bench-accept.html     quyết định 33 — chất lượng qua check(), phủ, đứng hình

@@ -2663,3 +2663,45 @@ cuối là hai kiểu quyết định 35 đã bỏ sót lúc thiết kế).
   quả. Nó có mặt vì đó đúng là thứ hỏng thì im lặng.
 * Bài 6.000 ký tự **có dấu câu** sẽ không chạm trần (mỗi câu ~20 dòng), nên điều kiện 2 ở
   kịch bản đó chỉ để đối chứng.
+
+#### Kết quả — `dev/bench-cachecap.mjs`, lần chạy đầu: **qua cả ba, ship**
+
+| kịch bản, 60 lần sửa | dòng cao nhất: CÓ trần | KHÔNG trần | lượt model: có / không | tỷ số |
+|---|---|---|---|---|
+| 2.000 ký tự, có dấu câu | 1.477 | 1.477 | 128 / 128 | **x1,000** |
+| 2.000 ký tự, không dấu câu | **16.377** | 26.467 | 840 / 840 | **x1,000** |
+| 6.000 ký tự, có dấu câu | 2.741 | 2.741 | 237 / 237 | **x1,000** |
+| 6.000 ký tự, không dấu câu | **15.158** | **82.369** | 2.625 / 2.625 | **x1,000** |
+
+* **1 đồng nhất: 240 / 240** phiên bản giống hệt bản không trần, 40.537 issue.
+* **2 trần: 16.377 dòng**, dưới 16.384.
+* **3 chi phí: x1,000** ở cả bốn kịch bản — **không một lượt model nào** phải chạy thêm.
+
+**Dự đoán ghi trước đúng, và đó là điều đáng nói:** ở bài dài không dấu câu, cache theo câu
+vốn đã gần như vô dụng — cả bài là một "câu", đổi một chữ là khoá đổi, nên bản không trần
+giữ 82.369 dòng mà **không trúng thêm một lần nào**. Nó chỉ tích lại. Đây là bộ nhớ trả cho
+một thứ không ai dùng.
+
+**Một dòng logit ≈ 264 byte** (đo bằng `process.memoryUsage` với `--expose-gc`, 50.000 dòng
+mẫu). Nên:
+
+| | dòng | bộ nhớ |
+|---|---|---|
+| trần mới | 16.384 | **4,1 MB** |
+| đo được ở bài 6.000 ký tự sau 60 lần sửa, chưa trần | 82.369 | 21 MB **và vẫn đang tăng** |
+| trần cũ theo mục (400 × ~1.340) | ~536.000 | **135 MB** |
+
+135 MB là bộ nhớ nằm trong offscreen, dùng chung cả trình duyệt, cạnh 305 MB của model —
+tức trong ca xấu nhất nó từng có thể **cộng thêm 44%** vào con số người dùng nhìn thấy ở
+Task Manager.
+
+#### Test, và hai đột biến
+
+`test/windowcache.test.mjs` thêm ba test: trần theo dòng giữ được qua 20 phiên bản; **đuổi
+cache không đổi kết quả**; **một mục dài hơn cả trần vẫn được giữ** (vứt nó là chấm lại cả
+bài ngay lượt sau, mà lượt sau gần như chắc chắn cần đúng nó). Bỏ điều kiện đuổi theo dòng
+→ trượt 2 test; đuổi cả mục cuối cùng → trượt test thứ ba.
+
+Một test cũ của quyết định 35 khẳng định "bản tắt tăng theo số lần sửa, tới 400 bản" — câu
+đó **không còn đúng** sau đợt này. Nó vẫn xanh chỉ vì trần mới nằm trên ngưỡng nó kiểm; đã
+sửa lại cho khớp sự thật thay vì để một test xanh nói điều sai.

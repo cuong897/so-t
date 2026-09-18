@@ -49,6 +49,10 @@ const MAX_LEN = 128;
 // Quyết định 33 từng giữ 'none' vì một điều kiện đứng hình đặt sai; xem 34.
 const DEFAULT_FALLBACK = 'F2';
 
+// Trần theo SỐ DÒNG LOGIT cho cache theo câu (quyết định 39). Xem chú thích ở
+// constructor: chặn theo số mục là chặn nhầm đơn vị.
+const DEFAULT_MAX_CACHE_ROWS = 16384;
+
 // 0 — tắt cache theo cửa sổ, đúng hành vi đang ship. Quyết định 35 đo bật/tắt
 // bằng luật ghi trước; chỉ đổi số này theo luật đó.
 const DEFAULT_WINDOW_CACHE = 0;
@@ -190,7 +194,15 @@ export class OnnxEngine {
     // Bộ nhớ đệm LOGIT theo nội dung câu, không phải kết quả đã qua ngưỡng — để
     // đổi ngưỡng trên một instance đang chạy vẫn ra đúng, không phải xoá cache.
     this.cacheSize = opts.cacheSize ?? 400;
+    // Trần thứ hai, theo SỐ DÒNG LOGIT (quyết định 39). Chặn theo số mục là chặn nhầm
+    // đơn vị: một mục có thể là một câu năm từ, cũng có thể là cả bài 6.000 ký tự không
+    // dấu câu (~1.340 dòng). 60 lần sửa một bài 2.000 ký tự không dấu câu giữ 26.460
+    // dòng, và 400 mục cỡ đó là ~536.000 dòng. Từ quyết định 38 cache sống trong
+    // offscreen, dùng chung cả trình duyệt, nên nó không còn chết theo tab nữa.
+    // 16.384 là cùng con số làm trần cho cache cửa sổ ở quyết định 35.
+    this.maxCacheRows = opts.maxCacheRows ?? DEFAULT_MAX_CACHE_ROWS;
     this._cache = new Map();
+    this._cacheRows = 0;              // tổng số dòng đang giữ trong _cache
     // Cache theo NỘI DUNG CỬA SỔ, cho câu dài quá một cửa sổ (quyết định 35). Kết
     // quả của một cửa sổ chỉ phụ thuộc đúng các từ trong nó, nên sửa một chữ trong
     // bài 6.000 ký tự không dấu câu chỉ phải chạy lại 1–4 cửa sổ thay vì ~43.
@@ -448,13 +460,22 @@ export class OnnxEngine {
   }
 
   _cachePut(key, rows) {
+    const old = this._cache.get(key);
+    if (old) this._cacheRows -= old.length;
     this._cache.set(key, rows);
-    while (this._cache.size > this.cacheSize) {
-      this._cache.delete(this._cache.keys().next().value);
+    this._cacheRows += rows.length;
+    // Đuổi LRU cho tới khi CẢ HAI trần đều thoả. Một mục dài hơn cả trần thì vẫn được
+    // giữ — vứt nó đi là chấm lại cả bài ngay lượt sau, mà lượt sau gần như chắc chắn
+    // cần đúng nó.
+    while (this._cache.size > 1
+      && (this._cache.size > this.cacheSize || this._cacheRows > this.maxCacheRows)) {
+      const oldest = this._cache.keys().next().value;
+      this._cacheRows -= this._cache.get(oldest).length;
+      this._cache.delete(oldest);
     }
   }
 
-  clearCache() { this._cache.clear(); }
+  clearCache() { this._cache.clear(); this._cacheRows = 0; }
 
   /** Softmax CHỈ trên tập nhãn hợp lệ, rồi áp ngưỡng và biên so với KEEP. */
   _decode(data, offset, nTags, token, allowed) {

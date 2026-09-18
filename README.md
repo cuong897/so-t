@@ -137,6 +137,7 @@ npm run dev       # rồi mở hai trang dưới đây
 | `dev/bench-blocking.html` | Tầng model có giữ luồng chính không — nhịp đập MessageChannel, không dùng rAF |
 | `dev/measure-chrome.mjs` | Chạy bằng `node`, không qua trang: lái **Chrome đã cài** (headless) nạp gói store thật, đo nạp model, đứng hình, **RAM mỗi tab** và dán → gạch chân. `--plan 37` so có/không extension; `--plan 38` so bản trước offscreen với bản offscreen, chấm tám điều kiện ghi trước |
 | `dev/lexical-check.mjs` | Gói store thật trên **Lexical thật** (`playground.lexical.dev`) — dán bằng sự kiện `paste`, kiểm gạch `cứ` còn sống sau khi Lexical dựng lại DOM; `--idle 300` để thử sau khi service worker bị tắt |
+| `dev/bench-cachecap.mjs` | Chạy bằng `node`, session giả: trần cache theo **số dòng logit** — bốn kịch bản × 60 lần sửa xoay đủ năm kiểu, chấm ba điều kiện của quyết định 39 |
 | `dev/bench-context.html` | Cùng một câu, đứng một mình và nằm trong cửa sổ — nhãn vàng, so có cặp |
 
 Trước khi dùng `onnx-test.html` phải có runtime và model:
