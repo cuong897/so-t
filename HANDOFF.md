@@ -40,7 +40,7 @@ viết khoá luận.
 - **Facebook thật, chủ repo xác nhận (18/09/2026):** dán là có gạch đúng `cứ`; nhiều tab
   cùng gõ vẫn đúng; để yên một lúc rồi gõ lại vẫn đúng. **Chưa kiểm:** Shift+Esc để nhìn
   tận mắt một dòng ~300 MB, và bộ gõ tiếng Việt.
-- Gói nộp store `dist/soat-1.0.0.zip` đã đóng lại với code hiện tại (58,6 MB nén),
+- Gói nộp store `dist/soat-1.0.0.zip` đã đóng lại với code hiện tại (40,0 MB nén),
   **chưa nộp**. Trước khi nộp phải **gỡ chế độ đo** (xem việc số 2).
 
 **Hai điều người sau hay vấp khi thử trên Chrome thật:**
@@ -129,7 +129,7 @@ chỉ tốn vài phút:
 
 | còn thiếu | vì sao đáng làm |
 |---|---|
-| **Shift+Esc** — Task Manager của Chrome | Nhìn tận mắt: **hai** dòng của Soát (service worker ~20 MB, trang offscreen ~310 MB), không phải mỗi tab một dòng ~300 MB. Đợi một phút sau khi gõ rồi hãy đọc — phút đầu nó hiện ~390 MB, vì bộ đệm 78 MB tải model chưa được thu hồi (quyết định 38). Ảnh chụp đáng đưa vào blog/CV. |
+| **Shift+Esc** — Task Manager của Chrome | Nhìn tận mắt: **hai** dòng của Soát (service worker ~20 MB, trang offscreen ~210 MB), không phải mỗi tab một dòng ~300 MB. Đợi một phút sau khi gõ rồi hãy đọc — phút đầu nó hiện cao hơn ~50 MB, vì bộ đệm tải model chưa được thu hồi (quyết định 38); sau khi cắt vocab (quyết định 41) dòng offscreen ổn định ở ~210 MB. Ảnh chụp đáng đưa vào blog/CV. |
 | **Bộ gõ tiếng Việt** (Unikey/EVKey) | Chưa thử lần nào, ở bất kỳ bản nào. Bộ gõ sửa chữ ngay trong lúc gõ; nó và `MutationObserver` có thể đá nhau. Người dùng mục tiêu ai cũng dùng bộ gõ. |
 
 Cách kiểm còn lại (dán, nhiều tab, để yên lâu) giữ ở đây cho lần sửa tầng model sau:
@@ -194,7 +194,7 @@ khoản của chủ repo. **Trước bước 1: gỡ chế độ đo khỏi `con
 
 | Thứ | Ở đâu |
 |---|---|
-| Gói cài | `dist/soat-1.0.0.zip` (58,6 MB) |
+| Gói cài | `dist/soat-1.0.0.zip` (40,0 MB) |
 | 3 ảnh 1280×800 | `dist/store/*.png` |
 | Nội dung từng ô devconsole | `docs/store/listing.md` (đã có ô `offscreen`) |
 | Chính sách riêng tư | `docs/store/privacy-policy.md` |

@@ -35,7 +35,7 @@ Gỡ cài extension là toàn bộ dữ liệu này biến mất cùng nó.
 
 ## Model chạy ở đâu
 
-Model nhận diện lỗi (75 MB) được **đóng gói sẵn trong extension** và chạy bằng
+Model nhận diện lỗi (47 MB) được **đóng gói sẵn trong extension** và chạy bằng
 WebAssembly ngay trên máy bạn. Không có lệnh gọi mạng nào để tải model, để chấm
 câu, hay để làm bất cứ việc gì khác.
 
@@ -44,7 +44,7 @@ lý do extension xin quyền `offscreen`. Trang ẩn này không hiện ra, khô
 được trang web nào, và tồn tại vì một lý do kỹ thuật thuần tuý: nếu model được nạp
 riêng cho từng tab thì mỗi tab bạn mở sẽ tốn thêm khoảng 280 MB bộ nhớ, kể cả tab
 bạn không gõ gì. Nạp một lần cho cả trình duyệt thì con số đó còn khoảng 2 MB mỗi
-tab.
+tab, và tổng cộng khoảng 210 MB cho toàn trình duyệt.
 
 Hệ quả bạn nên biết: văn bản trong ô bạn đang gõ được gửi từ trang sang trang ẩn đó
 bằng cơ chế nhắn tin **nội bộ của Chrome giữa các phần của chính extension này**. Nó
