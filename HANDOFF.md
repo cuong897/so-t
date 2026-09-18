@@ -293,7 +293,7 @@ ml/                 vi.py, noise.py, mine_errors.py, build_corpus.py, dataset.py
 dev/                playground.html, onnx-test.html, shots.html (ảnh store)
   measure-chrome.mjs    quyết định 37 — lái chrome.exe thật (headless) qua CDP pipe,
                     nạp gói store, đo nạp/đứng hình/RAM mỗi tab/dán, tự chấm.
-                    `--plan 38` so hai gói: mặc định `--a dist/soat-A-31a821e.zip` (đặt tên theo hash của `fd0fd53` ở lịch sử cũ) đã
+                    `--plan 38` so hai gói; gói mốc `--a` mặc định (bản trước offscreen) đã
                     XOÁ để lấy lại chỗ. Cần so với một bản cũ thì dựng lại: checkout
                     commit ấy, chép model tương ứng vào extension/models, đóng gói ra
                     một tên khác, rồi truyền `--a <đường dẫn>`.
