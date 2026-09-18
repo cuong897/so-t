@@ -90,7 +90,7 @@ lui F2 cho câu dài quá cửa sổ.
 | Theo CÂU: câu sạch hẳn / sản phẩm KHÔNG ĐỤNG | 39,2% / **49,0%** | `sentence_eval.py` + `dev/sentence-eval.html` |
 | Dán → gạch chân, localhost, bài 486 ký tự | **607ms** = 405 debounce + 2 luật + 200 model (3 lượt) | `dev/harness-content.html` |
 | Đứng hình, bài 2.000 ký tự có dấu câu | ≤ 82ms (tổng CPU 525–600ms, nhả luồng giữa các câu) | `dev/bench-accept.html` |
-| Gói cài | 95,3 MB thô → **58,6 MB nén** | `package_extension.py` |
+| Gói cài | 63,1 MB thô → **40,0 MB nén** | `package_extension.py` |
 
 **Chrome thật, extension thật** (`dev/measure-chrome.mjs`, headless; A = bản trước
 offscreen, quyết định 37; O = bản đang ship, quyết định 38):
@@ -99,8 +99,8 @@ offscreen, quyết định 37; O = bản đang ship, quyết định 38):
 |---|---|---|
 | Bộ nhớ thêm **mỗi tab** — kể cả tab không gõ gì | 279 MB | **1,8 MB** |
 | Bộ nhớ với 8 tab | +2,2 GB | **+320 MB** |
-| Bộ nhớ một lần cho cả trình duyệt | — | **305 MB** (JS heap 8 MB; phần còn lại là bộ nhớ wasm của onnxruntime, không co lại) |
-| Nạp model | 408 ms **mỗi tab** | 404–418 ms **một lần** |
+| Bộ nhớ một lần cho cả trình duyệt | — | **209 MB** sau khi cắt vocab (trước đó 305 MB; JS heap 8 MB, phần còn lại là bộ nhớ wasm của onnxruntime, không co lại) |
+| Nạp model | 408 ms **mỗi tab** | **336–354 ms một lần** (trước khi cắt vocab: 424–478 ms) |
 | Long task trên trang lúc mở | 150 ms | **0** |
 | Long task trên trang lúc chấm | 53–135 ms | **0** |
 | Dán 494 ký tự → gạch chân | 616 ms lạnh · 422 ms cache ấm | 642 ms lạnh (gồm dựng offscreen + nạp model) · 426 ms cache ấm |
@@ -234,20 +234,31 @@ nhưng luật ghi trước ưu tiên precision). Sửa bằng cue đã bác: th�
 `giành` thì gạch oan `chị dành phần quà cho em` (quyết định 26). Train thêm thì nhớ v4
 đã lấy 30 ca của các nhóm phụ âm khác (`l/n` 45,4% → 39,6%) để được 64 ca cho d/gi/r.
 
-### 6. Giảm dung lượng — giờ là việc BỘ NHỚ, không chỉ việc gói tải
+### 6. ~~Giảm dung lượng~~ — XONG phần vocab (quyết định 41)
 
-Quyết định 37: model 78 MB chiếm **~270 MB bộ nhớ wasm** khi đã nạp (JS heap chỉ 8 MB).
-Offscreen trả nó một lần thay vì mỗi tab (quyết định 38: 305 MB một lần), nhưng 300 MB
-vẫn là nhiều cho một extension soát chính tả — và giờ nó là con số người dùng thấy ở
-Task Manager của Chrome, một dòng duy nhất. Chưa biết phần nào tỷ lệ thuận với model, phần nào cố định (arena, bộ nhớ
-wasm phình lúc tạo phiên và không co lại) — **đo trước khi hứa** "model nhỏ một nửa thì
-RAM nhỏ một nửa". Thử cả tuỳ chọn phiên của onnxruntime (`enableCpuMemArena`, …).
+Cắt vocab **không cần train lại**: vocab chỉ vào model qua một phép `Gather`, nên bỏ 40.867
+token chưa bao giờ xuất hiện trong tập train là cắt dòng embedding + đánh số lại id.
 
-- **Cắt vocab**: chỉ 23.669/64.001 token PhoBERT xuất hiện; giữ token gặp ≥20 lần phủ
-  99,69% số lượt, model về ~40MB. **Nguy hiểm:** `bpe.js` phải dùng đúng id mới — sai
-  id là lỗi hoàn toàn im lặng. Mở rộng `test/bpe.test.mjs` trước khi train.
-- **Tải model lúc chạy**: bundle ~14MB, nhưng phá quyết định 10 (không xin
-  `host_permissions`) và cần hosting.
+| | trước | sau |
+|---|---|---|
+| model int8 | 78,5 MB | **47,2 MB** |
+| gói nén | 58,6 MB | **40,0 MB** |
+| bộ nhớ một lần trong Chrome | 305 MB | **209 MB** |
+| nạp model | 424–478 ms | **336–354 ms** |
+| precision / recall VSEC | 0,9709 / 0,7457 | **0,9709 / 0,7447** |
+
+Qua bảy điều kiện ghi trước. Cái giá thật: **một** lỗi bị bỏ sót thêm và **một** câu đúng bị
+gạch oan thêm, trên 2.000 câu.
+
+**Còn lại của việc số 6, nếu muốn đi tiếp:**
+
+* **Cắt sâu hơn thì đắt nhanh.** Đo trước: ngưỡng ≥20 lần chỉ tiết kiệm thêm 7,7 MB nhưng
+  đẩy số câu dính `<unk>` trên văn bản chưa thấy từ 0,43% lên **12,78%**. Đừng đi đường đó
+  nếu không đo lại đủ bốn phép đo chất lượng.
+* **Phần còn lại không phải vocab:** 47,2 MB model giờ gần như toàn bộ là 12 lớp encoder.
+  Muốn nhỏ nữa thì phải cắt lớp hoặc hạ chiều — tức train lại thật, và phải đo lại từ đầu.
+* **14 MB wasm của onnxruntime** giờ chiếm 35% gói cài. Bản `ort.wasm.bundle.min.mjs` đã là
+  bản nhẹ nhất có sẵn; muốn nhỏ hơn phải tự build onnxruntime với ít toán tử hơn.
 
 ---
 
@@ -275,6 +286,8 @@ ml/                 vi.py, noise.py, mine_errors.py, build_corpus.py, dataset.py
   diagnose.py, sentence_eval.py   — mọi script CHẤM CÂU ĐỨNG MỘT MÌNH
   gate.py           PHÉP QUYẾT ĐỊNH phía Python — đổi ngưỡng thì sửa ở đây và ở
                     onnxEngine.js, không chỗ nào khác
+  trim_vocab.py     cắt vocab (quyết định 41) — CHÉP CẢ train_meta.json, thiếu nó
+                    thì export_onnx.py đoán max_len sai và sản phẩm mất gạch im lặng
   threshold_report.py, mix_datasets.py, package_extension.py, make_screenshots.py
   test_evaluate.py, test_encoding.py
 dev/                playground.html, onnx-test.html, shots.html (ảnh store)

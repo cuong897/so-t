@@ -2866,3 +2866,100 @@ riêng d/gi/r **33,9%**, model **78,5 MB**, gói nén **58,6 MB**, bộ nhớ m�
   vẫn chạy, không lỗi nào bật ra, chỉ đọc nhầm embedding và cho kết quả vô nghĩa. Nó phải
   được bắt bởi parity fixture, không phải bởi cảm giác "kết quả trông vẫn ổn".
 * Không đụng: ngưỡng, bộ nhãn, chấm theo câu, F2, trần cache, kiến trúc offscreen.
+
+#### Kết quả — qua bảy / bảy, ship
+
+Mốc và bản cắt đo **trong cùng phiên**, cùng script, cùng máy.
+
+| # | điều kiện | cần | vocab đầy đủ | **đã cắt** | |
+|---|---|---|---|---|---|
+| 1 | precision VSEC giữ kín | ≥ 0,9679 | 0,9709 | **0,9709** | qua |
+| 2 | recall | ≥ 0,7407 | 0,7457 | **0,7447** | qua |
+| 3 | báo động giả | ≤ 1,45% / 1,15% | 1,35% / 1,05% | **1,35% / 1,10%** | qua |
+| 4 | phụ âm · d/gi/r | ≥ 47,2% · ≥ 32,9% | 48,2% · 33,9% | **48,2% · 33,9%** | qua |
+| 5 | model int8 · gói nén | ≤ 50 · ≤ 45 MB | 78,5 · 58,6 MB | **47,2 · 40,0 MB** | qua |
+| 6 | bộ nhớ một lần, Chrome thật | ≤ 275 MB | 305,3 MB | **208,9 MB** | qua |
+| 7 | parity + 15 lần dán trong Chrome | tất cả | mốc | **80/80 test · 15/15 dán** | qua |
+
+Bảng phụ âm giống hệt **từng dòng, từng nhóm** (sửa đúng 865, sửa sai 59, báo oan 14). Cả
+recall lẫn precision chỉ nhúc nhích ở một ca duy nhất trên 940 lỗi biểu diễn được — đúng
+mức 0,43% số câu mất một token dự đoán từ trước.
+
+Thêm hai con số không nằm trong luật:
+
+* **nạp model 424–478 ms → 336–354 ms**, vì file nhỏ hơn 40%;
+* bộ nhớ một lần của bản đầy đủ đo lại ra **305,3 MB**, trùng khít **305,5 MB** của quyết
+  định 38 — mốc tự nó kiểm chứng rằng phép đo không trôi.
+
+Dự đoán ghi trước: model ~44 MB (thật: 47,2), gói ~35 MB (thật: 40,0), bộ nhớ ~265 MB
+(thật: **208,9** — tốt hơn dự đoán 56 MB). Phần đoán trượt nhiều nhất là bộ nhớ, và nó
+trượt theo hướng có lợi: bộ nhớ wasm không chỉ giảm bằng đúng phần trọng số bỏ đi.
+
+#### Cái giá thật của việc cắt vocab, nói thẳng
+
+Trên VSEC giữ kín, **một** lỗi trước đây bắt được giờ bị bỏ sót (tp 701 → 700), và **một**
+câu đúng bị gạch thêm (21 → 22 trên 2.000 câu). Đổi lại 31 MB gói cài và 96 MB bộ nhớ. Đây
+là đánh đổi, không phải bữa trưa miễn phí — và nó chỉ chấp nhận được vì luật ghi trước nói
+precision không được giảm, mà precision **không** giảm.
+
+#### Công cụ của chính repo phá phép đo, và cái sai trông y như thật
+
+Giữa lúc đo, bản CŨ tụt recall phụ âm từ **48,2% xuống 0,1%**. Nếu đọc vội thì kết luận có
+sẵn: "cắt vocab phá nát model". Nó sai hoàn toàn, và cái sai đó đứng vững được vì hai lý do
+— model cũ bị đo, và con số đủ thảm để không ai nghi phép đo.
+
+Nguyên nhân: `export_tokenizer.py` có dòng `tmp = Path("out/_tok"); tok.save_pretrained(tmp)`
+— **đường dẫn cố định**, không đi theo `--out`. Nên lệnh sinh tokenizer cho bản cắt đã **đè
+lên `out/_tok`**, đúng thư mục tokenizer mà phép đo mốc đang dùng, **giữa lúc phép đo chạy**.
+Từ đó model cũ (64.001 hàng embedding) bị nạp id của vocab mới (23.134) — nó không lỗi, chỉ
+đọc nhầm hàng.
+
+Ba dấu vết cho thấy lỗi nằm ở phép đo chứ không ở model, và thứ tự tìm ra chúng là bài học:
+
+1. `evaluate.py` của cùng bản cũ, chạy **trước** lúc bị đè, ra **đúng** số cũ tới từng chữ
+   số (P 0,9709 · R 0,7457). Một model không thể vừa nguyên vẹn vừa hỏng.
+2. Đổi **thư mục tokenizer** (`out/_tok` -> `out/student768_v4/best`) trên **cùng một file
+   model** cho ra 0,0% so với 46,5%. Biến đổi được là biến tokenizer.
+3. `out/_tok` in ra `vocab=23.134` — con số của bản cắt, nằm trong thư mục của bản đầy đủ.
+
+Sửa: thư mục tạm đi theo `--out` (`<out>/_tok_src`). Và dựng lại `out/_tok` đầy đủ trước khi
+đo lại mốc.
+
+**Bài học, khác với bài học "đo nhầm đường dẫn" đã có ở quyết định 24:** ở đây phép đo đúng
+đường, đúng model, đúng script — chỉ có **một artifact dùng chung bị một lệnh khác ghi đè
+giữa chừng**. Thứ bảo vệ tôi không phải là cẩn thận, mà là **luôn đo lại mốc trong cùng
+phiên**: nếu chỉ so với con số chép trong tài liệu, tôi đã tin bản cắt làm sập recall phụ âm.
+
+#### Và một lỗi im lặng nữa, do MỘT GIÁ TRỊ MẶC ĐỊNH
+
+Lượt đo đầu trong Chrome thật: bản cắt chỉ gạch đúng **9/15** lần dán. Kết luận có sẵn lần
+thứ hai trong cùng một quyết định: "cắt vocab làm hỏng đường lui F2". Lại sai.
+
+Chạy A/B — **bản vocab đầy đủ trên cùng code trượt đúng 6 ca ấy**. Nên thủ phạm không nằm
+ở vocab. Dấu vết: đoạn không dấu câu 486 ký tự chỉ chạy **1 lượt model** thay vì 3.
+
+`export_onnx.py` đọc `max_len` từ `train_meta.json` trong thư mục model. `trim_vocab.py`
+chép `tags.json` mà quên `train_meta.json`, nên export rơi về **mặc định 128** thay vì
+**96** của bản train, kèm đúng một dòng in ra: *"mặc định — không thấy train_meta.json,
+kiểm tra lại xem có khớp lúc train không"*. Không ai kiểm.
+
+Con số đó đi thẳng vào `soat.meta.json`, và `onnxEngine` đọc nó làm `maxLen`:
+
+```
+maxLen 96  -> ngân sách 94 subword -> đoạn 486 ký tự chia 3 cửa sổ F2 -> "cứ" nằm nông -> gạch
+maxLen 128 -> ngân sách 126        -> cả đoạn vào MỘT cửa sổ          -> "cứ" nằm cuối  -> im lặng
+```
+
+Đúng hiện tượng quyết định 32 đã đo: cùng một từ, nằm sâu trong cửa sổ thì recall tụt từ
+0,7426 xuống 0,6202. Ở đây nó không tụt, nó **im hẳn**.
+
+Sửa hai đầu, vì một đầu là chưa đủ:
+
+* `trim_vocab.py` **bắt buộc** chép `train_meta.json`, thiếu thì dừng;
+* `export_onnx.py` **không đoán nữa**: thiếu `train_meta.json` mà cũng không có `--max-len`
+  thì thoát với lời nhắc, thay vì in một dòng cảnh báo rồi vẫn xuất ra model sai.
+
+**Bài học:** một giá trị mặc định "hợp lý" ở tầng build là một lỗi im lặng chờ sẵn. Nó không
+làm gì đổ, không có test nào đỏ — `npm run test:all` xanh 80/80 suốt thời gian sản phẩm mất
+gạch — và chỉ lộ ra khi đo **đường thật trong trình duyệt thật**, đúng thứ quyết định 24 đã
+nói và quyết định 37–38 đã dựng công cụ để làm.

@@ -137,6 +137,7 @@ npm run dev       # rồi mở hai trang dưới đây
 | `dev/bench-blocking.html` | Tầng model có giữ luồng chính không — nhịp đập MessageChannel, không dùng rAF |
 | `dev/measure-chrome.mjs` | Chạy bằng `node`, không qua trang: lái **Chrome đã cài** (headless) nạp gói store thật, đo nạp model, đứng hình, **RAM mỗi tab** và dán → gạch chân. `--plan 37` so có/không extension; `--plan 38` so bản trước offscreen với bản offscreen, chấm tám điều kiện ghi trước |
 | `dev/lexical-check.mjs` | Gói store thật trên **Lexical thật** (`playground.lexical.dev`) — dán bằng sự kiện `paste`, kiểm gạch `cứ` còn sống sau khi Lexical dựng lại DOM; `--idle 300` để thử sau khi service worker bị tắt |
+| `ml/trim_vocab.py` | Cắt vocab (quyết định 41): giữ token từng xuất hiện lúc train, cắt embedding, đánh số lại id — **không train lại** |
 | `dev/bench-cachecap.mjs` | Chạy bằng `node`, session giả: trần cache theo **số dòng logit** — bốn kịch bản × 60 lần sửa xoay đủ năm kiểu, chấm ba điều kiện của quyết định 39 |
 | `dev/bench-context.html` | Cùng một câu, đứng một mình và nằm trong cửa sổ — nhãn vàng, so có cặp |
 
@@ -272,7 +273,7 @@ dùng thật sự gặp — **với một điều kiện phải đọc trước 
 | Báo động giả trên văn bản đúng | **1,35%** / **1,05%** số câu | `false_alarm.py --limit 2000` |
 | Độ trễ **trong trình duyệt** (wasm) | nạp 355–585ms · một câu **20–27ms** · bài 2.000 ký tự **525–600ms** tổng, đứng hình ≤ **82ms** | `dev/bench-accept.html` |
 | Độ trễ onnxruntime Python, 1 luồng | p50 5,5ms · p95 5,7ms | `export_onnx.py` |
-| Gói cài | 95,3 MB thô → **58,6 MB nén** | `package_extension.py` |
+| Gói cài | 63,1 MB thô → **40,0 MB nén** | `package_extension.py` |
 
 Độ trễ ghi thành **khoảng** chứ không một con số: đo lại bốn lần trên cùng máy
 được 18,4 / 23,1 / 23,8ms. Một con số lẻ là một lần bốc thăm.

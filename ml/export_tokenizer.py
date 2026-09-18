@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -71,7 +72,15 @@ def main() -> None:
     args.out.mkdir(parents=True, exist_ok=True)
 
     # Lưu ra thư mục tạm để chắc chắn có bpe.codes kể cả khi nạp từ HF hub.
-    tmp = Path("out/_tok"); tmp.mkdir(parents=True, exist_ok=True)
+    #
+    # Thư mục TẠM THẬT, không phải một đường dẫn cố định và cũng không nằm trong --out.
+    # Bản đầu ghi cứng "out/_tok": lúc sinh tokenizer của bản cắt vocab (quyết định 41)
+    # nó đè luôn tokenizer đầy đủ mà phép đo MỐC đang dùng, giữa lúc phép đo chạy — model
+    # cũ tụt recall phụ âm 48,2% -> 0,1%, trông y như "cắt vocab phá nát model".
+    # Bản thứ hai đặt nó trong --out: file tokenizer nguồn lọt vào extension/models, và
+    # package_extension.py chỉ loại FILE tên bắt đầu bằng "_", không loại thư mục.
+    tmpdir = tempfile.TemporaryDirectory(prefix="soat-tok-")
+    tmp = Path(tmpdir.name)
     tok.save_pretrained(tmp)
 
     vocab = tok.get_vocab()
@@ -110,6 +119,38 @@ def main() -> None:
     else:
         print(f"CẢNH BÁO: không thấy {args.lexicon} — chạy dataset.py trước, "
               f"thiếu từ điển thì tầng lọc ứng viên mất tác dụng")
+
+    # --- fixture parity cho test/bpe.test.mjs -------------------------------
+    # Fixture này ghi ID CỤ THỂ, nên nó phải được sinh lại mỗi khi vocab đổi —
+    # cắt vocab (quyết định 41) là một lần như thế. Trước đây không script nào
+    # trong repo sinh nó, dù test ghi chú là script này sinh; giờ đúng như vậy.
+    dev = Path("data/dev.jsonl")
+    if dev.exists():
+        import sys as _sys
+        _sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from encoding import encode_words
+
+        cases = []
+        with dev.open(encoding="utf-8") as f:
+            for line in f:
+                if len(cases) >= 200:
+                    break
+                words = json.loads(line)["tokens"]
+                if not (8 <= len(words) <= 40):
+                    continue
+                ids, word_ids = encode_words(tok, words, 96)
+                # bpe.js dùng -1 cho token đặc biệt, Python dùng None. Fixture phải theo
+                # quy ước của JS, vì test so từng phần tử: null !== -1.
+                cases.append({"words": words, "ids": ids,
+                              "wordIds": [-1 if w is None else w for w in word_ids]})
+        pj = args.out / "_parity_cases.json"
+        pj.write_text(json.dumps(cases, ensure_ascii=False), encoding="utf-8")
+        tong = sum(len(c["ids"]) for c in cases)
+        print(f"fixture   -> {pj}  ({len(cases)} câu, {tong:,} token)")
+        if tong < 5000:
+            print("  CẢNH BÁO: quá ít token, test parity sẽ tự báo là không đủ tin")
+    else:
+        print(f"CẢNH BÁO: không thấy {dev} — không sinh được fixture parity cho bpe.js")
 
     # --- parity: logic của bpe.js phải cho ra đúng id như tokenizer Python ---
     ranks = {" ".join(m): i for i, m in enumerate(merges)}

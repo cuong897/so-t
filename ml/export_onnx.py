@@ -185,9 +185,18 @@ def main() -> None:
             args.max_len = json.loads(meta_path.read_text(encoding="utf-8"))["max_len"]
             print(f"max_len {args.max_len} (đọc từ train_meta.json)")
         else:
-            args.max_len = 128
-            print(f"max_len {args.max_len} (mặc định — không thấy train_meta.json, "
-                  f"kiểm tra lại xem có khớp lúc train không)")
+            # KHÔNG đoán. Bản trước mặc định 128 kèm một dòng nhắc "kiểm tra lại xem có
+            # khớp lúc train không" — và đúng thứ đó đã lọt ra sản phẩm: checkpoint cắt
+            # vocab (quyết định 41) không có train_meta.json, nên soat.meta.json ghi
+            # maxLen 128 thay vì 96. Cửa sổ F2 thôi không chia nữa, cả đoạn không dấu
+            # câu vào MỘT cửa sổ, từ ở cuối nằm quá sâu và model im lặng (quyết định
+            # 32). Không lỗi nào bật ra; đo trong Chrome thật mới thấy: mất gạch ở
+            # 6/15 lần dán.
+            raise SystemExit(
+                f"KHÔNG thấy {meta_path}, và cũng không có --max-len.\n"
+                "  max_len PHẢI khớp lúc train; đoán sai là lỗi im lặng đi thẳng ra\n"
+                "  sản phẩm. Chép train_meta.json vào thư mục model, hoặc truyền\n"
+                "  --max-len đúng con số đã train.")
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     fp32 = args.out / f"{args.name}.fp32.onnx"
