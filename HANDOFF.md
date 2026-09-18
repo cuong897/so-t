@@ -308,7 +308,7 @@ dev/                playground.html, onnx-test.html, shots.html (ảnh store)
   bench-editcache.html  quyết định 35 — cache cửa sổ
   bench-context.html    cùng câu, đứng một mình và nằm trong cửa sổ
   bench-blocking.html   model có giữ luồng chính không — MessageChannel, không rAF
-  bench-model.html, bench-chunking.html, bench-batch.html, bench-rules.html,
+  bench-chunking.html, bench-batch.html, bench-rules.html,
   sentence-eval.html
   baseline/         onnxEngine cắt cụt cũ, để đo so cùng lượt
 test/               bpe, vi, gate (parity với Python), manifest, ruleEngine,
