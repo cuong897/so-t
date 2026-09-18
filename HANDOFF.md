@@ -318,16 +318,35 @@ docs/blog.html      bài viết về quá trình và các lần sai
 docs/store/         hồ sơ nộp Chrome Web Store
 ```
 
-### Checkpoint trong `ml/out/`
+### Checkpoint trong `ml/out/` (3,8 GB sau khi dọn 18/09)
 
 | Thư mục | Là gì |
 |---|---|
 | `teacher` | PhoBERT 134M, F1 0,8924 |
-| `student768` | bản 768 gốc (v1) |
-| **`student768_v4/best`** | **đang ship** — fine-tune nhắm riêng d/gi/r |
-| `student768_v3/best`, `student768_v2/best` | giữ để đối chiếu |
+| `teacher_guessed` | teacher train trên phân bố lỗi ĐOÁN — bằng chứng cho "đo phân bố thật đáng +9,2 điểm F1"; kết quả đã lưu ở `out/eval_guessed_heldout.json` |
+| `student768` | bản 768 gốc (v1); `student768_ep1` là epoch 1 của nó |
+| `student768_v2/best`, `student768_v3/best` | giữ để đối chiếu |
+| **`student768_v4/best`** | **nguồn của bản ship** — fine-tune nhắm riêng d/gi/r |
+| **`student768_v4_trim`** | **v4 đã cắt vocab** (quyết định 41) — model trong `extension/models` xuất từ đây, kèm `vocab_map.json` ghi ánh xạ id cũ→mới |
+| `v4_onnx/v4.int8.onnx` | bản INT8 **trước khi cắt vocab**, giữ làm mốc so sánh |
 
-`extension/models/soat.int8.onnx` là **copy nguyên** `out/v4_onnx/v4.int8.onnx`.
+Xuất lại bản ship: `python export_onnx.py --model out/student768_v4_trim --out ../extension/models --name soat`
+rồi `python export_tokenizer.py --model out/student768_v4_trim --lexicon data/lexicon.tsv --out ../extension/models`.
+
+**Đã xoá ngày 18/09 (4,0 GB), đều sinh lại được:**
+
+* `trainer_state.pt` của bốn bản student (594 MB mỗi cái) — trạng thái optimizer, chỉ dùng
+  để *tiếp tục* train từ đúng điểm đó; công thức dựng lại ở quyết định 27 train từ đầu với
+  `--seed 13`. Trọng số (`model.safetensors`) giữ nguyên hết.
+* `s768_onnx`, `v2_onnx`, `v3_onnx`, `trim_onnx` — bản xuất ONNX cũ; xuất lại từ checkpoint
+  tương ứng mất vài phút. `trim_onnx` còn là bản sao y hệt thứ đang nằm trong
+  `extension/models`.
+* `v4_onnx/v4.fp32.onnx{,.data}` (297 MB) — giữ lại bản INT8, đủ để so mốc.
+* `_q_perchan*.onnx` — thí nghiệm lượng tử hoá của quyết định 25; kết quả đã nằm trong các
+  file `out/diag__q_perchan*.json`.
+
+Nguyên tắc khi dọn tiếp: **trọng số đã train là thứ duy nhất không dựng lại được**, mọi thứ
+khác trong `ml/out` đều là sản phẩm của một lệnh.
 
 ---
 
