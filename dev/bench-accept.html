@@ -16,7 +16,7 @@
 <body>
 <h1>Tám điều kiện của quyết định 33 — đo qua đúng <code>OnnxEngine.check()</code></h1>
 <p>
-Ngưỡng đã commit ở <code>1464863</code>, trước khi viết code. Trang này không
+Ngưỡng đã commit ở <code>0233ac6</code>, trước khi viết code. Trang này không
 dựng lại logic chia câu: nó gọi thẳng <code>check()</code> mà extension gọi, và
 chấm kết quả bằng nhãn vàng VSEC. Chỗ nào phải tự tính (phạm vi phủ) thì dùng
 đúng các hàm <code>splitSentences</code> / <code>planRuns</code> mà engine dùng.
@@ -303,7 +303,7 @@ say(`  ${n8} câu: ${same} giống hệt (kể cả confidence), ${diff} khác`,
 for (const [t, A, B] of diffs) say(`    "${t.slice(0, 60)}…"\n      cũ: ${A}\n      mới: ${B}`);
 
 // ============================================================================
-say('\n=== TỔNG KẾT theo ngưỡng đã commit ở 1464863 ===\n');
+say('\n=== TỔNG KẾT theo ngưỡng đã commit ở 0233ac6 ===\n');
 const cov = Object.entries(result.coverage).filter(([k]) => k.startsWith('dau')).map(([, x]) => x.F1);
 const verdict = (ok) => (ok ? 'QUA ' : 'TRƯỢT');
 const rows = [

@@ -6,14 +6,14 @@
  * pipe, profile tạm, nạp GÓI STORE giải nén bằng Extensions.loadUnpacked — cùng
  * đường chrome-extension://, cùng content script người dùng nhận.
  *
- * Cách đo và luật chọn ghi ở quyết định 37, commit 1a8d9cb, TRƯỚC khi file này
+ * Cách đo và luật chọn ghi ở quyết định 37, commit 4f79e07, TRƯỚC khi file này
  * tồn tại. Đổi cách đo thì sửa quyết định trước, đừng sửa ở đây cho số đẹp lên.
  *
  * Chạy (cần Python có psutil để đọc bộ nhớ tiến trình):
  *   node dev/measure-chrome.mjs --out kq.json                 quyết định 37: tắt / bật
  *   node dev/measure-chrome.mjs --rounds 1 --dwell 10 --conc 20   (thử nhanh)
  *   node dev/measure-chrome.mjs --plan 38 --out kq.json       quyết định 38: tắt / A / O
- *        --a dist/soat-A-31a821e.zip  (bản trước offscreen)  --o dist/soat-1.0.0.zip
+ *        --a dist/soat-A-a7328ea.zip  (bản trước offscreen)  --o dist/soat-1.0.0.zip
  *
  * Chạy Chrome KHÔNG CỬA SỔ (--headless) — chủ repo không muốn cửa sổ bật lên giữa lúc
  * làm việc. Cùng chrome.exe, cùng đường nạp extension. --headful để thấy cửa sổ.
@@ -39,7 +39,7 @@ const OPT = {
   chrome: args.chrome || 'C:/Program Files/Google/Chrome/Application/chrome.exe',
   zip: path.resolve(ROOT, args.zip || 'dist/soat-1.0.0.zip'),
   plan: String(args.plan || '37'),
-  zipA: path.resolve(ROOT, args.a || 'dist/soat-A-31a821e.zip'),
+  zipA: path.resolve(ROOT, args.a || 'dist/soat-A-a7328ea.zip'),
   zipO: path.resolve(ROOT, args.o || 'dist/soat-1.0.0.zip'),
   idle: Number(args.idle || 45),           // giây rảnh trước bước 7 của quyết định 38
   rounds: Number(args.rounds || 3),        // số bộ lượt (37: tắt+bật, 38: tắt+A+O)

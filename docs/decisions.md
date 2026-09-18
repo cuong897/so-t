@@ -1111,7 +1111,7 @@ Nếu kết quả vẫn ra hình dạng của 28 — recall được tí chút, 
 
 #### Việc phải làm trước: gộp cổng về một bản
 
-Đã làm ở `331654c`. Luật quyết định từng có **bốn** bản chép tay; đổi ngưỡng
+Đã làm ở `65a0419`. Luật quyết định từng có **bốn** bản chép tay; đổi ngưỡng
 trên bốn bản là cách chắc chắn nhất để phép đo và sản phẩm tách nhau ra. Giờ
 phía Python có `gate.py`, phía JS có `onnxEngine.js`, và `test/gate.test.mjs`
 canh hai bên bằng 1.200 ca — đã kiểm là test **thật sự đổ** khi cố tình làm lệch
@@ -1474,7 +1474,7 @@ thời gian và cắt lần giữ luồng lâu nhất đi 15 lần. Nhưng nó p
 `await` không tự nhả luồng cho ai cả.
 
 Ba chỗ trong repo cùng khai chuyện này và cả ba đều suy từ cú pháp ra hành vi:
-thấy `await` thì kết luận "không giữ luồng". Đã sửa cả ba ở `ea8c174`.
+thấy `await` thì kết luận "không giữ luồng". Đã sửa cả ba ở `c57d0ff`.
 
 #### Chuyện thứ hai, lớn hơn: khoảng cách đã có sẵn TRƯỚC khi chia đoạn
 
@@ -1615,7 +1615,7 @@ chỉ canh phần đuôi trả `-1`, không canh từ cuối cùng có trọn v�
 
 ### 33. Chấm theo CÂU thay cho cắt cụt — ngưỡng chấp nhận ghi TRƯỚC khi viết code
 
-Lần thứ ba theo nếp của `77a9148` và `544c455`. Nhưng lần này phải nói thẳng một
+Lần thứ ba theo nếp của `9c640df` và `cec4dfe`. Nhưng lần này phải nói thẳng một
 chỗ khác hai lần trước: **phép đo thăm dò đã chạy rồi** (quyết định 32), và chính
 nó chọn ra hướng chấm theo câu. Nên ngưỡng dưới đây không che được việc chọn
 hướng sau khi nhìn số. Thứ nó che được là bước tiếp theo: **bản cài đặt thật**,
@@ -1846,7 +1846,7 @@ bản cũ tới 25% ở cái người dùng cảm thấy, không hơn.
 
 #### Kèm theo trong commit này, không đổi hành vi
 
-`onnxEngine.js` có hai byte NUL thật trong mã nguồn — khoá cache ở `afb0774` viết
+`onnxEngine.js` có hai byte NUL thật trong mã nguồn — khoá cache ở `cf6ad59` viết
 `\u0000` nhưng công cụ sửa file ghi thành ký tự NUL. Chạy vẫn đúng, nhưng `grep`
 coi cả file là nhị phân và chỉ in "Binary file matches" — người sau tìm trong
 file sẽ không thấy gì. Đã thay bằng chuỗi thoát; khoá cache vẫn y hệt.
@@ -1958,7 +1958,7 @@ một issue nào**. Rủi ro thật duy nhất là cache trả nhầm — nên �
 
 #### Và một lỗi bộ nhớ lộ ra trên đường
 
-Cache theo câu (`afb0774`) lưu **cả câu** cho mọi phiên bản. Với bài dài không dấu
+Cache theo câu (`cf6ad59`) lưu **cả câu** cho mọi phiên bản. Với bài dài không dấu
 câu, mỗi lần sửa thêm một mục ~1.340 dòng logit, trần 400 mục — cỡ nửa triệu dòng,
 tăng theo số lần sửa. Khi bật cache cửa sổ, câu nhiều cửa sổ **không** được lưu ở
 mức câu nữa; bộ nhớ chặn bởi 256 cửa sổ × ≤ 64 từ.
@@ -1969,7 +1969,7 @@ mức câu nữa; bộ nhớ chặn bởi 256 cửa sổ × ≤ 64 từ.
   trí; 36 phiên bản văn bản qua 5 kiểu sửa (thêm cuối, thay giữa, xoá giữa, chèn
   đầu, quay về bản cũ) — có cache giống hệt chạy lạnh. Làm hỏng khoá cache (chỉ còn
   độ dài + từ đầu) thì test trượt.
-* Code mới với cache **tắt** cho y hệt `49de6ec` trên 120 văn bản, cùng số lượt
+* Code mới với cache **tắt** cho y hệt `ececedb` trên 120 văn bản, cùng số lượt
   model — phần tái cấu trúc không đụng hành vi đang ship. Kiểm điều này riêng vì
   trang đo dưới đây so W với F2 **của code mới**, nên không nhìn thấy nó.
 
@@ -2274,7 +2274,7 @@ một hai cái giữa các lượt. Tính ra không quá ~5 MB mỗi tab — A/A
 
 #### Kết quả — lượt chính thức, headless: **OFFSCREEN**
 
-`node dev/measure-chrome.mjs`, commit `7967afe`, sáu lượt xen kẽ, máy Ryzen 9 8945HS
+`node dev/measure-chrome.mjs`, commit `e424506`, sáu lượt xen kẽ, máy Ryzen 9 8945HS
 (16 luồng, 15,3 GB). Không điều kiện hợp lệ nào trượt:
 
 | | kết quả | |
@@ -2372,8 +2372,8 @@ content script (mỗi tab)            service worker            offscreen docume
 
 #### Cách đo — `dev/measure-chrome.mjs` mở rộng, headless
 
-Ba biến thể, chín lượt xen kẽ: **tắt, A, O** × 3. **A** = bản đang ship, gói ở `31a821e`
-(`dist/soat-A-31a821e.zip`). **O** = bản offscreen. Mỗi lượt, A và O chạy y hệt nhau:
+Ba biến thể, chín lượt xen kẽ: **tắt, A, O** × 3. **A** = bản đang ship, gói ở `a7328ea`
+(`dist/soat-A-a7328ea.zip`). **O** = bản offscreen. Mỗi lượt, A và O chạy y hệt nhau:
 
 1. Mở t1, đứng 10 s.
 2. **Dán lạnh** ở t1: bấm vào ô rồi dán ngay đoạn thử **có dấu câu**. Với O, đây là lần
@@ -2434,7 +2434,7 @@ task nào trên trang.
 
 #### Cài đặt, và một lỗi chỉ Chrome thật mới thấy
 
-`a673e7d`. Lần chạy đầu trong Chrome headless: offscreen được tạo, Worker chạy, message
+`29eae6c`. Lần chạy đầu trong Chrome headless: offscreen được tạo, Worker chạy, message
 đi về đủ — và log ghi `LỖI model không nạp được`, không gạch nào. CSP mặc định của trang
 extension MV3 là `script-src 'self'`, **không cho biên dịch WebAssembly**. Content script
 cũ không vướng vì nó không chạy dưới CSP đó. Không crash; tầng luật vẫn gạch; tầng model
@@ -2470,8 +2470,8 @@ A ở cùng các lượt: long task lúc mở trang 149–166 ms, lúc chấm 50
 
 #### Kết quả — lượt chính thức, headless: **qua tám / tám, ship O**
 
-`node dev/measure-chrome.mjs --plan 38`, công cụ ở `a3bf0d2`, bản O ở `a673e7d`, A ở
-`31a821e`. Chín lượt: tắt / A / O × 3. A/A bộ nhớ ba lượt tắt: **2,3 MB/tab** (cần ≤ 10).
+`node dev/measure-chrome.mjs --plan 38`, công cụ ở `4704075`, bản O ở `29eae6c`, A ở
+`a7328ea`. Chín lượt: tắt / A / O × 3. A/A bộ nhớ ba lượt tắt: **2,3 MB/tab** (cần ≤ 10).
 
 | # | điều kiện | O | A | cần |
 |---|---|---|---|---|
@@ -2705,3 +2705,73 @@ bài ngay lượt sau, mà lượt sau gần như chắc chắn cần đúng nó
 Một test cũ của quyết định 35 khẳng định "bản tắt tăng theo số lần sửa, tới 400 bản" — câu
 đó **không còn đúng** sau đợt này. Nó vẫn xanh chỉ vì trần mới nằm trên ngưỡng nó kiểm; đã
 sửa lại cho khớp sự thật thay vì để một test xanh nói điều sai.
+
+---
+
+### 40. Xoá blob 311MB khỏi lịch sử git — và ba cái bẫy của việc viết lại lịch sử
+
+`.git` nặng **627 MB** vì hai phiên bản của `extension/models/soat.fp32.onnx.data` (296,5 MB
+mỗi bản, thêm ở `3dd35c3`, đổi ở `ac757e7`, gỡ khỏi HEAD ở `fc332e5`). GitHub từ chối file
+trên 100 MB, mà bước 2 của `docs/store/nop-store.md` cần repo trên GitHub để có URL chính
+sách riêng tư. Tức một file chết chặn việc nộp store.
+
+`git filter-branch -f --index-filter "git rm --cached --ignore-unmatch <đường dẫn>" -- --all`,
+rồi bỏ `refs/original`, `reflog expire`, `gc --prune=now`.
+
+| | trước | sau |
+|---|---|---|
+| `.git` | 627 MB | **2,6 MB** |
+| cây của HEAD | `813ab3de…` | **`813ab3de…`** — giống hệt |
+| số commit | 88 | 88 |
+| md5 chuỗi thông điệp commit | `f6ebe6d8…` | `f6ebe6d8…` |
+| blob trên 20 MB | 2 | **0** |
+| `npm run test:all` | xanh | xanh (80 test JS + 2 bộ Python) |
+
+Không dùng `--prune-empty`: commit `fc332e5` ("Blob 311MB vẫn nằm trong HEAD — commit trước
+chỉ sửa .gitignore") chỉ gỡ file, nên nó sẽ rỗng và biến mất. Thông điệp đó là bằng chứng
+của một lần vấp; giữ commit rỗng còn hơn mất nó.
+
+File 311 MB vẫn nằm nguyên trên đĩa, chỉ là không được theo dõi (`.gitignore` đã chặn từ
+`a8fa30c` cũ) — bản fp32 vẫn dùng để xuất lại ONNX được.
+
+#### Bẫy 1 — tag KHÔNG phải lưới an toàn
+
+Repo có sẵn tag `backup-before-filter` từ phiên trước, và tôi đặt thêm một tag "trước khi
+xoá" nữa. **Cả hai đều vô dụng:** `-- --all` viết lại mọi ref, tag cũng bị viết lại, nên sau
+khi chạy thì tag "backup" trỏ vào lịch sử MỚI. Thấy được điều này nhờ chạy thử trên bản sao
+trước — trong lần thử, dòng `Ref 'refs/tags/backup-before-filter' was rewritten` hiện ra.
+
+Lưới an toàn thật là một **bản chép nguyên thư mục `.git`** ra ngoài repo
+(`D:/soat-git-backup-2026-09-18`, 627 MB). Khôi phục = xoá `.git` rồi chép ngược lại.
+
+#### Bẫy 2 — lịch sử là bằng chứng, mà viết lại lịch sử đổi hết hash
+
+Đây là chỗ đắt nhất, và suýt bỏ sót. Repo này **trích hash commit làm bằng chứng**: "ngưỡng
+ghi ở `4f79e07`, trước khi viết một dòng code". Rewrite đổi hash của mọi commit từ `3dd35c3`
+trở đi — tức mọi trích dẫn ấy thành sai, và **chính cơ chế chứng minh tính trung thực của dự
+án bị hỏng**, một cách im lặng.
+
+Bảng ánh xạ của `filter-branch` (`.git/filter-branch/map`) đã bị `gc` dọn mất trước khi kịp
+dùng. Dựng lại được nhờ bản chép `.git`: khớp `(thời điểm tác giả, thông điệp)` giữa hai
+lịch sử — **88/88 commit khớp** — rồi thay hash ngắn trong toàn bộ tài liệu và mã nguồn: 14
+chỗ ở `docs/decisions.md`, 5 ở `HANDOFF.md`, 2 ở `README.md`, 3 ở `dev/measure-chrome.mjs`,
+2 ở `dev/bench-accept.html`, 1 ở `onnxEngine.js`, 1 ở `ml/threshold_report.py`. Kiểm lại:
+mọi hash còn được trích đều `git cat-file -e` ra một commit thật.
+
+**Bài học:** trước khi viết lại lịch sử, đếm xem có bao nhiêu chỗ đang trích hash. Nếu lịch
+sử được dùng làm bằng chứng thì việc sửa tham chiếu là **một phần của thao tác**, không phải
+việc dọn dẹp sau đó.
+
+#### Bẫy 3 — ba lần vấp ở tầng "chạy được lệnh"
+
+* **Claude bị chặn:** bộ lọc an toàn của Claude Code xếp `git filter-branch` vào nhóm phá
+  huỷ và từ chối chạy trên repo thật. Không lách. Thay vào đó: chạy thử trọn vẹn trên
+  `git clone --mirror` dùng một lần (biết trước con số sẽ ra), rồi đóng thao tác thành
+  `dev/xoa-blob.sh` có kiểm chứng trước và sau, để chủ repo chạy.
+* **Dán lệnh dài vào Git Bash vỡ:** terminal chèn mã bracketed-paste `^[[200~` vào đầu dòng,
+  bash báo `command not found`. Một lý do nữa để đóng thành script.
+* **`bash` trong PowerShell là WSL**, và máy chưa cài distro nào:
+  `execvpe(/bin/bash) failed`. Phải gọi thẳng `C:\Program Files\Git\bin\bash.exe`.
+
+`dev/xoa-blob.sh` giữ lại trong repo: nó ghi rõ đã kiểm những gì, và lần sau có file nặng
+lọt vào lịch sử thì sửa đường dẫn là chạy được.

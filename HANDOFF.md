@@ -54,7 +54,7 @@ viết khoá luận.
 
 ## Phiên vừa rồi làm gì (15–18/09/2026)
 
-Các commit `ea8c174..HEAD` (`git log --oneline ea8c174~1..HEAD`). Bắt đầu từ "xem xét kỹ việc sửa
+Các commit `c57d0ff..HEAD` (`git log --oneline c57d0ff~1..HEAD`). Bắt đầu từ "xem xét kỹ việc sửa
 model cắt cụt văn bản"; phần cuối (37, 38) là đo trong Chrome thật rồi đưa model ra khỏi trang.
 
 | quyết định | chuyện gì | kết quả |
@@ -171,20 +171,20 @@ Cả hai đoạn đều phải có đúng một gạch, dưới `cứ`.
 **Đừng dùng `dành được phần quà` để kiểm** — model xếp nó ở p = 0,835, dưới ngưỡng phụ
 âm 0,90, nên im lặng *đúng thiết kế*.
 
-### 2. Xoá blob 311MB khỏi LỊCH SỬ git (CHẶN việc nộp store)
+### 2. ~~Xoá blob 311MB khỏi lịch sử git~~ — XONG (quyết định 40)
 
-`a8fa30c` đã bỏ theo dõi file ở HEAD, nhưng blob vẫn nằm trong tree của `ef2a49d` và
-`4d14d67`, `.git` vẫn **~625 MB**. GitHub từ chối file trên 100MB, mà bước 2 của
-`docs/store/nop-store.md` cần repo trên GitHub để có URL chính sách riêng tư.
+`.git` **627 MB → 2,6 MB**, cây HEAD giống hệt, vẫn 88 commit, test xanh. Việc nộp store
+không còn bị chặn bởi giới hạn 100 MB của GitHub.
 
-```bash
-FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch -f --index-filter \
-  "git rm --cached --ignore-unmatch extension/models/soat.fp32.onnx.data" \
-  -- f2a8679..HEAD
-```
+Ba thứ cần biết nếu phải làm lại chuyện tương tự:
 
-Chưa push đi đâu nên an toàn. Tag `backup-before-filter` trỏ vào master trước khi
-đụng gì. Chắc chắn rồi thì `git reflog expire --expire=now --all && git gc --prune=now`.
+* **Tag không phải backup** — `-- --all` viết lại cả tag. Lưới an toàn là bản chép nguyên
+  thư mục `.git` (`D:/soat-git-backup-2026-09-18`, còn nguyên; xoá khi đã yên tâm, cùng
+  `D:/soat-thu-loc` và `D:/soat-thu-loc2` — tổng ~637 MB).
+* **Mọi hash commit đã đổi.** Tài liệu ở đây trích hash làm bằng chứng ("ngưỡng ghi ở
+  commit X trước khi viết code"), nên đã dựng lại ánh xạ cũ→mới từ bản backup (88/88 khớp)
+  và sửa 28 chỗ trong 7 file. Hash trong các phiên chat cũ thì không còn tra được.
+* Thao tác đóng sẵn ở **`dev/xoa-blob.sh`**, có kiểm chứng trước và sau.
 
 ### 3. Nộp Chrome Web Store
 
