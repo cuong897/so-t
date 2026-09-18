@@ -78,7 +78,7 @@ NÓI RÕ GIỚI HẠN
   hẳn — vì nó dựa vào ngữ cảnh, mà cả câu mất dấu thì ngữ cảnh cũng hỏng.
 • Soát nhắm vào lỗi dấu ở mức âm tiết. Nó không sửa ngữ pháp, không sửa lỗi
   thừa/thiếu chữ cái kiểu "tranhh" → "tranh".
-• Cần Chrome 105 trở lên.
+• Cần Chrome 116 trở lên.
 
 Soát ưu tiên "thà bỏ sót còn hơn báo sai": ngưỡng được đặt chặt để hạn chế
 gạch chân nhầm vào chữ bạn viết đúng.
