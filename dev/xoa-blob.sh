@@ -23,7 +23,7 @@ echo "== kiểm tra trước khi đụng gì =="
 HEAD_HIEN_TAI="$(git rev-parse HEAD)"
 if [ "$HEAD_HIEN_TAI" != "$MONG_DOI_HEAD" ]; then
   echo "DỪNG: HEAD là $HEAD_HIEN_TAI, không phải $MONG_DOI_HEAD."
-  echo "      Repo đã có commit mới sau lúc chuẩn bị — bảo Claude kiểm lại trước khi chạy."
+  echo "      Repo đã có commit mới sau lúc chuẩn bị — kiểm lại mốc rồi hãy chạy."
   exit 1
 fi
 # File chưa theo dõi thì không sao (chính script này có thể là một); nhưng thay đổi đã
@@ -69,7 +69,7 @@ echo "   .git sau khi xoá: $(du -sh .git | cut -f1)"
 
 echo
 if [ "$LOI" = 0 ]; then
-  echo "XONG. Bảo Claude kiểm lại và chạy npm run test:all."
+  echo "XONG. Kiểm lại rồi chạy npm run test:all."
   echo "Khi yên tâm thì xoá $BACKUP và /d/soat-thu-loc để lấy lại ~632 MB."
 else
   echo "CÓ KIỂM TRA KHÔNG ĐẠT. Khôi phục: xoá '$REPO/.git' rồi chép $BACKUP vào thay."

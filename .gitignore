@@ -36,3 +36,6 @@ dev/popup-demo.html
 # Mẫu bao trùm ml/data_* chứ không liệt kê từng thư mục: lần trước liệt kê tay
 # thì data_dgir/ lọt lưới, và một blob 311MB đã từng lọt lưới đúng theo cách đó.
 ml/data_*/
+
+# Cấu hình công cụ chạy thử ở máy local, không liên quan tới sản phẩm
+.claude/

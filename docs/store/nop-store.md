@@ -11,7 +11,7 @@ bước sau tắc.
 
 | # | việc | ai làm | tình trạng |
 |---|---|---|---|
-| a | **Gỡ chế độ đo** khỏi `src/content/index.js` rồi đóng gói lại | Claude | xem ghi chú dưới |
+| a | **Gỡ chế độ đo** khỏi `src/content/index.js` rồi đóng gói lại | việc code, không cần tài khoản gì | xem ghi chú dưới |
 | b | **Đẩy repo lên GitHub công khai** — bước 2 cần một URL chính sách riêng tư mà người duyệt mở được khi chưa đăng nhập | chủ repo (cần tài khoản GitHub) | `.git` đã gọn còn 3 MB sau quyết định 40, đẩy được |
 | c | **Tài khoản nhà phát triển + 5 USD** | chủ repo | bước 1 |
 

@@ -2764,8 +2764,8 @@ việc dọn dẹp sau đó.
 
 #### Bẫy 3 — ba lần vấp ở tầng "chạy được lệnh"
 
-* **Claude bị chặn:** bộ lọc an toàn của Claude Code xếp `git filter-branch` vào nhóm phá
-  huỷ và từ chối chạy trên repo thật. Không lách. Thay vào đó: chạy thử trọn vẹn trên
+* **Lệnh bị chặn:** bộ lọc an toàn của môi trường chạy lệnh xếp `git filter-branch` vào
+  nhóm phá huỷ và từ chối chạy trên repo thật. Không lách. Thay vào đó: chạy thử trọn vẹn trên
   `git clone --mirror` dùng một lần (biết trước con số sẽ ra), rồi đóng thao tác thành
   `dev/xoa-blob.sh` có kiểm chứng trước và sau, để chủ repo chạy.
 * **Dán lệnh dài vào Git Bash vỡ:** terminal chèn mã bracketed-paste `^[[200~` vào đầu dòng,
