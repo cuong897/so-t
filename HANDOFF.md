@@ -333,17 +333,31 @@ docs/store/         hồ sơ nộp Chrome Web Store
 Xuất lại bản ship: `python export_onnx.py --model out/student768_v4_trim --out ../extension/models --name soat`
 rồi `python export_tokenizer.py --model out/student768_v4_trim --lexicon data/lexicon.tsv --out ../extension/models`.
 
-**Đã xoá ngày 18/09 (4,0 GB), đều sinh lại được:**
+**Đã dọn ngày 18/09 — chỉ còn checkpoint của bản đang ship:**
 
-* `trainer_state.pt` của bốn bản student (594 MB mỗi cái) — trạng thái optimizer, chỉ dùng
-  để *tiếp tục* train từ đúng điểm đó; công thức dựng lại ở quyết định 27 train từ đầu với
-  `--seed 13`. Trọng số (`model.safetensors`) giữ nguyên hết.
-* `s768_onnx`, `v2_onnx`, `v3_onnx`, `trim_onnx` — bản xuất ONNX cũ; xuất lại từ checkpoint
-  tương ứng mất vài phút. `trim_onnx` còn là bản sao y hệt thứ đang nằm trong
-  `extension/models`.
-* `v4_onnx/v4.fp32.onnx{,.data}` (297 MB) — giữ lại bản INT8, đủ để so mốc.
-* `_q_perchan*.onnx` — thí nghiệm lượng tử hoá của quyết định 25; kết quả đã nằm trong các
-  file `out/diag__q_perchan*.json`.
+`ml/out` từ 7,8 GB còn **179 MB**, `ml/data*` (1,7 GB) xoá hết. Giữ lại đúng một thứ:
+`ml/out/student768_v4_trim` — nguồn để xuất lại ONNX + tokenizer y hệt bản đang ship.
+
+| đã mất | dựng lại bằng gì | tốn bao lâu |
+|---|---|---|
+| checkpoint v1–v3, teacher, teacher_guessed, các bản xuất ONNX cũ | train lại theo công thức ở quyết định 27, `--seed 13` | hàng giờ trên GPU, và **trọng số sẽ không giống hệt** bản đã đo |
+| `ml/data/train\|dev\|test.jsonl` và các bản `.tok96.npz` | `python dataset.py` rồi `mix_datasets.py` (xem quyết định 27) | hàng giờ |
+| `ml/data/corpus.txt`, `data/raw/VSEC.jsonl` | `build_corpus.py` — cần mạng | vài chục phút |
+| `ml/data/lexicon.tsv` | **đã dựng lại và commit vào repo** (51 KB, 7.214 âm tiết, dựng từ `extension/models/lexicon.json`, `load_lexicon` đọc lại khớp tuyệt đối) | — |
+
+**Lỗ hổng mà lần dọn này làm lộ ra, đã bịt:** cả `ml/data/lexicon.tsv` lẫn
+`extension/models/lexicon.json` đều **không được git theo dõi**, mà corpus để trích ra
+chúng cũng không version được vì nặng. Tức trên một máy trắng, tầng lọc ứng viên không
+dựng lại được bằng bất kỳ lệnh nào trong repo. Giờ `lexicon.tsv` được theo dõi, đúng theo
+lý lẽ đã dùng cho `class_weights*.json` và `propensity.json`.
+
+**Còn chạy được gì sau khi dọn:**
+
+* `python ml/export_onnx.py --model out/student768_v4_trim --out ../extension/models --name soat`
+  và `export_tokenizer.py` tương ứng — xuất lại y hệt bản đang ship;
+* `npm run test:all`, `dev/measure-chrome.mjs`, `dev/lexical-check.mjs`, `dev/bench-cachecap.mjs`;
+* **không** chạy được: `evaluate.py`, `false_alarm.py`, `consonant_eval.py`, `sentence_eval.py`
+  — chúng cần VSEC và tập test đã bị xoá. Muốn đo lại chất lượng thì dựng lại dữ liệu trước.
 
 Nguyên tắc khi dọn tiếp: **trọng số đã train là thứ duy nhất không dựng lại được**, mọi thứ
 khác trong `ml/out` đều là sản phẩm của một lệnh.

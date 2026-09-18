@@ -8,6 +8,10 @@ ml/data/*
 # trên một máy trắng. Tổng cộng 45KB.
 !ml/data/class_weights*.json
 !ml/data/propensity.json
+# Từ điển âm tiết: đầu vào của tầng lọc ứng viên. Trích từ corpus sạch, mà corpus
+# thì không version được vì nặng — nên nếu không theo dõi file này thì trên một máy
+# trắng không dựng lại được nó bằng bất cứ lệnh nào trong repo.
+!ml/data/lexicon.tsv
 ml/out/
 
 # Sinh ra bởi ml/export_tokenizer.py và ml/export_onnx.py — không commit,
