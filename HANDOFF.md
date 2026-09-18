@@ -54,7 +54,7 @@ viết khoá luận.
 
 ## Phiên vừa rồi làm gì (15–18/09/2026)
 
-Các commit `13d385f..HEAD` (`git log --oneline 13d385f~1..HEAD`). Bắt đầu từ "xem xét kỹ việc sửa
+Các commit `0b0888d..HEAD` (`git log --oneline 0b0888d~1..HEAD`). Bắt đầu từ "xem xét kỹ việc sửa
 model cắt cụt văn bản"; phần cuối (37, 38) là đo trong Chrome thật rồi đưa model ra khỏi trang.
 
 | quyết định | chuyện gì | kết quả |
@@ -293,7 +293,7 @@ ml/                 vi.py, noise.py, mine_errors.py, build_corpus.py, dataset.py
 dev/                playground.html, onnx-test.html, shots.html (ảnh store)
   measure-chrome.mjs    quyết định 37 — lái chrome.exe thật (headless) qua CDP pipe,
                     nạp gói store, đo nạp/đứng hình/RAM mỗi tab/dán, tự chấm.
-                    `--plan 38` so hai gói: mặc định `--a dist/soat-A-31a821e.zip` (đặt tên theo hash của `5ae8e90` ở lịch sử cũ) đã
+                    `--plan 38` so hai gói: mặc định `--a dist/soat-A-31a821e.zip` (đặt tên theo hash của `fd0fd53` ở lịch sử cũ) đã
                     XOÁ để lấy lại chỗ. Cần so với một bản cũ thì dựng lại: checkout
                     commit ấy, chép model tương ứng vào extension/models, đóng gói ra
                     một tên khác, rồi truyền `--a <đường dẫn>`.
