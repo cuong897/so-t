@@ -123,13 +123,17 @@ async function paste(text, label) {
     ed.removeEventListener('input', count);
     const txt = ed.innerText;
     return JSON.stringify({ ms: Math.round(performance.now() - t0), inputs, chars: txt.length,
-      coCuTru: txt.includes('cứ trú'), marks, marksSau: read(),
+      // Ô KHÔNG được xoá giữa hai lần dán — nội dung dồn lại, nên số chỗ đáng gạch là số
+      // lần "cứ trú" xuất hiện, không phải một. Tiêu chí "đúng một gạch" từng làm công cụ
+      // này báo SAI cho một sản phẩm đang chạy đúng.
+      soCuTru: (txt.match(/cứ trú/g) || []).length, marks, marksSau: read(),
       lastLog: (log.split(' || ').pop() || '').slice(0, 220),
       soatModel: document.documentElement.dataset.soatModel || null });
   })()`, true));
   const cu = out.marksSau.filter((m) => m.text === 'cứ');
-  const ok = out.coCuTru && cu.length === 1 && cu[0].w > 0;
-  console.log(`${ok ? 'ĐÚNG' : 'SAI '} ${label}: ${out.chars} ký tự · ${out.inputs} sự kiện input · ${out.ms}ms`);
+  const khac = out.marksSau.filter((m) => m.text !== 'cứ');
+  const ok = out.soCuTru > 0 && cu.length === out.soCuTru && cu.every((m) => m.w > 0) && khac.length === 0;
+  console.log(`${ok ? 'ĐÚNG' : 'SAI '} ${label}: ${out.chars} ký tự · ${out.soCuTru} chỗ "cứ trú" · ${out.inputs} sự kiện input · ${out.ms}ms`);
   console.log(`      gạch sau 2 giây: ${JSON.stringify(out.marksSau)}`);
   console.log(`      ${out.lastLog}`);
   console.log(`      ${out.soatModel}`);
@@ -172,7 +176,8 @@ try {
     'import psutil; ps=[p for p in psutil.process_iter(["name","cmdline"]) if p.info["name"]=="chrome.exe" and any("soat-lexical" in c for c in (p.info["cmdline"] or []))]; print(len(ps), "tiến trình:", sorted(round(p.memory_info().private/2**20) for p in ps), "MB")'],
   { encoding: 'utf8' });
   console.log('bộ nhớ:', mem.stdout.trim());
-  console.log(results.every((r) => r.ok) ? 'KẾT LUẬN: cả hai lần dán đều gạch đúng một chỗ dưới "cứ".'
+  console.log(results.every((r) => r.ok)
+    ? 'KẾT LUẬN: mọi lần dán đều gạch đúng mọi chỗ "cứ trú", và không gạch chỗ nào khác.'
     : 'KẾT LUẬN: CÓ LẦN DÁN KHÔNG ĐÚNG — đọc lại dòng log ở trên.');
 } catch (e) {
   console.error('hỏng:', e.message);
