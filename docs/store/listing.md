@@ -13,7 +13,7 @@ Chép thẳng từng ô. Phần nào cần bạn tự điền thì ghi rõ `[B�
 | **Danh mục** | Productivity (Năng suất) |
 | **Ngôn ngữ** | Tiếng Việt |
 | **Mục đích duy nhất** | Kiểm tra và gợi ý sửa lỗi chính tả tiếng Việt trong các ô nhập liệu trên trang web, xử lý hoàn toàn cục bộ. |
-| **URL chính sách riêng tư** | `[BẠN ĐIỀN]` — xem ghi chú "Nơi đăng chính sách" bên dưới |
+| **URL chính sách riêng tư** | `https://github.com/cuong897/so-t/blob/main/docs/store/privacy-policy.md` — đã kiểm mở được khi chưa đăng nhập |
 
 ---
 
